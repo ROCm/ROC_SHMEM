@@ -54,6 +54,9 @@ Barrier() {
 int64_t
 gpuCyclesToMicroseconds(int64_t cycles) 
 {
+    // dGPU asm core timer runs at 27MHz.  This is different from the core
+    // clock returned by HIP.  For APU this is different and might need
+    // adjusting.
     int gpu_frequency_khz = 27000;
 //    hipDeviceGetAttribute(&gpu_frequency_khz,
 //                          hipDeviceAttributeClockRate,
@@ -138,8 +141,10 @@ setup(int argc, char* argv[], int *num_wgs, int* num_threads,
     *myid = ro_net_my_pe();
 
     if (*numprocs != 2) {
-        if (*myid == 0)
-           std::cerr << "This test requires exactly two processes" << std::endl;
+        if (*myid == 0) {
+            std::cerr << "This test requires exactly two processes"
+            << std::endl;
+        }
         exit(-1);
     }
 

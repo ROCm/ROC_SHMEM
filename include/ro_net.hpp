@@ -27,7 +27,20 @@
 #include "hip/hip_runtime.h"
 
 /**
- * @brief Status codes for user-facing RO_NET calls
+ * @file ro_net.hpp
+ * @brief Public header for RO_NET device and host libraries.
+ *
+ * This file contains all the callable functions and data structures for both
+ * the device- and host-side runtimes.  The comments on these functions are
+ * rather sparse, but the semanitcs are the same as those implemented in
+ * OpenSHMEM unless otherwise documented.  Please see the OpenSHMEM 1.4
+ * standards documentation for more details:
+ *
+ * http://openshmem.org/site/sites/default/site_files/OpenSHMEM-1.4.pdf
+ */
+
+/**
+ * @brief Status codes for user-facing RO_NET calls.
  */
 enum ro_net_status_t {
     RO_NET_UNKNOWN_ERROR,
@@ -37,7 +50,7 @@ enum ro_net_status_t {
 };
 
 /**
- * @brief Type of ro_net_wait() operation
+ * @brief Types defined for ro_net_wait() operations.
  */
 enum ro_net_cmps {
     RO_NET_CMP_EQ,
@@ -45,17 +58,18 @@ enum ro_net_cmps {
 };
 
 /**
- * @brief CPU side handle
+ * @brief CPU side handle required for all CPU RO_NET calls.
  */
 typedef uint64_t  ro_net_handle_t;
 
 /**
- * @brief GPU side handle. Each work-group will have it own copy
+ * @brief GPU side handle. Each work-group will have it own copy.
  */
 typedef uint64_t  ro_net_wg_handle_t;
 
 /**
- * @brief GPU side OpenSHMEM context
+ * @brief GPU side OpenSHMEM context created from each work-groups'
+ * ro_net_wg_handle_t
  */
 typedef uint64_t* ro_net_ctx_t;
 
@@ -63,352 +77,436 @@ typedef uint64_t* ro_net_ctx_t;
 /* Host-side interface */
 
 /**
- * @brief initialize the RO_NET runtime and underlying transport layer.
+ * @brief Initialize the RO_NET runtime and underlying transport layer.
  *
- * @param[out] CPU side handle.
+ * @param[out] ro_net_gpu_handle CPU side handle.
  *
- * @retval : status of the initialization.
+ * @return Status of the initialization.
  *
  */
 ro_net_status_t ro_net_pre_init(ro_net_handle_t **ro_net_gpu_handle);
 
 /**
- * @brief allocate GPU/CPU queues and optionally spawn progress threads
+ * @brief Allocate GPU/CPU queues and optionally spawn progress threads.
  *
- * @param[out] CPU side handle.
+ * @param[out] ro_net_gpu_handle CPU side handle.
+ * @param[in] num_wgs            Maximum number of work-groups spawned by any
+ *                               kernel that uses RO_NET.
+ * @param[in] num_threads        Number of CPU helper threads per CPU
+ *                               OpenSHMEM PE.
+ * @param[in] num_queues         Number of producer/consumer queues for the
+ *                               runtime to use.
  *
- * @param[in] number of Workgroups in the persisitent kernel
- *
- * @param[in] number of CPU helper threads per CPU OpenSHMEM PE
- *
- * @param[in] number of producer/consumer queues for the runtime to use
- *
- * @retval : status of the initialization.
+ * @return Status of the initialization.
  *
  */
 ro_net_status_t ro_net_init(ro_net_handle_t **ro_net_gpu_handle,
-                                int num_wgs,  int num_threads, int num_queues);
-
+                            int num_wgs,  int num_threads, int num_queues);
 
 /**
- * @brief This function should be used only if the number of helper threads is 0.
- * the PE calls this function after launching the kernel.
+ * @brief User visible progress function.  This function should be used only if
+ * the number of helper threads is 0.  Each PE must then call into this
+ * function after launching a RO_NET enabled kernel in order to progress
+ * messages.  The function will return when all GPU threads have called
+ * ro_net_finalize().
  *
- * @param[in] CPU side handle.
+ * @param[in] ro_net_gpu_handle CPU side handle.
  *
- * @retval : status of operation.
+ * @return Status of operation.
  *
  */
 ro_net_status_t ro_net_forward(ro_net_handle_t * ro_net_gpu_handle);
 
+/**
+ * @brief Function that dumps internal stats to stdout.
+ *
+ * @param[in] ro_net_gpu_handle CPU side handle.
+ *
+ * @return Status of operation.
+ *
+ */
 ro_net_status_t ro_net_dump_stats(ro_net_handle_t * ro_net_gpu_handle);
+
+/**
+ * @brief Reset all internal stats.
+ *
+ * @param[in] ro_net_gpu_handle CPU side handle.
+ *
+ * @return Status of operation.
+ *
+ */
 ro_net_status_t ro_net_reset_stats(ro_net_handle_t * ro_net_gpu_handle);
 
 /**
- * @brief finalize the RO_NET runtime.
+ * @brief Finalize the RO_NET runtime.
  *
- * @param[in] CPU side handle.
+ * @param[in] ro_net_gpu_handle CPU side handle.
  *
- * @retval : status of the initialization.
+ * @return Status of finalization.
  *
  */
 ro_net_status_t ro_net_finalize(ro_net_handle_t * ro_net_gpu_handle);
 
 
 /**
- * @brief Allocate a memory of size @size from the  symmetric heap.
+ * @brief Allocate memory of \p size bytes from the symmetric heap.  This is a
+ * collective operation and must be called by all PEs.
  *
- * @param[in] size of the requestion allocation in bytes.
+ * @param[in] size Memory allocation size in bytes.
  *
- * @retval : a pointer to the allocated memory on the symmetric heap.
+ * @return A pointer to the allocated memory on the symmetric heap.
+ *
+ * @todo Return error code instead of ptr.
  *
  */
 void* ro_net_malloc(size_t size);
 
 
 /**
- * @brief free a memory spaces and return it to the symmetric heap.
+ * @brief Free a memory allocation from the symmetric heap.  This is a
+ * collective operation and must be called by all PEs.
  *
- * @param[in] pointer to the memory to free. @ptr should be part
- * of the symmetric heap
+ * @param[in] ptr Pointer to previously allocated memory on the symmetric heap.
  *
- * @retval : status of the operation.
+ * @return Status of the operation.
  *
  */
 ro_net_status_t ro_net_free(void* ptr);
 
 
 /**
- * @brief returns the number of PEs.
+ * @brief Query for the number of PEs.
  *
- * @retval : number of PEs.
+ * @return Number of PEs.
  *
  */
 int ro_net_n_pes();
 
 
 /**
- * @brief returns the ID (rank) o fthe calling PE.
+ * @brief Query the PE ID of the caller.
  *
- * @retval : returns the rank.
+ * @return PE ID of the caller.
  *
  */
 int ro_net_my_pe();
 
-/* Device-side interface */
+/**
+ * Device-side interface.
+ *
+ * @todo Return error codes.
+ */
 
 /**
- * @brief creates an OpenSHMEM context. By design, the context is private
- * to he calling workgroup.
+ * @brief Creates an OpenSHMEM context. By design, the context is private
+ * to the calling work-group.
  *
- * @param[in] options of the context, must be 0
+ * Only one thread per work-group is allowed to call into this function.
  *
- * @param[out] the context handle
+ * @param[in] options Options for context creation.  Ignored in current design.
+ * @param[out] ctx    Context handle.
+ * @param[in] handle  Per-work-group ro_net handle.
  *
- * @param[in] GPU side ro_net handle
- *
- * @retval : void.
+ * @return void.
  *
  */
 __device__ void ro_net_ctx_create(long options, ro_net_ctx_t *ctx,
-                                    ro_net_wg_handle_t * handle);
+                                  ro_net_wg_handle_t * handle);
 
 /**
- * @brief destroys an OpenSHMEM context.
+ * @brief Destroys an OpenSHMEM context.
  *
- * @param[in] teh context to destroy
+ * Only one thread per work-group is allowed to call into this function.
  *
- * @retval : void.
+ * @param[in] The context to destroy.
+ *
+ * @return void.
  *
  */
 __device__ void ro_net_ctx_destroy(ro_net_ctx_t ctx);
 
 /**
- * @brief writes a contigous data of size @size bytes from @src
- * on the calling PE to the @dst on PE @pe. The caling WG will block until the
- * operation completes locally (it is safe to reuse @src buffer).
+ * @brief Writes contiguous data of \p size bytes from \p src on the calling
+ * PE to \p dst at \p pe. The caller will block until the operation
+ * completes locally (it is safe to reuse \p src).  The caller must
+ * call into ro_net_quiet() if remote completion is required.
  *
- * @param[in] context to perform this operation
+ * This function can be called from divergent control paths at per-thread
+ * granularity.  However, performance may be improved if the caller can
+ * coalesce contiguous messages and elect a leader thread to call into the
+ * RO_NET function.
  *
- * @param[in] destination buffer. Must be an address on the symmetric heap
+ * @param[in] ctx  Context with which to perform this operation.
+ * @param[in] dst  Destination address. Must be an address on the symmetric
+ *                 heap.
+ * @param[in] src  Source address. Must be an address on the symmetric heap.
+ * @param[in] size Size of the transfer in bytes.
+ * @param[in] pe   PE of the remote process.
  *
- * @param[in] source address. Must be an address on the symmetric heap
- *
- * @param[in] size of the transfer in bytes
- *
- * @param[in] PE of the remote process
- *
- * @retval : void.
+ * @return void.
  *
  */
 __device__ void ro_net_putmem(ro_net_ctx_t ctx, void *dst, void *src,
-                                int size, int pe);
+                              int size, int pe);
 
 /**
- * @brief reads a contigous data of size @size bytes from @src
- * on the remote PE to the @dst on the calling PE. The caling WG will block
- * until the operation completes (it is safe to access @dst buffer).
+ * @brief Reads contiguous data of \p size bytes from \p src on \p pe 
+ * to \p dst on the calling PE. The calling work-group will block until the
+ * operation completes (data has been placed in \p dst).
  *
- * @param[in] context to perform this operation
+ * This function can be called from divergent control paths at per-thread
+ * granularity.  However, performance may be improved if the caller can
+ * coalesce contiguous messages and elect a leader thread to call into the
+ * RO_NET function.
  *
- * @param[in] destination buffer. Must be an address on the symmetric heap
+ * @param[in] ctx  Context with which to perform this operation.
+ * @param[in] dst  Destination Address. Must be an address on the symmetric
+ *                 heap.
+ * @param[in] src  Source address. Must be an address on the symmetric heap.
+ * @param[in] size Size of the transfer in bytes.
+ * @param[in] pe   PE of the remote process.
  *
- * @param[in] source address. Must be an address on the symmetric heap
- *
- * @param[in] size of the transfer in bytes
- *
- * @param[in] PE of the remote process
- *
- * @retval : void.
+ * @return void.
  *
  */
 __device__ void ro_net_getmem(ro_net_ctx_t ctx, void *dst, void *src,
                                 int size, int pe);
 
 /**
- * @brief writes a contigous data of size @size bytes from @src
- * on the calling PE to the @dst on PE @pe. The operation is not blocking.
- * The calling WG will return as soon as the request is posted.
- * The operation will complete by calling ro_net_quiet on teh same ctx
+ * @brief Writes contiguous data of \p size bytes from \p src on the calling
+ * PE to \p dst on \p pe. The operation is not blocking. The caller
+ * will return as soon as the request is posted. The caller must call
+ * ro_net_quiet() on the same context if completion notification is
+ * required.
  *
- * @param[in] context to perform this operation
+ * This function can be called from divergent control paths at per-thread
+ * granularity.  However, performance may be improved if the caller can
+ * coalesce contiguous messages and elect a leader thread to call into the
+ * RO_NET function.
  *
- * @param[in] destination buffer. Must be an address on the symmetric heap
+ * @param[in] ctx  Context with which to perform this operation.
+ * @param[in] dst  Destination address. Must be an address on the symmetric
+                   heap.
+ * @param[in] src  Source address. Must be an address on the symmetric heap.
+ * @param[in] size Size of the transfer in bytes.
+ * @param[in] pe   PE of the remote process.
  *
- * @param[in] source address. Must be an address on the symmetric heap
- *
- * @param[in] size of the transfer in bytes
- *
- * @param[in] PE of the remote process
- *
- * @retval : void.
+ * @return void.
  *
  */
 __device__ void ro_net_putmem_nbi(ro_net_ctx_t ctx, void *dst, void *src,
-                                    int size, int pe);
+                                  int size, int pe);
 
 /**
- * @brief reads a contigous data of size @size bytes from @src
- * on the remote PE to the @dst on the calling PE. The operation is not
- * blocking. The calling WG will return as soon as the request is posted.
- * The operation will complete by calling ro_net_quiet on teh same ctx
+ * @brief Reads contiguous data of \p size bytes from \p src on \p pe
+ * to \p dst on the calling PE. The operation is not blocking. The caller will
+ * return as soon as the request is posted.  The caller must call
+ * ro_net_quiet() on the same context if completion notification is required.
  *
- * @param[in] context to perform this operation
+ * This function can be called from divergent control paths at per-thread
+ * granularity.  However, performance may be improved if the caller can
+ * coalesce contiguous messages and elect a leader thread to call into the
+ * RO_NET function.
  *
- * @param[in] destination buffer. Must be an address on the symmetric heap
+ * @param[in] ctx  Context with which to perform this operation.
+ * @param[in] dst  Destination address. Must be an address on the symmetric
+ *                 heap.
+ * @param[in] src  Source address. Must be an address on the symmetric heap.
+ * @param[in] size Size of the transfer in bytes.
+ * @param[in] pe   PE of the remote process.
  *
- * @param[in] source address. Must be an address on the symmetric heap
- *
- * @param[in] size of the transfer in bytes
- *
- * @param[in] PE of the remote process
- *
- * @retval : void.
+ * @return void.
  *
  */
 __device__ void ro_net_getmem_nbi(ro_net_ctx_t ctx, void *dst, void *src,
-                                    int size, int pe);
+                                  int size, int pe);
 
 /**
- * @brief guarantees the order with OpenSHMEM semantics.
+ * @brief Guarantees order between messages in this context in accordance with
+ * OpenSHMEM semantics.
  *
- * @param[in] context to perform this operation
+ * This function can be called from divergent control paths at per-thread
+ * granularity.  However, performance may be improved if the caller can
+ * coalesce contiguous messages and elect a leader thread to call into the
+ * RO_NET function.
  *
- * @retval : void.
+ * @param[in] ctx Context with which to perform this operation.
+ *
+ * @return void.
  *
  */
 __device__ void ro_net_fence(ro_net_ctx_t ctx);
 
 /**
- * @brief completes all previous operations posted to this context @ctx
+ * @brief Completes all previous operations posted to this context.
  *
- * @param[in] context to perform this operation
+ * This function can be called from divergent control paths at per-thread
+ * granularity.  However, performance may be improved if the caller can
+ * coalesce contiguous messages and elect a leader thread to call into the
+ * RO_NET function.
  *
- * @retval : void.
+ * @param[in] ctx Context with which to perform this operation.
+ *
+ * @return void.
  *
  */
 __device__ void ro_net_quiet(ro_net_ctx_t ctx);
 
 /**
- * @brief initializes the GPU side of the runtime and creates a GPU handle for
- * each WG
+ * @brief Initializes the GPU-side runtime and creates a GPU handle for each
+ * work-group.
  *
- * @param[in] CPU side handle
+ * Only one thread per work-group is allowed to call into this function.
  *
- * @param[out] GPU side handle
+ * @param[in] handle     CPU side handle.
+ * @param[out] wg_handle GPU side handle.
  *
- * @retval : void.
+ * @return void.
  *
  */
 __device__ void ro_net_init(ro_net_handle_t * handle,
-                              ro_net_wg_handle_t **wg_handle);
+                            ro_net_wg_handle_t **wg_handle);
 
 /**
- * @brief finalizes the GPU side of the runtime
+ * @brief Finalizes the GPU-side runtime.
  *
- * @param[in] GPU side handle
+ * Only one thread per work-group is allowed to call into this function.
  *
- * @param[in] context handle
+ * @param[in] handle    GPU-side handle.
+ * @param[in] wg_handle GPU-side handle.
  *
- * @retval : void.
+ * @return void.
  *
  */
 __device__ void ro_net_finalize(ro_net_handle_t * handle,
                                   ro_net_wg_handle_t * wg_handle);
 
 /**
- * @brief return number of PEs
+ * @brief Query the total number of PEs.
  *
- * @param[in] GPU side handle
+ * Can be called per thread with no performance penalty.
  *
- * @retval : number of PEs
+ * @param[in] wg_handle GPU side handle.
+ *
+ * @return Total number of PEs.
  *
  */
 __device__ int ro_net_n_pes(ro_net_wg_handle_t *wg_handle);
 
 
 /**
- * @brief return rank of the PE
+ * @brief Query the PE ID of the caller.
  *
- * @param[in] GPU side handle
+ * Can be called per thread with no performance penalty.
  *
- * @retval : rank of PE
+ * @param[in] wg_handle GPU side handle
+ *
+ * @return PE ID of the caller.
  *
  */
 __device__ int ro_net_my_pe(ro_net_wg_handle_t *wg_handle);
 
 /**
- * @brief perform an allreduce with SUM operation between PEs in the active
- * set.
+ * @brief Perform an allreduce with SUM operation between PEs in the active
+ * set.  The caller is blocked until the reduction completes.
  *
- * @param[in] GPU side handle
+ * This function can be called from divergent control paths at per-thread
+ * granularity.  However, performance may be improved if the caller can
+ * coalesce contiguous messages and elect a leader thread to call into the
+ * RO_NET function.
  *
- * @retval : void
+ * @param[in] dst          Destination address. Must be an address on the
+ *                         symmetric heap.
+ * @param[in] src          Source address. Must be an address on the symmetric
+                           heap.
+ * @param[in] size         Size of the buffer to participate in the reduction.
+ * @param[in] PE_start     PE to start the reduction.
+ * @param[in] logPE_stride Stride of PEs participating in the reduction.
+ * @param[in] PE_size      Number PEs participating in the reduction.
+ * @param[in] pWrk         Temporary work buffer provided to RO_NET.
+ * @param[in] pSync        Temporary work buffer provided to RO_NET.
+ * @param[in] handle       GPU side handle.
+ *
+ * @return void
  *
  */
 __device__ void ro_net_float_sum_to_all(float *dst, float *src, int size,
-                                          int PE_start, int logPE_stride,
-                                          int PE_size, float *pWrk,
-                                          long *pSync,
-                                          ro_net_wg_handle_t * handle);
+                                        int PE_start, int logPE_stride,
+                                        int PE_size, float *pWrk,
+                                        long *pSync,
+                                        ro_net_wg_handle_t * handle);
 
 /**
  * @brief perform a collective barrier between all PEs in the system.
- * Only the calling WG is blocked.
+ * The caller is blocked until the barrier is resolved.
  *
- * @param[in] GPU side handle
+ * This function can be called from divergent control paths at per-thread
+ * granularity.  However, performance may be improved if the caller can
+ * coalesce contiguous messages and elect a leader thread to call into the
+ * RO_NET function.
  *
- * @retval : void
+ * @param[in] handle GPU side handle.
+ *
+ * @return void
  *
  */
 __device__ void ro_net_barrier_all(ro_net_wg_handle_t * handle);
 
-
 /**
- * @brief block the calling WG (busy polling) until the condition
- *  (*@ptr @ro_net_cmps @val) is true.
+ * @brief Block the caller until the condition (* \p ptr \p cmps \p val) is
+ * true.
  *
- * @param[in] context
+ * This function can be called from divergent control paths at per-thread
+ * granularity.  However, performance may be improved if the caller can
+ * coalesce contiguous messages and elect a leader thread to call into the
+ * RO_NET function.
  *
- * @param[in] pointer to amemory on the symmetric heap
+ * @param[in] ctx Context with which to perform this operation.
+ * @param[in] ptr Pointer to memory on the symmetric heap to wait for.
+ * @param[in] cmp Operation for the comparison.
+ * @param[in] val Value to compare the memory at \p ptr to.
  *
- * @param[in] value to compare to
- *
- * @retval : void
+ * @return void
  *
  */
 __device__ void ro_net_wait_until(ro_net_ctx_t ctx, void *ptr,
-                                    ro_net_cmps, int val);
+                                  ro_net_cmps cmp, int val);
 
 /**
- * @brief return the current time. Similar to gettimeofday(). To use this function
- * RO_NET must be configured with profile support (--enable-profile)
+ * @brief Query the current time. Similar to gettimeofday() on the CPU. To use
+ * this function, RO_NET must be configured with profiling support
+ * (--enable-profile).
  *
- * @param[in] GPU side handle
+ * Can be called per thread with no performance penalty.
  *
- * @retval : time in micro-seconds
+ * @param[in] wg_handle GPU-side handle.
+ *
+ * @return Time in micro-seconds.
  *
  */
-__device__ uint64_t ro_net_timer(ro_net_wg_handle_t * wi_handle);
+__device__ uint64_t ro_net_timer(ro_net_wg_handle_t * wg_handle);
 
 /**
- * @brief enable the timers and profilers (PVARs) at runtime.
+ * @brief Enable the timers and profilers at runtime.
  *
- * @param[in] GPU side handle
+ * Can be called per thread with no performance penalty.
  *
- * @retval : void
+ * @param[in] wg_handle GPU-side handle.
+ *
+ * @return void
  *
  */
-__device__ void profiler_enable(ro_net_wg_handle_t * wi_handle);
+__device__ void profiler_enable(ro_net_wg_handle_t * wg_handle);
 
 /**
- * @brief set SKIP to true/flase (@status). This is useful for warmup iterations.
+ * @brief Set SKIP to \p status. This is useful for warmup iterations.
  *
- * @param[in] GPU side handle
+ * Can be called per thread with no performance penalty.
  *
- * @param[in] status of skip
+ * @param[in] wg_handle GPU-side handle.
+ * @param[in] status    Status of skip.
  *
- * @retval : void
+ * @return void
  *
  */
 __device__ void profiler_skip(ro_net_wg_handle_t * wg_handle, bool status);
@@ -416,10 +514,14 @@ __device__ void profiler_skip(ro_net_wg_handle_t * wg_handle, bool status);
 
 /**
  * @brief Make all uncacheable GPU data visible to other agents in the sytem.
+ * This only works for data that was explicitly allocated unacheable on the
+ * GPU!
  *
- * @param[in] GPU side handle
+ * Can be called per thread with no performance penalty.
  *
- * @retval : void
+ * @param[in] GPU-side handle.
+ *
+ * @return void
  *
  */
 __device__ void ro_net_threadfence_system(ro_net_wg_handle_t * wg_handle);

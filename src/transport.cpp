@@ -418,7 +418,8 @@ MPITransport::progress()
 
             if (wg_id != -1) {
                 outstanding[wg_id]--;
-                DPRINTF(("Finished op for wg_id %d at threadId %d (%d requests outstanding)\n",
+                DPRINTF(("Finished op for wg_id %d at threadId %d "
+                        "(%d requests outstanding)\n",
                         wg_id, threadId, outstanding[wg_id]));
             } else {
                 DPRINTF(("Finished host barrier\n"));
@@ -434,8 +435,8 @@ MPITransport::progress()
                 #endif
             }
 
-            // If the GPU has requested a quiet, notify it of completion when all
-            // outstanding requests are complete.
+            // If the GPU has requested a quiet, notify it of completion when
+            // all outstanding requests are complete.
             if (!outstanding[wg_id] && !waiting_quiet[wg_id].empty()) {
                 for (const auto threadId : waiting_quiet[wg_id]) {
                     DPRINTF(("Finished Quiet for wg_id %d at threadId %d\n",

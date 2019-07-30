@@ -48,14 +48,15 @@ get_hw_wv_index() {
     asm volatile ("s_getreg_b32 %0, hwreg(HW_REG_HW_ID, 4, 2)" : "=s"(sd_id));
     asm volatile ("s_getreg_b32 %0, hwreg(HW_REG_HW_ID, 8, 4)" : "=s"(cu_id));
     asm volatile ("s_getreg_b32 %0, hwreg(HW_REG_HW_ID, 13, 2)" : "=s"(se_id));
-    
+
+/*
     // Note that we can't use the SIZES above because some of them are over
     // provisioned (i.e. 4 bits for wave but we have only 10) and we have an
     // exact number of queues.
-    //return (se_id << (HW_ID_CU_ID_SIZE + HW_ID_SD_ID_SIZE + HW_ID_WV_ID_SIZE)) +
-    //        (cu_id << (HW_ID_SD_ID_SIZE + HW_ID_WV_ID_SIZE)) +
-    //        (sd_id << (HW_ID_WV_ID_SIZE)) + wv_id;
-
+    return (se_id << (HW_ID_CU_ID_SIZE + HW_ID_SD_ID_SIZE + HW_ID_WV_ID_SIZE))
+           + (cu_id << (HW_ID_SD_ID_SIZE + HW_ID_WV_ID_SIZE))
+           + (sd_id << (HW_ID_WV_ID_SIZE)) + wv_id;
+*/
     return wv_id + sd_id * 10 + cu_id * 40 + se_id * 640;
 }
 
@@ -234,19 +235,7 @@ ro_net_barrier_all(ro_net_wg_handle_t* handle_E)
     build_queue_element(RO_NET_BARRIER_ALL, NULL, NULL, 0, 0, 0, 0, NULL,
                         NULL, handle, true);
 }
-/*
-__device__ void
-ro_net_wg_barrier(ro_net_wg_handle_t* handle_E)
-{
-    struct ro_net_wg_handle * handle =
-        (struct ro_net_wg_handle *) handle_E;
-    int wgs = handle->my_pe % 64;
-    gws_barrier_init(wgs,  hipGridDim_x * hipGridDim_y,  handle->barrier_ptr);
-    gws_barrier_wait(wgs,  hipGridDim_x * hipGridDim_y);
-    *handle->barrier_ptr = 0;
 
-}
-*/
 __device__ int
 ro_net_n_pes(ro_net_wg_handle_t* handle_E)
 {
@@ -341,9 +330,6 @@ __device__ void build_queue_element(ro_net_cmds type, void* dst, void * src,
         // need to go to memory.
         while (isFull(handle->read_idx, write_slot, handle->queue_size))
         {
-//            __ro_inv();
-//            handle->read_idx = *handle->host_read_idx;
-
             __asm__ volatile ("global_load_dwordx2 %0 %1 off glc slc\n "
                               "s_waitcnt vmcnt(0)" :
                               "=v"(handle->read_idx) :
@@ -416,94 +402,9 @@ __device__ void build_queue_element(ro_net_cmds type, void* dst, void * src,
                                 "=v"(net_status) :
                                 "v"(&handle->status[threadId]));
         } while (net_status == 0);
-//        while (!handle->status[threadId]) {
-//            __ro_inv();
-//        }
+
         handle->status[threadId] = 0;
         __threadfence();
     }
     PVAR_END(handle->profiler.waitingOnHost);
 }
-
-/*
-#define BARRIER_INIT(num, val) { \
-    unsigned int m0_backup, new_m0;\
-    __asm__ __volatile__(\
-            "s_mov_b32 %0 m0\n"\
-            "v_readfirstlane_b32 %1 %2\n"\
-            "s_nop 0\n" \
-            "s_mov_b32 m0 %1\n" \
-            "s_nop 0\n" \
-            "ds_gws_init %3 offset:0 gds\n" \
-            "s_waitcnt lgkmcnt(0) expcnt(0)\n" \
-            "s_mov_b32 m0 %0\n" \
-            "s_nop 0" \
-            : "=s"(m0_backup), "=s"(new_m0)\
-            : "v"(num<<0x10), "{v0}"(val-1)\
-            : "memory"); \
-}
-
-
-__device__ void
-gws_barrier_init(unsigned int bar_num, unsigned int bar_val,
-                 unsigned int *bar_inited)
-{
-
-    int wgid = hipBlockIdx_x + hipBlockIdx_y * hipGridDim_x +
-               hipBlockIdx_z * hipGridDim_x * hipGridDim_z;
-
-    if (wgid == 0)
-    {
-        if (hipThreadIdx_x == 0 && hipThreadIdx_y == 0)
-            BARRIER_INIT(bar_num, bar_val);
-
-        __threadfence();
-
-        if (hipThreadIdx_x == 0 && hipThreadIdx_y == 0)
-            atomicAdd(bar_inited, 1);
-    }
-
-    __threadfence();
-    if (hipThreadIdx_x == 0 && hipThreadIdx_y == 0)
-    {
-        // Wait for WG0 to initialize the barriers
-        while (atomicOr(bar_inited, 0) == 0);
-    }
-    __threadfence();
-}
-
-__device__ void
-gws_barrier_wait(unsigned int bar_num, unsigned int reset_val)
-{
-    unsigned int m0_backup;
-    unsigned int new_m0;
-    // Save off M0 and prepare a new value for it.
-    // First part saves off values, second sets M0, waits at the barrier,
-    // and then resets M0.
-    //
-    // Note that we set M0[21:16] instead of M[5:0] to
-    // give us the barrier number. The hardware apparently
-    // pulls from M[21:16] despite what the documentation says.
-    // Similarly, we source the barrier-reset value from VGPR0
-    // because, no matter what register this instruction is given,
-    // it pulls the value from VGPR0.
-    //
-    // We are required to force the ds_gws_barrier's reset value into VGPR0
-    // (this is the {v0} constraint) due to some unknown hardware issue
-    // that we have observed on at least Vega 10, where this instruction
-    // will pull whatever value is in VGPR0 to do its reset.
-    __asm__ __volatile__(
-            "s_mov_b32 %0 m0\n"
-            "v_readfirstlane_b32 %1 %2\n"
-            "s_nop 0\n"
-            "s_mov_b32 m0 %1\n"
-            "s_nop 0\n"
-            "ds_gws_barrier %3 offset:0 gds\n"
-            "s_waitcnt lgkmcnt(0) expcnt(0)\n"
-            "s_mov_b32 m0 %0\n"
-            "s_nop 0"
-            : "=s"(m0_backup), "=s"(new_m0)
-            : "v"(bar_num << 0x10), "{v0}"(reset_val-1)
-            : "memory");
-}
-*/
