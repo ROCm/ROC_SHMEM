@@ -125,6 +125,11 @@ CPU-GPU interaction and enable/disable debug prints:
                         Enables verbose debug prints if built with
                         --enable-debug
 
+RO_NET also requires the following environment variable be set for ROCm if
+using GPU memory for queues or the symmetric heap:
+
+    export HSA_FORCE_FINE_GRAIN_PCIE=1
+
 ## Examples
 
 RO_NET is similar to OpenSHMEM and should be familiar to programmers who have

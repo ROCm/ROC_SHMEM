@@ -78,7 +78,7 @@ AS_IF(
     [!(test x$with_mpi = x || test x$with_mpi = xno) && test -d $with_mpi],
         [AC_DEFINE([MPI_TRANSPORT], [1], [enabling MPI transport])]
         using_mpi=1
-        LAUNCH_CMD="$with_mpi/bin/mpirun -np 2 -env UCX_TLS=rc"
+        LAUNCH_CMD="$with_mpi/bin/mpirun -np 2 -env UCX_TLS=rc -env HSA_FORCE_FINE_GRAIN_PCIE=1"
         AC_SUBST(LAUNCH_CMD)
         CPPFLAGS="$CPPFLAGS -I$with_mpi/include/"
         LDFLAGS="$LDFLAGS -L$with_mpi/lib -lmpi")
