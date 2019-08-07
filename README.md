@@ -4,9 +4,8 @@ The Reverse Offload Networking (RO_NET) runtime is part of an AMD Research
 initiative to provide GPU-centric networking accessible from within a kernel.
 RO_NET enables fine-grained GPU networking through a simple, OpenSHMEM-like
 interface that does not require ending a kernel.  Intra-kernel networking
-greatly simplifies application code complexity as well as enabling more
-fine-grained communication/computation overlap than traditional host-driven
-networking.
+simplifies application code complexity as well as enabling more fine-grained
+communication/computation overlap than traditional host-driven networking.
 
 The core of RO_NET's design consists of device- and host-side runtimes that
 are linked to the application.  The GPU runtime forwards RO_NET networking
@@ -22,8 +21,9 @@ or AMD Research.
 
 RO_NET base requirements:
 * ROCm version 2.6 or greater
-* AMD Vega-class GPU (MI-*, Vega 56, Vega 64, Radeon VII)
-* Either MPI or OpenSHMEM host install (See Building the Dependencies)
+* AMD GFX9 GPUs (e.g.: MI25, Vega 56, Vega 64, MI50, MI60, Radeon VII)
+* Either MPI or OpenSHMEM host install, as described in
+  [Building the Dependencies](Building the Dependencies)
 
 RO_NET optional requirements
  * For Documentation:
@@ -49,8 +49,8 @@ Then, to configure the build environment:
 
     ./configure
 
-RO_NET supports multiple options to tune features and optimize your
-installation:
+RO_NET supports multiple configuration options to tune features and optimize
+your installation:
 
     --enable-gpu-heap
         This option enables the allocation of the OpenSHMEM symmetric heap on

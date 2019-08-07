@@ -90,18 +90,18 @@ ro_net_status_t ro_net_pre_init(ro_net_handle_t **ro_net_gpu_handle);
  * @brief Allocate GPU/CPU queues and optionally spawn progress threads.
  *
  * @param[out] ro_net_gpu_handle CPU side handle.
- * @param[in] num_wgs            Maximum number of work-groups spawned by any
- *                               kernel that uses RO_NET.
  * @param[in] num_threads        Number of CPU helper threads per CPU
  *                               OpenSHMEM PE.
- * @param[in] num_queues         Number of producer/consumer queues for the
- *                               runtime to use.
- *
+ * @param[in] num_queues         Force RO_NET to use this many queues.  By
+ *                               default RO_NET will allocate worst-case for
+ *                               the hardware assuming the minimum WG size,
+ *                               but this option can be used to reduce queue
+ *                               memory if the programmer knows better.
  * @return Status of the initialization.
  *
  */
 ro_net_status_t ro_net_init(ro_net_handle_t **ro_net_gpu_handle,
-                            int num_wgs,  int num_threads, int num_queues);
+                            int num_threads, int num_queues = 0);
 
 /**
  * @brief User visible progress function.  This function should be used only if
@@ -110,12 +110,15 @@ ro_net_status_t ro_net_init(ro_net_handle_t **ro_net_gpu_handle,
  * messages.  The function will return when all GPU threads have called
  * ro_net_finalize().
  *
- * @param[in] ro_net_gpu_handle CPU side handle.
+ * @param[in] ro_net_ gpu_handle CPU side handle.
+ * @param[in] num_wgs Number of work-groups that must call finalize before
+ *                    ro_net_forward() will return.
  *
  * @return Status of operation.
  *
  */
-ro_net_status_t ro_net_forward(ro_net_handle_t * ro_net_gpu_handle);
+ro_net_status_t ro_net_forward(ro_net_handle_t * ro_net_gpu_handle,
+                               int num_wgs);
 
 /**
  * @brief Function that dumps internal stats to stdout.

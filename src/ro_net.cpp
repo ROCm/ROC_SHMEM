@@ -101,16 +101,8 @@ ro_net_pre_init(ro_net_handle_t** ro_net_gpu_handle_ptr_p)
 
 ro_net_status_t
 ro_net_init(ro_net_handle_t** ro_net_gpu_handle_ptr_p,
-                      int num_wgs, int num_threads, int num_queues = 0)
+            int num_threads, int num_queues)
 {
-    if (num_wgs <= 0 )
-        return RO_NET_INVALID_ARGUMENTS;
-
-    if (num_threads > 0 &&
-        ((num_queues < num_threads) || ((num_queues % num_threads) != 0))) {
-        return RO_NET_INVALID_ARGUMENTS;
-    }
-
     struct ro_net_handle *ro_net_gpu_handle =
         (ro_net_handle *) *ro_net_gpu_handle_ptr_p;
 
@@ -118,21 +110,41 @@ ro_net_init(ro_net_handle_t** ro_net_gpu_handle_ptr_p,
     if (hipGetDeviceCount(&count) != hipSuccess)
         return RO_NET_UNKNOWN_ERROR;
 
+    if (count == 0) {
+        std::cerr << "No GPU found!" << std::endl;
+        exit(-1);
+    }
 
-    #ifdef RECYCLE_QUEUES
+    if (count > 1) {
+        std::cerr << "More than one GPU on this node.  RO_NET currently only "
+            << "supports one GPU per node and will use device 0" << std::endl;
+    }
+
     // Take advantage of the fact that only so many WGs can be scheduled on
     // the HW to limit the number of queues.  For now, I'm being ultra
     // conservative and allocating for worst case.
-    if (!num_queues)
-        num_queues = (num_wgs < 2560) ? num_wgs : 2560;
-    #else
-    // We can't use atomics to cleverly reuse queues, so we will just
-    // allocate a queue per WG
-    if (!num_queues)
-        num_queues = num_wgs;
-    else
-        assert(num_queues == num_wgs);
-    #endif
+    int num_cus;
+    if (hipDeviceGetAttribute(&num_cus,
+        hipDeviceAttributeMultiprocessorCount, 0)) {
+        return RO_NET_UNKNOWN_ERROR;
+    }
+    // Even though we can only have 32 WGs on a CU max, we reserve queues
+    // for 40 because we statically bind them to WV slots, and we don't
+    // know which of the 40 slots will be used by the 32 WGs.
+    int max_num_queues = num_cus * 40;
+    if (num_queues > max_num_queues) {
+        std::cerr << "User requested more queues than can concurrently be "
+            << "used by the hardware.  Overriding to " << max_num_queues
+            << " queues." << std::endl;
+        num_queues = max_num_queues;
+    } else if (!num_queues) {
+        num_queues = max_num_queues;
+    }
+
+    if (num_threads > 0 &&
+        ((num_queues < num_threads) || ((num_queues % num_threads) != 0))) {
+        return RO_NET_INVALID_ARGUMENTS;
+    }
 
     ro_net_status_t return_code;
 
@@ -161,7 +173,6 @@ ro_net_init(ro_net_handle_t** ro_net_gpu_handle_ptr_p,
 
     ro_net_gpu_handle->num_threads = num_threads;
     ro_net_gpu_handle->num_queues = num_queues;
-    ro_net_gpu_handle->num_wgs = num_wgs;
     ro_net_gpu_handle->done_flag = 0;
     ro_net_gpu_handle->num_pes = transport->getNumPes();
     ro_net_gpu_handle->my_pe = transport->getMyPe();
@@ -254,7 +265,7 @@ ro_net_init(ro_net_handle_t** ro_net_gpu_handle_ptr_p,
 // Host visible progress engine for 0 service thread mode.  Returns when
 // each WG calls net_finalize.
 ro_net_status_t
-ro_net_forward(ro_net_handle_t *ro_net_gpu_handle_p)
+ro_net_forward(ro_net_handle_t *ro_net_gpu_handle_p, int num_wgs)
 {
     struct ro_net_handle * ro_net_gpu_handle =
         (struct ro_net_handle *) ro_net_gpu_handle_p;
@@ -277,7 +288,7 @@ ro_net_forward(ro_net_handle_t *ro_net_gpu_handle_p)
             if (finalize)
                 finalize_count++;
 
-            if (finalize_count == ro_net_gpu_handle->num_wgs)
+            if (finalize_count == num_wgs)
                 return RO_NET_SUCCESS;
         }
     }

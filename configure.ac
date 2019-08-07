@@ -45,13 +45,6 @@ AC_ARG_ENABLE(
     [])
 
 AC_ARG_ENABLE(
-    [recycle_queues],
-    [AC_HELP_STRING([--enable-recycle-queues],
-                   [Limits the number of queues to the max number of concurrently running WGs (default=no)])],
-    [AC_DEFINE([RECYCLE_QUEUES], [1], [enabling queue recycling])],
-    [])
-
-AC_ARG_ENABLE(
     [debug],
     [AC_HELP_STRING([--enable-debug],
                    [enable debug prints (default=no)])],

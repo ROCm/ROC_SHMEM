@@ -134,8 +134,7 @@ setup(int argc, char* argv[], int *num_wgs, int* num_threads,
 
     assert(ro_net_pre_init(handle) == RO_NET_SUCCESS);
 
-    assert(ro_net_init(
-        handle, *num_wgs, *num_threads, *num_wgs) == RO_NET_SUCCESS);
+    assert(ro_net_init(handle, *num_threads, *num_wgs) == RO_NET_SUCCESS);
 
     *numprocs = ro_net_n_pes();
     *myid = ro_net_my_pe();

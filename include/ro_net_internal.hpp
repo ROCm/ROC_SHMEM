@@ -197,7 +197,6 @@ struct ro_net_handle {
     queue_element_t **queues;
     queue_desc_t *queue_descs;
     profiler_t   *profiler;
-    int num_wgs;
     int num_queues;
     int num_threads;
     pthread_t *worker_threads;

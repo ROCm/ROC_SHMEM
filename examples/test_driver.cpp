@@ -93,7 +93,7 @@ int main(int argc, char * argv[])
             hipEventRecord(stop_event, stream);
 
 			if (!num_threads)
-				assert(ro_net_forward(handle) == RO_NET_SUCCESS);
+				assert(ro_net_forward(handle, num_wgs) == RO_NET_SUCCESS);
 
 			hipError_t err = hipStreamSynchronize(stream);
 			if (err != hipSuccess) printf("error = %d \n", err);
