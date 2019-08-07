@@ -23,7 +23,7 @@ RO_NET base requirements:
 * ROCm version 2.6 or greater
 * AMD GFX9 GPUs (e.g.: MI25, Vega 56, Vega 64, MI50, MI60, Radeon VII)
 * Either MPI or OpenSHMEM host install, as described in
-  [Building the Dependencies](Building the Dependencies)
+  [Building the Dependencies](#building-the-dependencies)
 
 RO_NET optional requirements
  * For Documentation:
