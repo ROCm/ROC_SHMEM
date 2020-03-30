@@ -18,13 +18,13 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-TESTS = init get put get_nbi put_nbi get_swarm reduction
+TESTS = init get put get_nbi put_nbi get_swarm reduction amo_fadd amo_finc amo_fetch amo_fcswap amo_add amo_inc amo_cswap ping_pong
 check_PROGRAMS = $(TESTS)
 
 LOG_COMPILER = $(srcdir)/driver.sh "$(LAUNCH_CMD)"
 
 AM_CPPFLAGS = -I$(top_srcdir)/include
-AM_LDFLAGS = -L$(top_builddir)/src -lro_net
+AM_LDFLAGS = -L$(top_builddir)/src -lroc_shmem
 
 init_SOURCES = test_driver.cpp tests.hpp util.cpp util.h tests.hpp
 get_SOURCES = test_driver.cpp tests.hpp util.cpp util.h tests.hpp
@@ -33,3 +33,11 @@ put_nbi_SOURCES = test_driver.cpp tests.hpp util.cpp util.h tests.hpp
 get_nbi_SOURCES = test_driver.cpp tests.hpp util.cpp util.h tests.hpp
 get_swarm_SOURCES = test_driver.cpp tests.hpp util.cpp util.h tests.hpp
 reduction_SOURCES = test_driver.cpp tests.hpp util.cpp util.h tests.hpp
+amo_fadd_SOURCES = test_driver.cpp tests.hpp util.cpp util.h tests.hpp
+amo_finc_SOURCES = test_driver.cpp tests.hpp util.cpp util.h tests.hpp
+amo_fetch_SOURCES = test_driver.cpp tests.hpp util.cpp util.h tests.hpp
+amo_fcswap_SOURCES = test_driver.cpp tests.hpp util.cpp util.h tests.hpp
+amo_add_SOURCES = test_driver.cpp tests.hpp util.cpp util.h tests.hpp
+amo_inc_SOURCES = test_driver.cpp tests.hpp util.cpp util.h tests.hpp
+amo_cswap_SOURCES = test_driver.cpp tests.hpp util.cpp util.h tests.hpp
+ping_pong_SOURCES = test_driver.cpp tests.hpp util.cpp util.h tests.hpp

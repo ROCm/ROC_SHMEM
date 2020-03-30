@@ -25,34 +25,20 @@
 #include <stdio.h>
 #include <sys/time.h>
 #include "hip/hip_runtime.h"
-#include "ro_net.hpp"
+#include "roc_shmem.hpp"
 #include "util.h"
 
-#ifdef HAVE_CONFIG_H
-#include <config.h>
-#endif
+#include "config.h"
 
-#ifdef MPI_TRANSPORT
 #include <mpi.h>
-#endif
-
-#ifdef OPENSHMEM_TRANSPORT
-#include <shmem.h>
-#endif
 
 void
 Barrier() {
-    #ifdef MPI_TRANSPORT
     MPI_Barrier(MPI_COMM_WORLD);
-    #endif
-
-    #ifdef OPENSHMEM_TRANSPORT
-    shmem_barrier_all();
-    #endif
 }
 
 int64_t
-gpuCyclesToMicroseconds(int64_t cycles) 
+gpuCyclesToMicroseconds(int64_t cycles)
 {
     // dGPU asm core timer runs at 27MHz.  This is different from the core
     // clock returned by HIP.  For APU this is different and might need
@@ -78,7 +64,7 @@ void
 show_usage(std::string name)
 {
     std::cerr << "Usage: " << name << std::endl
-             << "\t-t <Number of RO_NET service threads>" << std::endl
+             << "\t-t <Number of roc_shmem service threads>" << std::endl
              << "\t-w <Number of Work-groups>" << std::endl
              << "\t-a <Algorithm number to test>" << std::endl
              << "\t-s <Maximum message size (in Bytes)>" << std::endl;
@@ -100,14 +86,14 @@ grab_number(int argc, char* argv[], int arg_id)
 
 void
 setup(int argc, char* argv[], int *num_wgs, int* num_threads,
-      uint64_t *max_msg_size, int *numprocs, int *myid, int *algorithm,
-      ro_net_handle_t **handle)
+      uint64_t *max_msg_size, int *numprocs, int *myid, int *algorithm)
 {
 
     // defaults
     *num_threads = 1;
     *num_wgs = 1;
     *max_msg_size = (1 << 20);
+    *algorithm = 0;
 
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
@@ -132,12 +118,12 @@ setup(int argc, char* argv[], int *num_wgs, int* num_threads,
         }
     }
 
-    assert(ro_net_pre_init(handle) == RO_NET_SUCCESS);
+    assert(roc_shmem_pre_init() == ROC_SHMEM_SUCCESS);
 
-    assert(ro_net_init(handle, *num_threads, *num_wgs) == RO_NET_SUCCESS);
+    assert(roc_shmem_init(*num_wgs) == ROC_SHMEM_SUCCESS);
 
-    *numprocs = ro_net_n_pes();
-    *myid = ro_net_my_pe();
+    *numprocs = roc_shmem_n_pes();
+    *myid = roc_shmem_my_pe();
 
     if (*numprocs != 2) {
         if (*myid == 0) {

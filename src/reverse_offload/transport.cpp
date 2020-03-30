@@ -22,6 +22,7 @@
 
 #include "transport.hpp"
 #include "ro_net_internal.hpp"
+#include "util.hpp"
 
 #ifdef MPI_TRANSPORT
 #define NET_CHECK(cmd) \
@@ -36,7 +37,7 @@ MPITransport::MPITransport()
     : Transport(), hostBarrierDone(0), transport_up(false), handle(nullptr)
 {
     int provided;
-    indicies = new int[INDICIES_SIZE];
+    indices = new int[INDICES_SIZE];
     NET_CHECK(MPI_Init_thread(0, 0, MPI_THREAD_MULTIPLE, &provided));
     if (provided != MPI_THREAD_MULTIPLE) {
         fprintf(stderr, "Warning requested multi-thread level is not "
@@ -48,7 +49,7 @@ MPITransport::MPITransport()
 
 MPITransport::~MPITransport()
 {
-    delete [] indicies;
+    delete [] indices;
     MPI_Finalize();
 }
 
@@ -85,15 +86,8 @@ MPITransport::submitRequestsToMPI()
     q_wgid.pop();
     mlock.unlock();
 
-    queue_desc_t *queue_desc;
-    if (queue_idx != -1)
-        queue_desc = &handle->queue_descs[queue_idx];
-    else
-        queue_desc = &handle->queue_descs[0];
-
     switch (next_element->type) {
         case RO_NET_PUT: //put
-            queue_desc->host_stats.numPut++;
             putMem(next_element->dst, next_element->src,
                                 next_element->size, next_element->PE,
                                 queue_idx, next_element->threadId, true);
@@ -104,8 +98,23 @@ MPITransport::submitRequestsToMPI()
                     next_element->size, next_element->PE));
 
             break;
+        case RO_NET_P: //put
+            {
+            // No equivalent inline OP for MPI, so allocate a temp buffer
+            // for value.
+            void * source_buffer = malloc(next_element->size);
+            memcpy(source_buffer, next_element->src, next_element->size);
+            putMem(next_element->dst, source_buffer,
+                   next_element->size, next_element->PE,
+                   queue_idx, next_element->threadId, true, true);
+
+            DPRINTF(("Received P dst %p value %p pe %d\n",
+                    next_element->dst, next_element->src,
+                    next_element->PE));
+
+            break;
+            }
         case RO_NET_GET: //get
-            queue_desc->host_stats.numGet++;
             getMem(next_element->dst, next_element->src,
                                 next_element->size, next_element->PE,
                                 queue_idx, next_element->threadId, true);
@@ -116,7 +125,6 @@ MPITransport::submitRequestsToMPI()
 
             break;
         case RO_NET_PUT_NBI: //put_nbi
-            queue_desc->host_stats.numPutNbi++;
             putMem(next_element->dst, next_element->src,
                                 next_element->size, next_element->PE,
                                 queue_idx, next_element->threadId, false);
@@ -127,7 +135,6 @@ MPITransport::submitRequestsToMPI()
 
             break;
         case RO_NET_GET_NBI: //get_nbi;
-            queue_desc->host_stats.numGetNbi++;
             getMem(next_element->dst, next_element->src,
                                 next_element->size, next_element->PE,
                                 queue_idx, next_element->threadId, false);
@@ -137,15 +144,16 @@ MPITransport::submitRequestsToMPI()
                         next_element->size, next_element->PE));
 
             break;
-        case RO_NET_FLOAT_SUM_TO_ALL: //float_sum_to_all;
-            printf("doin reduction\n");
+        case RO_NET_TO_ALL: //float_sum_to_all;
             reduction(next_element->dst, next_element->src,
                                     next_element->size,
                                     next_element->PE, queue_idx,
                                     next_element->PE,
                                     next_element->logPE_stride,
                                     next_element->PE_size, next_element->pWrk,
-                                    next_element->pSync, RO_NET_SUM,
+                                    next_element->pSync,
+                                    (ROC_SHMEM_OP) next_element->op,
+                                    (ro_net_types) next_element->datatype,
                                     next_element->threadId, true);
 
             DPRINTF(("Received FLOAT_SUM_TO_ALL dst %p src %p size %d "
@@ -165,13 +173,11 @@ MPITransport::submitRequestsToMPI()
 
         case RO_NET_FENCE: //fence
         case RO_NET_QUIET: //quiet
-            queue_desc->host_stats.numQuiet++;
             quiet(queue_idx, next_element->threadId);
             DPRINTF(("Received FENCE/QUIET\n"));
 
             break;
         case RO_NET_FINALIZE: //finalize
-            queue_desc->host_stats.numFinalize++;
             quiet(queue_idx, next_element->threadId);
             DPRINTF(("Received Finalize\n"));
 
@@ -184,7 +190,7 @@ MPITransport::submitRequestsToMPI()
     }
 }
 
-ro_net_status_t
+roc_shmem_status_t
 MPITransport::initTransport(int num_queues,
                             ro_net_handle *ro_net_gpu_handle)
 {
@@ -192,24 +198,29 @@ MPITransport::initTransport(int num_queues,
     outstanding.resize(num_queues, 0);
     transport_up = false;
     handle = ro_net_gpu_handle;
-    progress_thread = new std::thread(&MPITransport::threadProgressEngine, this);
+    progress_thread =
+        new std::thread(&MPITransport::threadProgressEngine, this);
     while (!transport_up);
-    return RO_NET_SUCCESS;
+    return ROC_SHMEM_SUCCESS;
 }
 
-ro_net_status_t
+roc_shmem_status_t
 MPITransport::finalizeTransport()
 {
     progress_thread->join();
     delete progress_thread;
-    return RO_NET_SUCCESS;
+    return ROC_SHMEM_SUCCESS;
 }
 
-ro_net_status_t
+roc_shmem_status_t
 MPITransport::allocateMemory(void **ptr, size_t size)
 {
     #ifdef GPU_HEAP
-    ro_net_device_uc_malloc(ptr, size);
+    #ifdef UC_DEVICE_ALLOCATOR
+    hipExtMallocWithFlags_assert(ptr, size, hipDeviceMallocFinegrained);
+    #else
+    hipMalloc_assert(ptr, size);
+    #endif
     #else
     hipHostMalloc_assert(ptr, size);
     #endif
@@ -224,10 +235,10 @@ MPITransport::allocateMemory(void **ptr, size_t size)
     window_vec.emplace_back(window, *ptr, size);
     DPRINTF(("Creating MPI Window ptr %p size %zu num_windows %zu\n", *ptr,
             size, window_vec.size()));
-    return RO_NET_SUCCESS;
+    return ROC_SHMEM_SUCCESS;
 }
 
-ro_net_status_t
+roc_shmem_status_t
 MPITransport::deallocateMemory(void *ptr)
 {
     if (ptr != NULL) {
@@ -242,7 +253,7 @@ MPITransport::deallocateMemory(void *ptr)
         #endif
         window_vec.erase(window_vec.begin() + idx);
     }
-    return RO_NET_SUCCESS;
+    return ROC_SHMEM_SUCCESS;
 }
 
 MPI_Comm
@@ -295,7 +306,7 @@ MPITransport::findWinIdx(void *dst) const
     exit(-1);
 }
 
-ro_net_status_t
+roc_shmem_status_t
 MPITransport::barrier(int wg_id, int threadId, bool blocking)
 {
     MPI_Request request;
@@ -304,38 +315,89 @@ MPITransport::barrier(int wg_id, int threadId, bool blocking)
     req_prop_vec.emplace_back(threadId, wg_id, blocking);
     req_vec.push_back(request);
     outstanding[wg_id]++;
-    return RO_NET_SUCCESS;
+    return ROC_SHMEM_SUCCESS;
 }
 
-ro_net_status_t
+static MPI_Op
+convertOp(ROC_SHMEM_OP op)
+{
+    switch(op) {
+        case ROC_SHMEM_SUM:
+            return MPI_SUM;
+        case ROC_SHMEM_MAX:
+            return MPI_MAX;
+        case ROC_SHMEM_MIN:
+            return MPI_MIN;
+        case ROC_SHMEM_PROD:
+            return MPI_PROD;
+        case ROC_SHMEM_AND:
+            return MPI_BAND;
+        case ROC_SHMEM_OR:
+            return MPI_BOR;
+        case ROC_SHMEM_XOR:
+            return MPI_BXOR;
+        default:
+            fprintf(stderr, "Unknown ROC_SHMEM op MPI conversion %d\n", op);
+            exit(-1);
+            return 0;
+    }
+}
+
+static MPI_Op
+convertType(ro_net_types type)
+{
+    switch(type) {
+        case RO_NET_FLOAT:
+            return MPI_FLOAT;
+        case RO_NET_DOUBLE:
+            return MPI_DOUBLE;
+        case RO_NET_INT:
+            return MPI_INT;
+        case RO_NET_LONG:
+            return MPI_LONG;
+        case RO_NET_LONG_LONG:
+            return MPI_LONG_LONG;
+        case RO_NET_SHORT:
+            return MPI_SHORT;
+        case RO_NET_LONG_DOUBLE:
+            return MPI_LONG_DOUBLE;
+        default:
+            fprintf(stderr, "Unknown ROC_SHMEM type MPI conversion %d\n",
+                    type);
+            exit(-1);
+            return 0;
+    }
+}
+
+roc_shmem_status_t
 MPITransport::reduction(void *dst, void *src, int size, int pe, int wg_id,
                         int start, int logPstride, int sizePE,
-                        void *pWrk, long *pSync, RO_NET_Op op, int threadId,
-                        bool blocking)
+                        void *pWrk, long *pSync, ROC_SHMEM_OP op,
+                        ro_net_types type, int threadId, bool blocking)
 {
     MPI_Request request;
-    // TODO: convert RO_NET_Op to MPI_OP
-    assert(op == RO_NET_SUM);
-    MPI_Op mpi_op = MPI_SUM;
+
+    MPI_Op mpi_op = convertOp(op);
+    MPI_Datatype mpi_type = convertType(type);
     MPI_Comm comm = createComm(start, logPstride, sizePE);
 
     if (dst == src) {
-        NET_CHECK(MPI_Iallreduce(MPI_IN_PLACE, dst, size, MPI_FLOAT, mpi_op,
+        NET_CHECK(MPI_Iallreduce(MPI_IN_PLACE, dst, size, mpi_type, mpi_op,
                                  comm, &request));
     } else {
-        NET_CHECK(MPI_Iallreduce(src, dst, size, MPI_FLOAT, mpi_op, comm,
+        NET_CHECK(MPI_Iallreduce(src, dst, size, mpi_type, mpi_op, comm,
                                  &request));
     }
 
     req_prop_vec.emplace_back(threadId, wg_id, blocking);
     req_vec.push_back(request);
     outstanding[wg_id]++;
-    return RO_NET_SUCCESS;
+    return ROC_SHMEM_SUCCESS;
 }
 
-ro_net_status_t
+roc_shmem_status_t
 MPITransport::putMem(void *dst, void *src, int size, int pe, int wg_id,
-                     int threadId, bool blocking)
+                     int threadId, bool blocking, bool inline_data)
 {
     int idx = findWinIdx(dst);
 
@@ -357,13 +419,13 @@ MPITransport::putMem(void *dst, void *src, int size, int pe, int wg_id,
     // though it should be in the progress loop.
     NET_CHECK(MPI_Win_flush_all(window_vec[idx].getWindow()));
 
-    req_prop_vec.emplace_back(threadId, wg_id, blocking);
+    req_prop_vec.emplace_back(threadId, wg_id, blocking, src, inline_data);
     req_vec.push_back(request);
     outstanding[wg_id]++;
-    return RO_NET_SUCCESS;
+    return ROC_SHMEM_SUCCESS;
 }
 
-ro_net_status_t
+roc_shmem_status_t
 MPITransport::getMem(void *dst, void *src, int size, int pe, int wg_id,
                      int threadId, bool blocking)
 {
@@ -379,23 +441,22 @@ MPITransport::getMem(void *dst, void *src, int size, int pe, int wg_id,
    req_prop_vec.emplace_back(threadId, wg_id, blocking);
    req_vec.push_back(request);
 
-    return RO_NET_SUCCESS;
+    return ROC_SHMEM_SUCCESS;
 }
 
-ro_net_status_t
+roc_shmem_status_t
 MPITransport::progress()
 {
     MPI_Status status;
     int flag = 0;
 
     DPRINTF(("Entering progress engine\n"));
-    std::queue<int> finished_wgs;
 
     // Enter the progress engine if there aren't any pending requests
     if (req_vec.size() == 0) {
         DPRINTF(("Probing MPI\n"));
 
-        NET_CHECK(MPI_Iprobe(handle->num_pes - 1, 1000,
+        NET_CHECK(MPI_Iprobe(num_pes - 1, 1000,
                             MPI_COMM_WORLD, &flag, &status));
 
     } else {
@@ -404,15 +465,15 @@ MPITransport::progress()
 
         // Check completion of any oustanding requests.  We check on either
         // the first 64 requests or the size of the request vector
-        int incount = (req_vec.size() < INDICIES_SIZE) ?
-            req_vec.size() : INDICIES_SIZE;
+        int incount = (req_vec.size() < INDICES_SIZE) ?
+            req_vec.size() : INDICES_SIZE;
         int outcount;
         NET_CHECK(MPI_Testsome(incount, req_vec.data(), &outcount,
-                               indicies, MPI_STATUSES_IGNORE));
+                               indices, MPI_STATUSES_IGNORE));
         // If any request has completed remove it from the outstanding request
         // vector
         for (int i = 0; i < outcount; i++) {
-            int indx = indicies[i];
+            int indx = indices[i];
             int wg_id = req_prop_vec[indx].wgId;
             int threadId = req_prop_vec[indx].threadId;
 
@@ -435,6 +496,9 @@ MPITransport::progress()
                 #endif
             }
 
+            if (req_prop_vec[indx].inline_data)
+                free(req_prop_vec[indx].src);
+
             // If the GPU has requested a quiet, notify it of completion when
             // all outstanding requests are complete.
             if (!outstanding[wg_id] && !waiting_quiet[wg_id].empty()) {
@@ -454,18 +518,18 @@ MPITransport::progress()
         }
 
         // Remove the MPI Request and the RequestProperty tracking entry
-        sort(indicies, indicies + outcount, std::greater<int>());
+        sort(indices, indices + outcount, std::greater<int>());
         for (int i = 0; i < outcount; i++) {
-            int indx = indicies[i];
+            int indx = indices[i];
             req_vec.erase(req_vec.begin() + indx);
             req_prop_vec.erase(req_prop_vec.begin() + indx);
         }
     }
 
-    return RO_NET_SUCCESS;
+    return ROC_SHMEM_SUCCESS;
 }
 
-ro_net_status_t
+roc_shmem_status_t
 MPITransport::quiet(int wg_id, int threadId)
 {
     if (!outstanding[wg_id]) {
@@ -475,7 +539,7 @@ MPITransport::quiet(int wg_id, int threadId)
     } else {
         waiting_quiet[wg_id].emplace_back(threadId);
     }
-    return RO_NET_SUCCESS;
+    return ROC_SHMEM_SUCCESS;
 }
 
 int
@@ -508,7 +572,7 @@ OpenSHMEMTransport::OpenSHMEMTransport()
     my_pe = shmem_my_pe();
 }
 
-ro_net_status_t
+roc_shmem_status_t
 OpenSHMEMTransport::initTransport(int num_queues)
 {
     // setup a context per queue
@@ -518,42 +582,42 @@ OpenSHMEMTransport::initTransport(int num_queues)
                                    ctx_vec.data() + i));
     }
 
-    return RO_NET_SUCCESS;
+    return ROC_SHMEM_SUCCESS;
 }
 
-ro_net_status_t
+roc_shmem_status_t
 OpenSHMEMTransport::finalizeTransport()
 {
     shmem_finalize();
-    return RO_NET_SUCCESS;
+    return ROC_SHMEM_SUCCESS;
 }
 
-ro_net_status_t
+roc_shmem_status_t
 OpenSHMEMTransport::allocateMemory(void **ptr, size_t size)
 {
     // TODO: only works for host memory
     if ((*ptr = shmem_malloc(size)) == nullptr)
-        return RO_NET_OOM_ERROR;
+        return ROC_SHMEM_OOM_ERROR;
     hipHostRegister_assert(*ptr, size, 0);
-    return RO_NET_SUCCESS;
+    return ROC_SHMEM_SUCCESS;
 }
 
-ro_net_status_t
+roc_shmem_status_t
 OpenSHMEMTransport::deallocateMemory(void *ptr)
 {
     hipHostUnregister_assert(ptr);
     shmem_free(ptr);
-    return RO_NET_SUCCESS;
+    return ROC_SHMEM_SUCCESS;
 }
 
-ro_net_status_t
+roc_shmem_status_t
 OpenSHMEMTransport::barrier(int wg_id)
 {
     shmem_barrier_all();
-    return RO_NET_SUCCESS;
+    return ROC_SHMEM_SUCCESS;
 }
 
-ro_net_status_t
+roc_shmem_status_t
 OpenSHMEMTransport::reduction(void *dst, void *src, int size, int pe,
                               int wg_id, int start, int logPstride, int sizePE,
                               void *pWrk, long *pSync, RO_NET_Op op)
@@ -561,26 +625,26 @@ OpenSHMEMTransport::reduction(void *dst, void *src, int size, int pe,
     assert(op == RO_NET_SUM);
     shmem_float_sum_to_all((float *) dst, (float *) src, size, pe, logPstride,
                            sizePE, (float *) pWrk, pSync);
-    return RO_NET_SUCCESS;
+    return ROC_SHMEM_SUCCESS;
 }
 
-ro_net_status_t
+roc_shmem_status_t
 OpenSHMEMTransport::putMem(void *dst, void *src, int size, int pe, int wg_id)
 {
     assert(wg_id < ctx_vec.size());
     shmem_ctx_putmem_nbi(ctx_vec[wg_id], dst, src, size, pe);
-    return RO_NET_SUCCESS;
+    return ROC_SHMEM_SUCCESS;
 }
 
-ro_net_status_t
+roc_shmem_status_t
 OpenSHMEMTransport::getMem(void *dst, void *src, int size, int pe, int wg_id)
 {
     assert(wg_id < ctx_vec.size());
     shmem_ctx_getmem_nbi(ctx_vec[wg_id], dst, src, size, pe);
-    return RO_NET_SUCCESS;
+    return ROC_SHMEM_SUCCESS;
 }
 
-ro_net_status_t
+roc_shmem_status_t
 OpenSHMEMTransport::progress(int wg_id,
                              struct ro_net_handle *ronet_gpu_handle)
 {
@@ -601,13 +665,13 @@ OpenSHMEMTransport::progress(int wg_id,
         #endif
     }
 
-    return RO_NET_SUCCESS;
+    return ROC_SHMEM_SUCCESS;
 }
 
-ro_net_status_t
+roc_shmem_status_t
 OpenSHMEMTransport::quiet(int wg_id)
 {
-    return RO_NET_SUCCESS;
+    return ROC_SHMEM_SUCCESS;
 }
 
 int

@@ -28,35 +28,46 @@
 #include "hip/hip_runtime.h"
 
 #include "util.h"
-#include "ro_net.hpp"
+#include "roc_shmem.hpp"
 #include "tests.hpp"
 
 int main(int argc, char * argv[])
 {
-
-    ro_net_handle_t *handle;
-
     int num_wgs, num_threads, algorithm, numprocs, myid;
     uint64_t max_msg_size;
-
     int testnum = 0;
+    uint64_t size =1;
 
     setup(argc, argv, &num_wgs, &num_threads, &max_msg_size, &numprocs,
-          &myid, &algorithm, &handle);
+          &myid, &algorithm);
 
-    Tester *test = Tester::Create( (TestType) algorithm);
+    Tester *test = Tester::Create( (TestType) algorithm, myid);
 
-    test->initBuffers(max_msg_size);
+    if(((TestType) algorithm) == AMO_FAddTestType  ||
+        ((TestType) algorithm) == AMO_AddTestType  ||
+        ((TestType) algorithm) == AMO_FCswapTestType  ||
+        ((TestType) algorithm) == AMO_CswapTestType  ||
+        ((TestType) algorithm) == AMO_FIncTestType ||
+        ((TestType) algorithm) == AMO_IncTestType  ||
+        ((TestType) algorithm) == AMO_FetchTestType||
+        ((TestType) algorithm) == PingPongTestType ){
+        size = 8;
+        max_msg_size = 8;
+    }
+
+    test->initBuffers(max_msg_size, wg_size);
 
     if (((TestType) algorithm) == InitTestType) {
         test->freeBuffers();
+        roc_shmem_finalize();
+        delete test;
         return 0;
     }
 
     int num_loops = loop;
 
-	hipStream_t stream;
-	hipStreamCreate(&stream);
+    hipStream_t stream;
+    hipStreamCreate(&stream);
 
     hipEvent_t start_event, stop_event;
     hipEventCreate(&start_event);
@@ -65,7 +76,7 @@ int main(int argc, char * argv[])
     uint64_t *timer;
     hipMalloc((void**)&timer, sizeof(uint64_t) * num_wgs);
 
-    for (uint64_t size = 1; size <= max_msg_size; size <<= 1) {
+    for (; size <= max_msg_size; size <<= 1) {
 
         test->resetBuffers();
 
@@ -74,45 +85,42 @@ int main(int argc, char * argv[])
 
         Barrier();
 
-        uint64_t timer_avg; 
+        uint64_t timer_avg;
         float total_kern_time;
 
-        if (myid == 0 || (((TestType) algorithm) == ReductionTestType))  {
+        if (myid == 0 || (((TestType) algorithm) == ReductionTestType) ||
+             (((TestType) algorithm) == PingPongTestType) )  {
+
             memset(timer, 0, sizeof(uint64_t) * num_wgs);
 
-            int wg_size = 64;
-			const dim3 blockSize(wg_size, 1, 1);
-			const dim3 gridSize(num_wgs, 1, 1);
-			long long int start_int, end_int;
+            const dim3 blockSize(wg_size, 1, 1);
+            const dim3 gridSize(num_wgs, 1, 1);
 
             hipEventRecord(start_event, stream);
 
-            test->launchKernel(gridSize, blockSize, stream, loop,
-                               timer, size, handle);
+            test->launchKernel(gridSize, blockSize, stream, num_loops, skip,
+                               timer, size);
 
             hipEventRecord(stop_event, stream);
 
-			if (!num_threads)
-				assert(ro_net_forward(handle, num_wgs) == RO_NET_SUCCESS);
+            hipError_t err = hipStreamSynchronize(stream);
+            if (err != hipSuccess) printf("error = %d \n", err);
 
-			hipError_t err = hipStreamSynchronize(stream);
-			if (err != hipSuccess) printf("error = %d \n", err);
-
-			// Get the average accross each WG		
-        	timer_avg = calcAvg(timer, num_wgs);
+            // Get the average accross each WG
+            timer_avg = calcAvg(timer, num_wgs);
             hipEventElapsedTime(&total_kern_time, start_event, stop_event);
             total_kern_time = total_kern_time / 1000;
-		}
+        }
 
-		Barrier();
+        Barrier();
 
         // data validation
         test->verifyResults(myid, size);
 
-		Barrier();
+        Barrier();
 
         if (myid == 0) {
-			double latency_avg = (1.0 * (timer_avg)) / (test->numMsgs());
+            double latency_avg = (1.0 * (timer_avg)) / (test->numMsgs());
             double bandwidth_avg = ((test->numMsgs() * size) /
                 (total_kern_time)) / pow(2, 30);
 
@@ -122,28 +130,26 @@ int main(int argc, char * argv[])
                     FIELD_WIDTH + 1, "Latency AVG (us)",
                     FIELD_WIDTH + 1, "Bandwidth (GB/s)");
 
-			fprintf(stdout, "%*.*f %*.*f\n",
+            fprintf(stdout, "%*.*f %*.*f\n",
                     FIELD_WIDTH, FLOAT_PRECISION, latency_avg,
                     FIELD_WIDTH, FLOAT_PRECISION, bandwidth_avg);
 
-            ro_net_dump_stats(handle);
-            ro_net_reset_stats(handle);
+            roc_shmem_dump_stats();
+            roc_shmem_reset_stats();
 
             fflush(stdout);
-		}
+        }
     }
 
-    printf("here\n");
-
     Barrier();
-	hipFree(timer);
+    hipFree(timer);
 
     test->freeBuffers();
     delete test;
 
     Barrier();
 
-    ro_net_finalize(handle);
+    roc_shmem_finalize();
 
     return 0;
 }

@@ -23,85 +23,36 @@
 #ifndef RO_NET_INTERNAL_H
 #define RO_NET_INTERNAL_H
 
-#if HAVE_CONFIG_H
-#  include <config.h>
-#endif /* HAVE_CONFIG_H */
+#include "config.h"
 
-#define  __HIP_PLATFORM_HCC__
-
-#include "hip/hip_runtime.h"
+#include <cstdint>
 #include "hdp_helper.hpp"
-#include "ro_net.hpp"
-
-#define hipCheck(cmd, msg) \
-{\
-    if (cmd != hipSuccess) {\
-        fprintf(stderr, "Unrecoverable HIP error: %s\n", msg);\
-        exit(-1);\
-    }\
-}
-
-#define hipGetDevice_assert(dev)\
-{ hipCheck(hipGetDevice(dev), "cannot get device"); }
-
-#define hipMalloc_assert(ptr, size) \
-{ hipCheck(hipMalloc(ptr, size), "cannot allocate device memory"); }
-
-#define hipExtMallocWithFlags_assert(ptr, size, flags) \
-{ hipCheck(hipExtMallocWithFlags(ptr, size, flags), \
-           "cannot allocate uncacheable device memory"); }
-
-#define hipHostMalloc_assert(ptr, size) \
-{ hipCheck(hipHostMalloc(ptr, size), "cannot allocate host memory"); }
-
-#define hipFree_assert(ptr) \
-{ hipCheck(hipFree(ptr), "cannot free device memory"); }
-
-#define hipHostFree_assert(ptr) \
-{ hipCheck(hipHostFree(ptr), "cannot free host memory"); }
-
-#define hipHostRegister_assert(ptr, size, flags) \
-{ hipCheck(hipHostRegister(ptr, size, flags), "cannot register host memory"); }
-
-#define hipHostUnregister_assert(ptr) \
-{ hipCheck(hipHostUnregister(ptr), "cannot unregister host memory"); }
 
 #define DEFAULT_QUEUE_SIZE 64
 
 #define SFENCE()   asm volatile("sfence" ::: "memory")
 
-#ifdef PROFILE
-#define PVAR_START() \
-if (handle->profiler.enabled) { \
-    start = __read_clock(); \
-}
-#define PVAR_END(x) \
-if (handle->profiler.enabled) {\
-    atomicAdd((unsigned long long *) &x, __read_clock() - start); \
-}
-#else
-#define PVAR_START()
-#define PVAR_END(x)
-#endif /* PROFILE */
-
-extern bool RO_NET_DEBUG;
-
-#ifdef DEBUG
-# define DPRINTF(x) if (RO_NET_DEBUG) printf x
-#else
-# define DPRINTF(x) do {} while (0)
-#endif
-
 enum ro_net_cmds {
     RO_NET_PUT,
+    RO_NET_P,
     RO_NET_GET,
     RO_NET_PUT_NBI,
     RO_NET_GET_NBI,
     RO_NET_FENCE,
     RO_NET_QUIET,
     RO_NET_FINALIZE,
-    RO_NET_FLOAT_SUM_TO_ALL,
+    RO_NET_TO_ALL,
     RO_NET_BARRIER_ALL,
+};
+
+enum ro_net_types {
+    RO_NET_FLOAT,
+    RO_NET_DOUBLE,
+    RO_NET_INT,
+    RO_NET_LONG,
+    RO_NET_LONG_LONG,
+    RO_NET_SHORT,
+    RO_NET_LONG_DOUBLE
 };
 
 /*
@@ -147,16 +98,9 @@ typedef struct queue_element {
     int PE_size;
     void*  pWrk;
     long*  pSync;
+    int  op;
+    int  datatype;
 } __attribute__((__aligned__(64))) queue_element_t;
-
-typedef struct host_stats {
-    uint64_t numGet;
-    uint64_t numGetNbi;
-    uint64_t numPut;
-    uint64_t numPutNbi;
-    uint64_t numQuiet;
-    uint64_t numFinalize;
-} host_stats_t;
 
 typedef struct queue_desc {
     // Read index for the queue.  Rarely read by the GPU when it thinks the
@@ -179,43 +123,46 @@ typedef struct queue_desc {
     // a seperate status variable for each work-item in a work-group
     char *status;
     char padding3[63];
-    host_stats_t host_stats;
 } __attribute__((__aligned__(64))) queue_desc_t;
 
 
-typedef struct profiler {
-    uint64_t waitingOnSlot;
-    uint64_t threadFence1;
-    uint64_t threadFence2;
-    uint64_t waitingOnHost;
-    uint64_t packQueue;
-    uint64_t shmem_wait;
-    int enabled;
-} profiler_t;
+enum ro_net_stats {
+    WAITING_ON_SLOT = 0,
+    THREAD_FENCE_1,
+    THREAD_FENCE_2,
+    WAITING_ON_HOST,
+    PACK_QUEUE,
+    SHMEM_WAIT,
+    RO_NUM_STATS
+};
+
+#ifdef PROFILE
+typedef Stats<RO_NUM_STATS> ROStats;
+#else
+typedef NullStats<RO_NUM_STATS> ROStats;
+#endif
 
 struct ro_net_handle {
     queue_element_t **queues;
     queue_desc_t *queue_descs;
-    profiler_t   *profiler;
+    ROStats *profiler;
     int num_queues;
     int num_threads;
-    pthread_t *worker_threads;
     bool done_flag;
     // 1 if available, 0 if in use
     unsigned int *queueTokens;
     unsigned int *barrier_ptr;
-    int num_pes;
-    int my_pe;
     bool *needs_quiet;
     bool *needs_blocking;
     uint64_t queue_size;
-    hsa_amd_hdp_flush_t *hdp_regs;
+    char *g_ret;
+    hdp_reg_t *hdp_regs;
 };
 
 /* Meant for local allocation on the GPU */
 struct ro_net_wg_handle {
     queue_element_t *queue;
-    profiler_t      profiler;
+    ROStats profiler;
     unsigned int *queueTokens;
     unsigned int *barrier_ptr;
     uint64_t read_idx;
@@ -225,43 +172,12 @@ struct ro_net_wg_handle {
     char *status;
     int queueTokenIndex;
     int num_queues;
-    int num_pes;
-    int my_pe;
+    char *g_ret;
     volatile unsigned int *hdp_flush;
 };
 
-typedef struct pthread_args {
-    int thread_id;
-    int num_threads;
-    struct ro_net_handle *ro_net_gpu_handle;
-} pthread_args_t;
-
-void load_elmt (__m256i* next_element, char* reg);
-
-/* Host-side internal functions */
-ro_net_status_t ro_net_free_runtime(
-    struct ro_net_handle * ro_net_gpu_handle);
-
-bool ro_net_process_queue(int queue_idx,
-                            struct ro_net_handle * ro_net_gpu_handle,
-                            bool *finalize);
-
-void *ro_net_poll(void* args);
-
-inline void ro_net_progress(int wg_id,
-                              struct ro_net_handle *ronet_gpu_handle);
-
-void ro_net_device_uc_malloc(void **ptr, size_t size);
-
 /* Device-side internal functions */
 __device__ void inline  __ro_inv() { asm volatile ("buffer_wbinvl1_vol;"); }
-__device__ uint64_t inline  __read_clock() {
-    uint64_t clock;
-    asm volatile ("s_memrealtime %0\n\t"
-                  "s_waitcnt lgkmcnt(0)\n\t"
-                    : "=s" (clock));
-    return clock;
-}
 
 __device__ bool isFull(uint64_t read_idx, uint64_t write_idx, int queue_size);
 
@@ -270,6 +186,8 @@ __device__ void build_queue_element(ro_net_cmds type, void* dst, void * src,
                                     int PE_size, void* pWrk,
                                     long* pSync,
                                     struct ro_net_wg_handle *handle,
-                                    bool blocking);
+                                    bool blocking,
+                                    ROC_SHMEM_OP op = ROC_SHMEM_SUM,
+                                    ro_net_types datatype = RO_NET_INT);
 
 #endif

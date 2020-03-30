@@ -18,60 +18,18 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-#!/bin/bash
+AM_CPPFLAGS = -I$(top_srcdir)/include
 
-echo Test Name $2
+lib_LIBRARIES = libro_net.a
 
-case $2 in
-    *"init")
-        $1 $2 -t 1 -w 1 -s 32768 -a 13
-        ;;
-    *"get")
-        $1 $2 -t 1 -w 1 -s 32768 -a 0
-        ;;
-    *"put")
-        $1 $2 -t 1 -w 1 -s 32768 -a 2
-        ;;
-    *"get_nbi")
-        $1 $2 -t 1 -w 1 -s 32768 -a 1
-        ;;
-    *"put_nbi")
-        $1 $2 -t 1 -w 1 -s 32768 -a 3
-        ;;
-    *"get_swarm")
-        $1 $2 -t 1 -w 1 -s 32768 -a 4
-        ;;
-    *"reduction")
-        $1 $2 -t 1 -w 1 -s 512 -a 5
-        ;;
-    *"amo_fadd")
-        $1 $2 -t 1 -w 1 -s 32768 -a 6
-        ;;
-    *"amo_finc")
-        $1 $2 -t 1 -w 1 -s 32768 -a 7
-        ;;
-    *"amo_fetch")
-        $1 $2 -t 1 -w 1 -s 32768 -a 8
-        ;;
-    *"amo_fcswap")
-        $1 $2 -t 1 -w 1 -s 32768 -a 9
-        ;;
-    *"amo_add")
-        $1 $2 -t 1 -w 1 -s 32768 -a 10
-        ;;
-    *"amo_inc")
-        $1 $2 -t 1 -w 1 -s 32768 -a 11
-        ;;
-    *"amo_cswap")
-        $1 $2 -t 1 -w 1 -s 32768 -a 12
-        ;;
-    *"ping_pong")
-        $1 $2 -t 1 -w 1 -s 32768 -a 14
-        ;;
-    *)
-        echo "UNKNOWN TEST TYPE: $2"
-        exit -1
-        ;;
-esac
+ACLOCAL_AMFLAGS = -Iconfig
+AM_CXXFLAGS = -g -Wall -fno-stack-protector
 
-exit $?
+include_HEADERS = $(top_srcdir)/include/ro_net.hpp
+
+libro_net_a_CXXFLAGS = $(AM_CXXFLAGS)
+libro_net_a_SOURCES = ro_net.cpp ro_net_gpu.cpp \
+    transport.cpp $(top_srcdir)/include/ro_net.hpp \
+    $(top_srcdir)/include/ro_net_internal.hpp \
+    $(top_srcdir)/include/hdp_helper.hpp include/transport.hpp \
+    $(top_srcdir)/include/ro_net.hpp

@@ -1,3 +1,4 @@
+#! /usr/bin/python
 # Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -18,60 +19,29 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-#!/bin/bash
+import os
 
-echo Test Name $2
+suffixes = [ '.cpp', '.hpp', '.c', '.h' ]
+directories = [ 'src', 'include' ]
 
-case $2 in
-    *"init")
-        $1 $2 -t 1 -w 1 -s 32768 -a 13
-        ;;
-    *"get")
-        $1 $2 -t 1 -w 1 -s 32768 -a 0
-        ;;
-    *"put")
-        $1 $2 -t 1 -w 1 -s 32768 -a 2
-        ;;
-    *"get_nbi")
-        $1 $2 -t 1 -w 1 -s 32768 -a 1
-        ;;
-    *"put_nbi")
-        $1 $2 -t 1 -w 1 -s 32768 -a 3
-        ;;
-    *"get_swarm")
-        $1 $2 -t 1 -w 1 -s 32768 -a 4
-        ;;
-    *"reduction")
-        $1 $2 -t 1 -w 1 -s 512 -a 5
-        ;;
-    *"amo_fadd")
-        $1 $2 -t 1 -w 1 -s 32768 -a 6
-        ;;
-    *"amo_finc")
-        $1 $2 -t 1 -w 1 -s 32768 -a 7
-        ;;
-    *"amo_fetch")
-        $1 $2 -t 1 -w 1 -s 32768 -a 8
-        ;;
-    *"amo_fcswap")
-        $1 $2 -t 1 -w 1 -s 32768 -a 9
-        ;;
-    *"amo_add")
-        $1 $2 -t 1 -w 1 -s 32768 -a 10
-        ;;
-    *"amo_inc")
-        $1 $2 -t 1 -w 1 -s 32768 -a 11
-        ;;
-    *"amo_cswap")
-        $1 $2 -t 1 -w 1 -s 32768 -a 12
-        ;;
-    *"ping_pong")
-        $1 $2 -t 1 -w 1 -s 32768 -a 14
-        ;;
-    *)
-        echo "UNKNOWN TEST TYPE: $2"
-        exit -1
-        ;;
-esac
+def oksuffix(f):
+    for s in suffixes:
+        if f.endswith(s):
+            return True
+    return False
 
-exit $?
+def try_index_dir(directory):
+    for dirpath,subdirs,files in os.walk(os.path.join(cwd, directory)):
+        okfiles = [f for f in files if oksuffix(f)]
+        if okfiles:
+            print >> file_list, \
+                  '\n'.join([os.path.join(dirpath, f) for f in okfiles])
+
+
+file_list = file('cscope.files', 'w')
+cwd = os.getcwd()
+for d in directories:
+    try_index_dir(d)
+file_list.close()
+
+os.system("cscope -b")

@@ -20,31 +20,22 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef _UTIL_H_
-#define _UTIL_H_
+#ifndef RTN_ROCM_HPP
+#define RTN_ROCM_HPP
 
-#include <unistd.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include "roc_shmem.hpp"
+#include "config.h"
 
-#define FIELD_WIDTH 20
-#define FLOAT_PRECISION 2
+#include <hsa.h>
+#include <hsa_ext_amd.h>
+#include <vector>
 
-int loop = 100;
-int skip = 10;
-int loop_large = 25;
-int large_message_size = 32768;
-int wg_size = 64;
+int rtn_rocm_init();
 
-int64_t gpuCyclesToMicroseconds(int64_t cycles);
+void rtn_rocm_memory_lock(void *ptr, size_t size, void **gpu_ptr, int gpu_id);
 
-void Barrier();
+void rtn_rocm_memory_unlock(void *host_ptr);
 
-void setup(int argc, char* argv[], int *num_wgs, int* num_threads,
-           uint64_t *max_msg_size, int *numprocs, int *myid, int* algorithm);
+void rtn_rocm_memory_lock_to_fine_grain(void *ptr, size_t size, void **gpu_ptr,
+                                        int gpu_id);
 
-uint64_t calcAvg(uint64_t * timer, int num_wgs);
-
-#endif /* _UTIL_H */
+#endif

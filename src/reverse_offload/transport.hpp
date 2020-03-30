@@ -23,6 +23,8 @@
 #ifndef TRANSPORT_H
 #define TRANSPORT_H
 
+#include <roc_shmem.hpp>
+
 #include "ro_net_internal.hpp"
 #include <mutex>
 #include <queue>
@@ -30,31 +32,36 @@
 class Transport
 {
   public:
-    virtual ro_net_status_t initTransport(int num_queues, struct ro_net_handle *ro_net_gpu_handle) = 0;
-    virtual ro_net_status_t finalizeTransport() = 0;
-    virtual ro_net_status_t allocateMemory(void **ptr, size_t size) = 0;
-    virtual ro_net_status_t deallocateMemory(void *ptr) = 0;
-    virtual ro_net_status_t barrier(int wg_id, int threadId, bool blocking)
+    /** Host API **/
+    virtual roc_shmem_status_t initTransport(int num_queues,
+        struct ro_net_handle *ro_net_gpu_handle) = 0;
+    virtual roc_shmem_status_t finalizeTransport() = 0;
+    virtual roc_shmem_status_t allocateMemory(void **ptr, size_t size) = 0;
+    virtual roc_shmem_status_t deallocateMemory(void *ptr) = 0;
+    virtual roc_shmem_status_t barrier(int wg_id, int threadId, bool blocking)
                                       = 0;
-    virtual ro_net_status_t reduction(void *dst, void *src, int size, int pe,
+    virtual roc_shmem_status_t reduction(void *dst, void *src, int size, int pe,
                                         int wg_id, int start, int logPstride,
                                         int sizePE, void *pWrk, long *pSync,
-                                        RO_NET_Op op, int threadId,
-                                        bool blocking) = 0;
-    virtual ro_net_status_t putMem(void *dst, void *src, int size, int pe,
-                                     int wg_id, int threadId, bool blocking)
-                                     = 0;
-    virtual ro_net_status_t getMem(void *dst, void *src, int size, int pe,
+                                        ROC_SHMEM_OP op, ro_net_types type,
+                                        int threadId, bool blocking) = 0;
+    virtual roc_shmem_status_t putMem(void *dst, void *src, int size, int pe,
+                                      int wg_id, int threadId, bool blocking,
+                                      bool inline_data = false) = 0;
+    virtual roc_shmem_status_t getMem(void *dst, void *src, int size, int pe,
                                      int wg_id, int threadId, bool blocking)
                                      = 0;
     virtual bool readyForFinalize() = 0;
-    virtual ro_net_status_t quiet(int wg_id, int threadId) = 0;
-    virtual ro_net_status_t progress() = 0;
+    virtual roc_shmem_status_t quiet(int wg_id, int threadId) = 0;
+    virtual roc_shmem_status_t progress() = 0;
     virtual int numOutstandingRequests() = 0;
-    int getMyPe() { return my_pe; }
-    int getNumPes() { return num_pes; }
+    int getMyPe() const { return my_pe; }
+    int getNumPes() const { return num_pes; }
     virtual ~Transport() { }
-    virtual void insertRequest(const queue_element_t *element, int queue_id) = 0;
+    virtual void insertRequest(const queue_element_t *element, int queue_id)
+                               = 0;
+
+    /** Device API **/
 
   protected:
     int my_pe;
@@ -72,24 +79,29 @@ class MPITransport : public Transport
   public:
     MPITransport();
     virtual ~MPITransport();
-    ro_net_status_t initTransport(int num_queues, struct ro_net_handle *ro_net_gpu_handle) override;
-    ro_net_status_t finalizeTransport() override;
-    ro_net_status_t allocateMemory(void **ptr, size_t size) override;
-    ro_net_status_t deallocateMemory(void *ptr) override;
-    ro_net_status_t barrier(int wg_id, int threadId, bool blocking) override;
-    ro_net_status_t reduction(void *dst, void *src, int size, int pe,
+    roc_shmem_status_t initTransport(int num_queues,
+        struct ro_net_handle *ro_net_gpu_handle) override;
+    roc_shmem_status_t finalizeTransport() override;
+    roc_shmem_status_t allocateMemory(void **ptr, size_t size) override;
+    roc_shmem_status_t deallocateMemory(void *ptr) override;
+    roc_shmem_status_t barrier(int wg_id, int threadId, bool blocking)
+                               override;
+    roc_shmem_status_t reduction(void *dst, void *src, int size, int pe,
                                 int wg_id, int start, int logPstride,
                                 int sizePE, void* pWrk, long *pSync,
-                                RO_NET_Op op, int threadId, bool blocking)
+                                ROC_SHMEM_OP op, ro_net_types type,
+                                int threadId, bool blocking)
                                 override;
-    ro_net_status_t putMem(void *dst, void *src, int size, int pe,
-                             int wg_id, int threadId, bool blocking) override;
-    ro_net_status_t getMem(void *dst, void *src, int size, int pe, int wg_id,
-                             int threadId, bool blocking) override;
-    ro_net_status_t quiet(int wg_id, int threadId) override;
-    ro_net_status_t progress() override;
+    roc_shmem_status_t putMem(void *dst, void *src, int size, int pe,
+                              int wg_id, int threadId, bool blocking,
+                              bool inline_data = false) override;
+    roc_shmem_status_t getMem(void *dst, void *src, int size, int pe,
+                              int wg_id, int threadId, bool blocking) override;
+    roc_shmem_status_t quiet(int wg_id, int threadId) override;
+    roc_shmem_status_t progress() override;
     virtual int numOutstandingRequests() override;
-    virtual void insertRequest(const queue_element_t *element, int queue_id) override;
+    virtual void insertRequest(const queue_element_t *element, int queue_id)
+        override;
     virtual bool readyForFinalize() { return !transport_up; }
 
   private:
@@ -135,9 +147,17 @@ class MPITransport : public Transport
         int threadId;
         int wgId;
         bool blocking;
+        void *src;
+        bool inline_data;
+
+        RequestProperties(int _threadId, int _wgId, bool _blocking, void *_src,
+                          bool _inline_data)
+            : threadId(_threadId), wgId(_wgId), blocking(_blocking),
+              src(_src), inline_data(_inline_data) {}
 
         RequestProperties(int _threadId, int _wgId, bool _blocking)
-            : threadId(_threadId), wgId(_wgId), blocking(_blocking) {}
+            : threadId(_threadId), wgId(_wgId), blocking(_blocking),
+              src(nullptr), inline_data(false) {}
 
     };
 
@@ -159,13 +179,13 @@ class MPITransport : public Transport
     std::queue<int> q_wgid;
     std::mutex queue_mutex;
 
-    volatile int hostBarrierDone;
+    volatile int hostBarrierDone = false;
 
-    volatile bool transport_up;
-    ro_net_handle *handle;
-    std::thread *progress_thread;
-    int *indicies;
-    const int INDICIES_SIZE = 128;
+    volatile bool transport_up = false;
+    ro_net_handle *handle = nullptr;
+    std::thread *progress_thread = nullptr;
+    int *indices = nullptr;
+    const int INDICES_SIZE = 128;
 };
 #endif
 
@@ -177,22 +197,23 @@ class OpenSHMEMTransport : public Transport
 {
   public:
     OpenSHMEMTransport();
-    ro_net_status_t initTransport(int num_queues, struct ro_net_handle *ro_net_gpu_handle) override;
-    ro_net_status_t finalizeTransport() override;
-    ro_net_status_t allocateMemory(void **ptr, size_t size) override;
-    ro_net_status_t deallocateMemory(void *ptr) override;
-    ro_net_status_t barrier(int wg_id) override;
-    ro_net_status_t reduction(void *dst, void *src, int size, int pe,
+    roc_shmem_status_t initTransport(int num_queues,
+                                     struct ro_net_handle *ro_net_gpu_handle)
+                                     override;
+    roc_shmem_status_t finalizeTransport() override;
+    roc_shmem_status_t allocateMemory(void **ptr, size_t size) override;
+    roc_shmem_status_t deallocateMemory(void *ptr) override;
+    roc_shmem_status_t barrier(int wg_id) override;
+    roc_shmem_status_t reduction(void *dst, void *src, int size, int pe,
                                 int wg_id, int start, int logPstride,
                                 int sizePE, void* pWrk, long* pSync,
                                 RO_NET_Op op) override;
-    ro_net_status_t putMem(void *dst, void *src, int size, int pe, int wg_id)
-                             override;
-    ro_net_status_t getMem(void *dst, void *src, int size, int pe, int wg_id)
-                             override;
-    ro_net_status_t quiet(int wg_id) override;
-    ro_net_status_t progress()
-                               override;
+    roc_shmem_status_t putMem(void *dst, void *src, int size, int pe,
+                              int wg_id) override;
+    roc_shmem_status_t getMem(void *dst, void *src, int size, int pe,
+                              int wg_id) override;
+    roc_shmem_status_t quiet(int wg_id) override;
+    roc_shmem_status_t progress() override;
     virtual int numOutstandingRequests() override;
 
   private:
