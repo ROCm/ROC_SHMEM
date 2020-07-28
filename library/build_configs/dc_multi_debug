@@ -1,0 +1,25 @@
+#!/bin/bash
+
+if [ -z $1 ]
+then
+  install_path=~/rocshmem
+else
+  install_path=$1
+fi
+
+src_path=$(dirname "$(realpath $0)")/..
+
+cmake \
+    -DCMAKE_BUILD_TYPE=Debug \
+    -DCMAKE_INSTALL_PREFIX=$install_path \
+    -DCMAKE_VERBOSE_MAKEFILE=ON \
+    -DDEBUG=ON \
+    -DPROFILE=OFF \
+    -DUSE_DC=ON \
+    -DUSE_HDP_MAP=OFF \
+    -DUSE_IPC=OFF \
+    -DUSE_THREADS=ON \
+    -DWF_COAL=OFF \
+    $src_path
+cmake --build . --parallel 8
+cmake --install .

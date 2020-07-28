@@ -1,11 +1,6 @@
-Makefile.in
-aclocal.m4
-autom4te.cache
-config.h.in
-config
-config/*
-configure
-docs/Makefile.in
-examples/Makefile.in
-src/Makefile.in
+**/Makefile
+CMakeCache.txt
+CMakeFiles/
+**/cmake_install.cmake
 cscope.*
+**/build/*

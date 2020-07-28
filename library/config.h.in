@@ -1,0 +1,7 @@
+#cmakedefine DEBUG
+#cmakedefine PROFILE
+#cmakedefine USE_DC
+#cmakedefine USE_HDP_MAP
+#cmakedefine USE_IPC
+#cmakedefine USE_THREADS
+#cmakedefine WF_COAL

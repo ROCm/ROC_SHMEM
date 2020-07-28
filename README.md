@@ -42,105 +42,46 @@ ROC_SHMEM optional requirements
  * For Documentation:
      *  Doxygen
 
-ROC_SHMEM only supports HIP applications.  There are no plans to port to
+ROC_SHMEM only supports HIP applications. There are no plans to port to
 OpenCL.
-
-## Configuration
-
-ROC_SHMEM uses autotools as its build system.  To generate the configure file,
-first run:
-
-    ./autogen.sh
-
-Then, to configure the build environment:
-
-    ./configure
-
-ROC_SHMEM supports multiple configuration options to tune features and optimize
-your installation:
-
-    --enable-profile
-        This option builds the ROC_SHMEM runtime with profiling support. This
-        supports includes API and mechanisms to accurately measure time on the
-        GPUs as well as support for performance counters for CPU- and GPU-side
-        ROC_SHMEM statistics.
-
-    --enable-debug
-        This option enables the support of debug printfs on the host and
-        device. By default debug support is disabled.
-
-    --enable-static-queues
-        This option allocates network resources and queues one per total
-        work-group.  By default, ROC_SHMEM will only allocate total number
-        of queues that can be resident on the GPU at once and recycle them
-        when new work-groups are created.  This option can improve GPU-side
-        initialization overhead at the cost of increased memory utalization.
-
-    --enable-test
-        Build the ROC_SHMEM test programs.
-
-    --with-mpi
-        Provide the path to the MPI installation on your system.
-
-    --with-libibverbs
-        Provide path to the libibverbs installation on your system.
-
-For the RO backend:
-
-    --enable-ro-gpu-heap
-        This option enables the allocation of the OpenSHMEM symmetric heap on
-        the GPU memory. By default the heap is allocated on CPU memory.
-
-        Note: Not supported in combination with --with-openshmem.
-
-    --enable-ro-gpu-queue
-        This options allocates the ROC_SHMEM producer/consumers queues on GPU
-        memory. By default the queues are on CPU memory.
-
-    --with-openshmem
-        Provide the path to the OpenSHMEM installation on your system and
-        configure ROC_SHMEM to use OpenSHMEM as the networking transport.
-
-        Note: The OpenSHMEM transport is only used for the RO backend and is
-        experimental.  MPI is strongly recommended at this time.
-
-For the GPU-IB backend:
-
-    --enable-gpu-ib-dc
-        Support for IB Dynamic Connection (DC) protocol.
-        This mode improves significantly the scalability and memory footprint.
-
-    --enable-gpu-ib-cpu-template
-        Turn on CPU templating of IB packets.  CPU fills in static packet
-        elements which are update by the GPU.
-
-        Note: This feature is experimental.
-
-    --enable-gpu-ib-threads
-        Support multiple threads in a work-group simultaneously calling
-        ROC_SHMEM networking functions.  May have a performance overhead.
 
 ## Building and Installation
 
-After a succesfull configuration:
+ROC_SHMEM uses the CMake build system. The CMakeLists file contains
+additional details about library options.
 
-    make && make install
+To create an out-of-source build:
+
+    cd library
+    mkdir build
+    cd build
+
+Next, choose one configuration from the build_configs subdirectory. These
+scripts pass configuration options to CMake to setup canonical builds which
+are regularly tested:
+
+    ../build_configs/dc_single
+    ../build_configs/dc_multi
+    ../build_configs/rc_single
+    ../build_configs/rc_multi
+    ../build_configs/rc_multi_wf_coal
+    ../build_configs/ro_net_basic
+
 
 ## Compiling/linking and Running with ROC_SHMEM
 
 ROC_SHMEM is built as a host and device side library that can be statically
-linked to your application during its compilation using hipcc.
+linked to your application during compilation using hipcc.
 
-Duing the compilation of your application, include the ROC_SHMEM header files
+During the compilation of your application, include the ROC_SHMEM header files
 and the ROC_SHMEM library when using hipcc:
 
     -I/path-to-roc_shmem-installation/include
     -L/path-to-roc_shmem-installation/lib -lroc_shmem_
 
-NOTE: As ROC_SHMEM depends on host MPI support, you need also to
-link to an MPI runtime.  Since you must use the hipcc compiler,
-the arguments for MPI linkage must be added manually as opposed to
-using mpicc.
+NOTE: As ROC_SHMEM depends on host MPI support, you need also to link to an
+MPI runtime. Since you must use the hipcc compiler, the arguments for MPI
+linkage must be added manually as opposed to using mpicc.
 
 ## Runtime Parameters
 
@@ -173,6 +114,14 @@ using mpicc.
                         Defines the size of the producer/consumer queue per
                         work-group (each element 128B). RO backend only.
 
+    RO_NET_CPU_HEAP     (default: not set)
+                        Force symmetric heap to be in CPU memory.  RO backend
+                        only.
+
+    RO_NET_CPU_QUEUE    (default: not set)
+                        Force producer/consumer queues between CPU and GPU to
+                        be in CPU memory. RO backend only.
+
 ROC_SHMEM also requires the following environment variable be set for ROCm:
 
     export HSA_FORCE_FINE_GRAIN_PCIE=1
@@ -186,7 +135,7 @@ build time, the following environment variable must be set:
 
 ROC_SHMEM is similar to OpenSHMEM and should be familiar to programmers who
 have experience with OpenSHMEM or other PGAS network programming APIs in the
-context of CPUs.  The best way to learn how to use ROC_SHMEM is to read the
+context of CPUs. The best way to learn how to use ROC_SHMEM is to read the
 autogenerated doxygen documentation for functions described in
 include/roc_shmem.hpp, or to look at the provided sample applications in the
 examples/ folder. ROC_SHMEM is shipped with a basic test suite for the
@@ -197,7 +146,7 @@ All example programs can be run using:
 
     make check
 
-By default, mpirun will be used as the launcher for tests.  However, this can
+By default, mpirun will be used as the launcher for tests. However, this can
 be overridden using the LAUNCH_CMD runtime environment variable:
 
 e.g., `export LAUNCH_CMD=/usr/bin/mpirun -np 2 -env UCX_TLS=rc`
