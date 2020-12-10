@@ -20,51 +20,50 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef _COLLECTIVE_TESTER_HPP_
-#define _COLLECTIVE_TESTER_HPP_
+#ifndef WF_COAL_POLICY_HPP
+#define WF_COAL_POLICY_HPP
 
-#include "tester.hpp"
+#include "config.h"
 
-/******************************************************************************
- * DEVICE TEST KERNEL
- *****************************************************************************/
-__global__ void
-CollectiveTest(int loop,
-               int skip,
-               uint64_t *timer,
-               float *s_buf,
-               float *r_buf,
-               float *pWrk,
-               long *pSync,
-               int size,
-               TestType type);
+#include <hip/hip_runtime.h>
 
-/******************************************************************************
- * HOST TESTER CLASS
- *****************************************************************************/
-class CollectiveTester : public Tester
+class WfCoalOn
 {
   public:
-    explicit CollectiveTester(TesterArguments args);
-    virtual ~CollectiveTester();
-
-  protected:
-    virtual void
-    resetBuffers() override;
-
-    virtual void
-    launchKernel(dim3 gridSize,
-                 dim3 blockSize,
-                 int loop,
-                 uint64_t size) override;
-
-    virtual void
-    verifyResults(uint64_t size) override;
-
-    float *s_buf;
-    float *r_buf;
-    float *pWrk;
-    long *pSync;
+    /**
+     * Coalesce contiguous messages from a single wavefront.
+     *
+     * With regards to calling threads, the command must already be the
+     * same for active threads otherwise they must have diverged at the
+     * function call level.
+     */
+    __device__ bool
+    coalesce(int pe,
+             const void *source,
+             const void *dest,
+             size_t &size);
 };
 
+class WfCoalOff
+{
+  public:
+    __device__ bool
+    coalesce(int pe,
+             const void *source,
+             const void *dest,
+             size_t &size)
+    {
+        return true;
+    }
+};
+
+/**
+ * Compile time configuration options will enable or disable this feature.
+ */
+#ifdef USE_WF_COAL
+typedef WfCoalOn WavefrontCoalescer;
+#else
+typedef WfCoalOff WavefrontCoalescer;
 #endif
+
+#endif // WF_COAL_POLICY_HPP

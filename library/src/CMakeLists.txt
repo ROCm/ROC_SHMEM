@@ -32,6 +32,7 @@ target_sources(
     roc_shmem.cpp
     roc_shmem_gpu.cpp
     util.cpp
+    wf_coal_policy.cpp
     wg_state.cpp
 )
 

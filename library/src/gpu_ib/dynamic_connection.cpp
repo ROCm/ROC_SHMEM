@@ -41,6 +41,8 @@ DynamicConnection::DynamicConnection(GPUIBBackend *b)
 
 DynamicConnection::~DynamicConnection()
 {
+    CHECK_HIP(hipFree(vec_lids));
+    CHECK_HIP(hipFree(vec_dct_num));
 }
 
 bool
@@ -141,48 +143,48 @@ DynamicConnection::rts(dest_info_t *dest)
     return RtsState();
 }
 
-roc_shmem_status_t
+Status
 DynamicConnection::connect_dci(ibv_qp *qp, uint8_t port)
 {
-    roc_shmem_status_t status;
+    Status status;
     status = init_qp_status(qp, port);
-    if (status != ROC_SHMEM_SUCCESS) {
-        return ROC_SHMEM_UNKNOWN_ERROR;
+    if (status != Status::ROC_SHMEM_SUCCESS) {
+        return Status::ROC_SHMEM_UNKNOWN_ERROR;
     }
     status = change_status_rtr(qp, nullptr, port);
-    if (status != ROC_SHMEM_SUCCESS) {
-        return ROC_SHMEM_UNKNOWN_ERROR;
+    if (status != Status::ROC_SHMEM_SUCCESS) {
+        return Status::ROC_SHMEM_UNKNOWN_ERROR;
     }
     status = change_status_rts(qp, nullptr);
-    if (status != ROC_SHMEM_SUCCESS) {
-        return ROC_SHMEM_UNKNOWN_ERROR;
+    if (status != Status::ROC_SHMEM_SUCCESS) {
+        return Status::ROC_SHMEM_UNKNOWN_ERROR;
     }
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 DynamicConnection::create_dct(int32_t &dct_num,
                               ibv_cq *cq,
                               ibv_srq *srq,
                               uint8_t port)
 {
     if (!transport_enabled()) {
-        return ROC_SHMEM_UNKNOWN_ERROR;
+        return Status::ROC_SHMEM_UNKNOWN_ERROR;
     }
 
     auto init_attr = dct_init_attr(cq, srq, port);
     auto dct = ibv_exp_create_dct(ib_state->context, &init_attr);
 
     if (!status_good(dct)) {
-        return ROC_SHMEM_UNKNOWN_ERROR;
+        return Status::ROC_SHMEM_UNKNOWN_ERROR;
     }
 
     dct_num = dct->dct_num;
 
-    return ROC_SHMEM_SUCCESS;;
+    return Status::ROC_SHMEM_SUCCESS;;
 }
 
-roc_shmem_status_t
+Status
 DynamicConnection::create_qps_1()
 {
     ibv_srq_init_attr srq_init_attr {};
@@ -191,77 +193,77 @@ DynamicConnection::create_qps_1()
 
     srq = ibv_create_srq(ib_state->pd, &srq_init_attr);
     if (!srq) {
-        return ROC_SHMEM_UNKNOWN_ERROR;
+        return Status::ROC_SHMEM_UNKNOWN_ERROR;
     }
 
     dct_cq = ibv_create_cq(ib_state->context, 100, nullptr, nullptr, 0);
     if (!dct_cq) {
-        return ROC_SHMEM_UNKNOWN_ERROR;
+        return Status::ROC_SHMEM_UNKNOWN_ERROR;
     }
 
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 DynamicConnection::create_qps_2(int port, int my_rank,
                                 ibv_port_attr *ib_port_att)
 {
     for (int i = 0; i < num_dct; i++) {
         int32_t dct_num;
-        roc_shmem_status_t status;
+        Status status;
         status = create_dct(dct_num, dct_cq, srq, port);
-        if (status != ROC_SHMEM_SUCCESS) {
-            return ROC_SHMEM_UNKNOWN_ERROR;
+        if (status != Status::ROC_SHMEM_SUCCESS) {
+            return Status::ROC_SHMEM_UNKNOWN_ERROR;
         }
         dct_num = htobe32(dct_num);
         dcts_num[my_rank * num_dct + i] = dct_num;
     }
     lids[my_rank] = htobe16(ib_port_att->lid);
 
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 DynamicConnection::create_qps_3(int port, ibv_qp *qp, int offset,
                                 ibv_port_attr *ib_port_att)
 {
     return connect_dci(qp, port);
 }
 
-roc_shmem_status_t
+Status
 DynamicConnection::get_remote_conn(int &remote_conn)
 {
     remote_conn = num_dcis;
 
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 DynamicConnection::allocate_dynamic_members(int num_wg)
 {
     lids = (uint16_t*) malloc(sizeof(uint16_t) * backend->num_pes);
     if (lids == nullptr) {
-        return ROC_SHMEM_UNKNOWN_ERROR;
+        return Status::ROC_SHMEM_UNKNOWN_ERROR;
     }
 
     size_t num_dcts = num_dct * backend->num_pes;
     dcts_num = (uint32_t*) malloc(sizeof(uint32_t) * num_dcts);
     if (dcts_num == nullptr) {
-        return ROC_SHMEM_UNKNOWN_ERROR;
+        return Status::ROC_SHMEM_UNKNOWN_ERROR;
     }
 
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 DynamicConnection::free_dynamic_members()
 {
     free(lids);
     free(dcts_num);
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 DynamicConnection::initialize_1(int port,
                                 int num_wg)
 {
@@ -308,20 +310,26 @@ DynamicConnection::initialize_1(int port,
 
     ah = ibv_create_ah(ib_state->pd, &ah_attr);
     if (ah == nullptr) {
-        return ROC_SHMEM_UNKNOWN_ERROR;
+        return Status::ROC_SHMEM_UNKNOWN_ERROR;
     }
 
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 DynamicConnection::initialize_rkey_handle(uint32_t **heap_rkey_handle,
                                           ibv_mr *mr)
 {
     CHECK_HIP(hipMalloc(heap_rkey_handle,
                         sizeof(uint32_t) * backend->num_pes));
     (*heap_rkey_handle)[backend->my_pe]  = htobe32(mr->rkey);
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
+}
+
+void
+DynamicConnection::free_rkey_handle(uint32_t *heap_rkey_handle)
+{
+     CHECK_HIP(hipFree(heap_rkey_handle));
 }
 
 Connection::QPInitAttr

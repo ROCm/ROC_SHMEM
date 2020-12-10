@@ -4,4 +4,4 @@
 #cmakedefine USE_HDP_MAP
 #cmakedefine USE_IPC
 #cmakedefine USE_THREADS
-#cmakedefine WF_COAL
+#cmakedefine USE_WF_COAL

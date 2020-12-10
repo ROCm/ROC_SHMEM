@@ -25,6 +25,7 @@
 
 #include "util.hpp"
 #include "stats.hpp"
+#include "wf_coal_policy.hpp"
 
 #include "gpu_ib/ipc_policy.hpp"
 
@@ -56,7 +57,7 @@ class Context
      * get around the fact that there are no virtual functions for device code.
      * See the 'DISPATCH' macro and usage for more details.
      */
-    BackendType type = GPU_IB_BACKEND;
+    BackendType type = BackendType::GPU_IB_BACKEND;
 
     /**
      * Stats common to all types of Contexts.
@@ -92,17 +93,19 @@ class Context
     __device__ void lock();
     __device__ void unlock();
 
-  public:
-
     /**
-     * Attempts to coalesce basic RMA-style messages across threads in the
-     * same wavefront. If false, the calling thread was absorbed into one
-     * of its peers and can simply return. If true, the calling thread
-     * must continue sending the message with the potentially updated
-     * 'size' field.
+     * Coalesce policy for 'multi' configuration builds
      */
-    __device__ bool wavefrontNetCoalescer(int pe, const void *source,
-                                          const void *dest, size_t &size);
+    WavefrontCoalescer wf_coal;
+
+  public:
+     /*
+     * if the context is created with option SHMEM_CTX_NOSTORE means do not flush
+     * LD/ST operations (ie do not do __threadfence()), by default it is OFF
+    */
+    bool flush_stores = true;
+
+    __device__ void flushStores(){if (flush_stores) __threadfence();}
 
     __host__ Context(const Backend &handle, bool shareable);
 
@@ -145,6 +148,8 @@ class Context
 
     __device__ void quiet();
 
+    __device__ void* shmem_ptr(const void* dest, int pe);
+
     __device__ void barrier_all();
 
     __device__ int64_t
@@ -184,6 +189,17 @@ class Context
 
     template <typename T> __device__ void
     get_nbi(T *dest, const T *source, size_t nelems, int pe);
+
+    template <typename T>
+    __device__ void
+    broadcast(T *dest,
+              const T *source,
+              int nelems,
+              int pe_root,
+              int pe_start,
+              int log_pe_stride,
+              int pe_size,
+              long *p_sync);
 };
 
 struct ro_net_wg_handle;
@@ -221,6 +237,8 @@ class ROContext : public Context
 
     __device__ void quiet();
 
+    __device__ void* shmem_ptr(const void* dest, int pe);
+
     __device__ void barrier_all();
 
     __device__ void sync_all();
@@ -256,6 +274,17 @@ class ROContext : public Context
 
     template <typename T> __device__ void
     get_nbi(T *dest, const T *source, size_t nelems, int pe);
+
+    template <typename T>
+    __device__ void
+    broadcast(T *dest,
+              const T *source,
+              int nelems,
+              int pe_root,
+              int pe_start,
+              int log_pe_stride,
+              int pe_size,
+              long *p_sync);
 };
 
 class QueuePair;
@@ -263,12 +292,14 @@ class GPUIBBackend;
 
 class GPUIBContext : public Context
 {
+public:
     /**
      * Collection of queue pairs that are currently checked out by this
      * context from GPUIBBackend.
      */
+    //TODO: keep it private and destroy in destructor for better encapsulation.
     QueuePair *rtn_gpu_handle = nullptr;
-
+private:
     /**
      * Array of char * pointers corresponding to the heap base pointers VA for
      * each PE that we can communicate with.
@@ -292,6 +323,22 @@ class GPUIBContext : public Context
     internal_direct_allreduce(T *dst, const T *src, int nelems, int PE_start,
                               int logPE_stride, int PE_size, T *pWrk,
                               long *pSync);
+
+    template <typename T, ROC_SHMEM_OP Op> __device__ void
+    internal_ring_allreduce(T *dst, const T *src, int nelems,
+                            int PE_start, int logPE_stride,
+                            int PE_size, T *pWrk, long *pSync,
+                            int n_seg, int seg_size, int chunk_size);
+
+    template <typename T> __device__ void
+    internal_put_broadcast(T *dst, const T *src, int nelems, int pe_root,
+                           int PE_start, int logPE_stride, int PE_size,
+                           long *pSync);
+
+    template <typename T> __device__ void
+    internal_get_broadcast(T *dst, const T *src, int nelems, int pe_root,
+                           long *pSync);
+
 
     __device__ void
     internal_direct_barrier(int pe, int n_pes, int64_t *pSync);
@@ -336,6 +383,8 @@ class GPUIBContext : public Context
 
     __device__ void quiet();
 
+    __device__ void* shmem_ptr(const void* dest, int pe);
+
     __device__ void barrier_all();
 
     __device__ void sync_all();
@@ -371,13 +420,24 @@ class GPUIBContext : public Context
 
     template <typename T> __device__ void
     get_nbi(T *dest, const T *source, size_t nelems, int pe);
+
+    template <typename T>
+    __device__ void
+    broadcast(T *dest,
+              const T *source,
+              int nelems,
+              int pe_root,
+              int pe_start,
+              int log_pe_stride,
+              int pe_size,
+              long *p_sync);
 };
 
 #define DISPATCH(Func) \
     lock(); \
     switch (type) { \
-        case RO_BACKEND: static_cast<ROContext*>(this)->Func; break; \
-        case GPU_IB_BACKEND: static_cast<GPUIBContext*>(this)->Func; break; \
+        case BackendType::RO_BACKEND: static_cast<ROContext*>(this)->Func; break; \
+        case BackendType::GPU_IB_BACKEND: static_cast<GPUIBContext*>(this)->Func; break; \
         default: break; \
     } \
     unlock();
@@ -386,10 +446,25 @@ class GPUIBContext : public Context
     lock(); \
     auto ret_val = 0; \
     switch (type) { \
-        case RO_BACKEND: \
+        case BackendType::RO_BACKEND: \
             ret_val = static_cast<ROContext*>(this)->Func; \
             break; \
-        case GPU_IB_BACKEND: \
+        case BackendType::GPU_IB_BACKEND: \
+            ret_val = static_cast<GPUIBContext*>(this)->Func; \
+            break; \
+        default: break; \
+    } \
+    unlock(); \
+    return ret_val;
+
+#define DISPATCH_RET_PTR(Func) \
+    lock(); \
+    void *ret_val = NULL; \
+    switch (type) { \
+        case BackendType::RO_BACKEND: \
+            ret_val = static_cast<ROContext*>(this)->Func; \
+            break; \
+        case BackendType::GPU_IB_BACKEND: \
             ret_val = static_cast<GPUIBContext*>(this)->Func; \
             break; \
         default: break; \
@@ -449,15 +524,6 @@ Context::put(T *dest, const T *source, size_t nelems, int pe)
 
     ctxStats.incStat(NUM_PUT);
 
-#ifdef WF_COAL
-    // Threads in this WF that successfully coalesce just drop out
-    size_t size = nelems * sizeof(T);
-    if (!wavefrontNetCoalescer(pe, source, dest, size))
-        return;
-
-    nelems = size / sizeof(T);
-#endif
-
     DISPATCH(put(dest, source, nelems, pe));
 }
 
@@ -468,15 +534,6 @@ Context::put_nbi(T *dest, const T *source, size_t nelems, int pe)
         return;
 
     ctxStats.incStat(NUM_PUT_NBI);
-
-#ifdef WF_COAL
-    // Threads in this WF that successfully coalesce just drop out
-    size_t size = nelems * sizeof(T);
-    if (!wavefrontNetCoalescer(pe, source, dest, size))
-        return;
-
-    nelems = size / sizeof(T);
-#endif
 
     DISPATCH(put_nbi(dest, source, nelems, pe));
 }
@@ -489,15 +546,6 @@ Context::get(T *dest, const T *source, size_t nelems, int pe)
 
     ctxStats.incStat(NUM_GET);
 
-#ifdef WF_COAL
-    // Threads in this WF that successfully coalesce just drop out
-    size_t size = nelems * sizeof(T);
-    if (!wavefrontNetCoalescer(pe, source, dest, size))
-        return;
-
-    nelems = size / sizeof(T);
-#endif
-
     DISPATCH(get(dest, source, nelems, pe));
 }
 
@@ -509,16 +557,36 @@ Context::get_nbi(T *dest, const T *source, size_t nelems, int pe)
 
     ctxStats.incStat(NUM_GET_NBI);
 
-#ifdef WF_COAL
-    // Threads in this WF that successfully coalesce just drop out
-    size_t size = nelems * sizeof(T);
-    if (!wavefrontNetCoalescer(pe, source, dest, size))
-        return;
-
-    nelems = size / sizeof(T);
-#endif
-
     DISPATCH(get_nbi(dest, source, nelems, pe));
+}
+
+template <typename T>
+__device__ void
+Context::broadcast(T *dest,
+                   const T *source,
+                   int nelems,
+                   int pe_root,
+                   int pe_start,
+                   int log_pe_stride,
+                   int pe_size,
+                   long *p_sync)
+{
+    if (nelems == 0) {
+        return;
+    }
+
+    if (is_thread_zero_in_block()) {
+        ctxStats.incStat(NUM_BROADCAST);
+    }
+
+    DISPATCH(broadcast<T>(dest,
+                          source,
+                          nelems,
+                          pe_root,
+                          pe_start,
+                          log_pe_stride,
+                          pe_size,
+                          p_sync));
 }
 
 template <typename T> __device__ void

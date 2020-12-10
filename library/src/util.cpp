@@ -245,6 +245,11 @@ rocm_hdp(void)
    return hdp;
 }
 
+void free_rocm_hdp(hsa_amd_hdp_flush_t* hdp)
+{
+    hipHostFree(hdp);
+}
+
 int
 rocm_init()
 {
@@ -253,7 +258,7 @@ rocm_init()
 
     if (status != HSA_STATUS_SUCCESS) {
         printf("Failure to open HSA connection: 0x%x", status);
-        goto end;
+        return 1;
     }
 
     /* Collect information about GPU agents */
@@ -261,12 +266,9 @@ rocm_init()
 
     if (status != HSA_STATUS_SUCCESS && status != HSA_STATUS_INFO_BREAK) {
         printf("Failure to iterate HSA agents: 0x%x", status);
-        goto end;
+        return 1;
     }
     return 0;
-
-end:
-    return 1;
 }
 
 void

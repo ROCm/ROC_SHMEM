@@ -56,7 +56,7 @@ ROContext::ROContext(const Backend &b, long option)
 
     CHECK_HIP(hipMalloc(&backend_ctx, sizeof(ro_net_wg_handle)));
 
-    type = RO_BACKEND;
+    type = BackendType::RO_BACKEND;
 
     int buffer_id = b.num_wg - 1;
     b.bufferTokens[buffer_id] = 1;
@@ -85,7 +85,7 @@ ROContext::ROContext(const Backend &b, long option)
         WGState::instance()->allocateDynamicShared(sizeof(ro_net_wg_handle)));
 
     if (is_thread_zero_in_block()) {
-        type = RO_BACKEND;
+        type = BackendType::RO_BACKEND;
 
         int buffer_id = WGState::instance()->get_global_buffer_id();
 
@@ -118,56 +118,82 @@ ROContext::threadfence_system()
 __device__ void
 ROContext::putmem(void *dest, const void *source, size_t nelems, int pe)
 {
+    bool must_send_message = wf_coal.coalesce(pe, source, dest, nelems);
+    if (!must_send_message) {
+        return;
+    }
+
     build_queue_element(RO_NET_PUT, dest, (void * ) source, nelems, pe, 0, 0,
-                        nullptr, nullptr, backend_ctx, true);
+                        0, nullptr, nullptr, backend_ctx, true);
 }
 
 __device__ void
 ROContext::getmem(void *dest, const void *source, size_t nelems, int pe)
 {
+    bool must_send_message = wf_coal.coalesce(pe, source, dest, nelems);
+    if (!must_send_message) {
+        return;
+    }
+
     build_queue_element(RO_NET_GET, dest, (void *) source, nelems, pe, 0, 0,
-                        nullptr, nullptr, backend_ctx, true);
+                        0, nullptr, nullptr, backend_ctx, true);
 }
 
 __device__ void
 ROContext::putmem_nbi(void *dest, const void *source, size_t nelems, int pe)
 {
+    bool must_send_message = wf_coal.coalesce(pe, source, dest, nelems);
+    if (!must_send_message) {
+        return;
+    }
+
     build_queue_element(RO_NET_PUT_NBI, dest, (void *) source, nelems, pe, 0,
-                        0, nullptr, nullptr, backend_ctx, false);
+                        0, 0, nullptr, nullptr, backend_ctx, false);
 }
 
 __device__ void
 ROContext::getmem_nbi(void *dest, const void *source, size_t nelems, int pe)
 {
+    bool must_send_message = wf_coal.coalesce(pe, source, dest, nelems);
+    if (!must_send_message) {
+        return;
+    }
+
     build_queue_element(RO_NET_GET_NBI, dest, (void *) source, nelems, pe, 0,
-                        0, nullptr, nullptr, backend_ctx, false);
+                        0, 0,  nullptr, nullptr, backend_ctx, false);
 }
 
 __device__ void
 ROContext::fence()
 {
-    build_queue_element(RO_NET_FENCE, nullptr, nullptr, 0, 0, 0, 0, nullptr,
-                        nullptr, backend_ctx, true);
+    build_queue_element(RO_NET_FENCE, nullptr, nullptr, 0, 0, 0, 0, 0,
+                        nullptr, nullptr, backend_ctx, true);
 }
 
 __device__ void
 ROContext::quiet()
 {
-    build_queue_element(RO_NET_QUIET, nullptr, nullptr, 0, 0, 0, 0, nullptr,
-                        nullptr, backend_ctx, true);
+    build_queue_element(RO_NET_QUIET, nullptr, nullptr, 0, 0, 0, 0, 0,
+                        nullptr, nullptr, backend_ctx, true);
+}
+
+__device__ void *
+ROContext::shmem_ptr(const void* dest, int pe)
+{
+    return NULL;
 }
 
 __device__ void
 ROContext::barrier_all()
 {
-    build_queue_element(RO_NET_BARRIER_ALL,nullptr, nullptr, 0, 0, 0, 0,
+    build_queue_element(RO_NET_BARRIER_ALL,nullptr, nullptr, 0, 0, 0, 0, 0,
                         nullptr, nullptr, backend_ctx, true);
 }
 
 __device__ void
 ROContext::sync_all()
 {
-    build_queue_element(RO_NET_BARRIER_ALL, nullptr, nullptr, 0, 0, 0, 0,
+    build_queue_element(RO_NET_BARRIER_ALL, nullptr, nullptr, 0, 0, 0, 0, 0,
                         nullptr, nullptr, backend_ctx, true);
 }
 
@@ -178,7 +204,7 @@ ROContext::ctx_destroy()
         struct ro_net_handle * handle =
             static_cast<ROBackend *>(gpu_handle)->backend_handle;
 
-        build_queue_element(RO_NET_FINALIZE, nullptr, nullptr, 0, 0, 0, 0,
+        build_queue_element(RO_NET_FINALIZE, nullptr, nullptr, 0, 0, 0, 0, 0,
                             nullptr, nullptr, backend_ctx, true);
 
         int buffer_id = WGState::instance()->get_global_buffer_id();
@@ -232,8 +258,8 @@ __device__ bool isFull(uint64_t read_idx, uint64_t write_idx,
 
 __device__ void build_queue_element(ro_net_cmds type, void* dst, void * src,
                                     size_t size, int pe, int logPE_stride,
-                                    int PE_size, void* pWrk,
-                                    long *pSync,
+                                    int PE_size,  int PE_root,
+                                    void* pWrk, long *pSync,
                                     struct ro_net_wg_handle *handle,
                                     bool blocking, ROC_SHMEM_OP op,
                                     ro_net_types datatype)
@@ -303,6 +329,13 @@ __device__ void build_queue_element(ro_net_cmds type, void* dst, void * src,
         handle->queue[write_slot].pWrk = pWrk;
         handle->queue[write_slot].pSync = pSync;
         handle->queue[write_slot].op = op;
+        handle->queue[write_slot].datatype = datatype;
+    }
+    if (type == RO_NET_BROADCAST) {
+        handle->queue[write_slot].logPE_stride = logPE_stride;
+        handle->queue[write_slot].PE_size = PE_size;
+        handle->queue[write_slot].pSync = pSync;
+        handle->queue[write_slot].PE_root = PE_root;
         handle->queue[write_slot].datatype = datatype;
     }
 

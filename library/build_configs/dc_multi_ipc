@@ -16,9 +16,9 @@ cmake \
     -DDEBUG=OFF \
     -DPROFILE=OFF \
     -DUSE_DC=ON \
-    -DUSE_HDP_MAP=OFF \
-    -DUSE_IPC=OFF \
-    -DUSE_THREADS=OFF \
+    -DUSE_HDP_MAP=ON \
+    -DUSE_IPC=ON \
+    -DUSE_THREADS=ON \
     -DUSE_WF_COAL=OFF \
     $src_path
 cmake --build . --parallel 8

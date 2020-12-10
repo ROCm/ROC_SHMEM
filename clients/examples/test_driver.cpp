@@ -20,6 +20,8 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
+#include <vector>
+
 #include <roc_shmem.hpp>
 
 #include "tester.hpp"
@@ -46,18 +48,20 @@ int main(int argc, char * argv[])
      * Using the arguments we just constructed, call the tester factory
      * method to get the tester (specified by the arguments).
      */
-    Tester *test = Tester::create(args);
+    std::vector<Tester *> tests = Tester::create(args);
 
     /**
      * Run the tests
      */
-    test->execute();
+    for (auto test : tests) {
+       test->execute();
 
     /**
      * The tester factory method news the tester to create it so we clean
      * up the memory here.
      */
-    delete test;
+       delete test;
+    }
 
     /**
      * The rocshmem library needs to be cleaned up with this call. It pairs

@@ -20,20 +20,20 @@
 # IN THE SOFTWARE.
 ###############################################################################
 
-#include(DoxygenDoc)
+find_package(Doxygen)
+if (DOXYGEN_FOUND)
+   set(DOXYGEN_IN ${CMAKE_CURRENT_SOURCE_DIR}/Doxyfile.in)
+   set(DOXYGEN_SOURCE_BROWSER YES)
+   set(DOXYGEN_EXTRACT_PRIVATE YES)
+   set(DOXYGEN_MACRO_EXPANSION YES)
+   set(DOXYGEN_GENERATE_LATEX YES)
+   set(DOXYGEN_USE_PDFLATEX YES)
 
-#set(DOXYGEN_OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/doxygen/output)
-
-#add_doxygen_doc(
-    #OUTPUT_DIRECTORY ${DOXYGEN_OUTPUT}
-    #INPUT 
-        #${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ## INCLUDE_PATH
-    ##     ${CMAKE_CURRENT_BINARY_DIR}/../include
-    ##     ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    #MACRO_EXPANSION YES
-    #RECURSIVE YES
-    #GENERATE_XML YES
-    #GENERATE_LATEX YES
-    #USE_PDFLATEX YES
-#)
+   configure_file(${DOXYGEN_IN} ${DOXYGEN_OUT} @ONLY)
+   doxygen_add_docs(
+      docs
+      ${PROJECT_SOURCE_DIR}
+      COMMENT "Generate man pages"
+      MACRO_EXPANSION YES
+   )
+endif()

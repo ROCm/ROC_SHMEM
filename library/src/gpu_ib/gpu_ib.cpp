@@ -35,13 +35,13 @@
 #include "queue_pair.hpp"
 #include "wg_state.hpp"
 
-roc_shmem_status_t
+Status
 GPUIBBackend::net_free(void *ptr)
 {
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 GPUIBBackend::dump_backend_stats()
 {
     /*
@@ -102,10 +102,10 @@ GPUIBBackend::dump_backend_stats()
            FIELD_WIDTH, FLOAT_PRECISION, us_poll_cq / total_rtn_quiet_count,
            FIELD_WIDTH, FLOAT_PRECISION, us_next_cq / total_rtn_quiet_count);
 #endif
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 GPUIBBackend::reset_backend_stats()
 {
     int statblocks = connection->total_number_connections();
@@ -113,19 +113,18 @@ GPUIBBackend::reset_backend_stats()
     for (int i = 0; i < statblocks; i++)
         gpu_qps[i].profiler.resetStats();
 
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 GPUIBBackend::exchange_hdp_info()
 {
     CHECK_HIP(hipMalloc((void**) &hdp_policy, sizeof(HdpPolicy)));
     new (hdp_policy) HdpPolicy();
 
-    ibv_mr *hdp_mr = nullptr;
-    roc_shmem_status_t status;
+    Status status;
     status = connection->reg_mr(hdp_policy->get_hdp_flush_addr(), 32, &hdp_mr);
-    if (status != ROC_SHMEM_SUCCESS) {
+    if (status != Status::ROC_SHMEM_SUCCESS) {
         return status;
     }
 
@@ -139,14 +138,14 @@ GPUIBBackend::exchange_hdp_info()
     uint32_t *host_hdp_cpy =
         (uint32_t*) malloc(sizeof(uint32_t) * num_pes);
     if (host_hdp_cpy == nullptr) {
-        return ROC_SHMEM_UNKNOWN_ERROR;
+        return Status::ROC_SHMEM_UNKNOWN_ERROR;
     }
 
     uint32_t **host_hdp_address_cpy =
         (uint32_t**) malloc(sizeof(uint32_t*) * num_pes);
     if (host_hdp_address_cpy == nullptr) {
         free(host_hdp_cpy);
-        return ROC_SHMEM_UNKNOWN_ERROR;
+        return Status::ROC_SHMEM_UNKNOWN_ERROR;
     }
 
     int my_rank = my_pe;
@@ -182,10 +181,10 @@ GPUIBBackend::exchange_hdp_info()
     free(host_hdp_cpy);
     free(host_hdp_address_cpy);
 
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 GPUIBBackend::setup_atomic_region()
 {
     CHECK_HIP(hipMalloc((void**)&atomic_ret, sizeof(rtn_atomic_ret_t)));
@@ -197,36 +196,37 @@ GPUIBBackend::setup_atomic_region()
     memset(atomic_ret->atomic_base_ptr, 0,
            sizeof(uint64_t) * max_nb_atomic * num_wg);
 
-    struct ibv_mr *mr = nullptr;
-    roc_shmem_status_t status;
+    Status status;
     status = connection->reg_mr(atomic_ret->atomic_base_ptr,
                                 sizeof(uint64_t) * max_nb_atomic * num_wg,
                                 &mr);
 
-    if (status != ROC_SHMEM_SUCCESS) {
+    if (status != Status::ROC_SHMEM_SUCCESS) {
         return status;
     }
 
     atomic_ret->atomic_lkey = htobe32(mr->lkey);
 
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 GPUIBBackend::allocate_heap_memory()
 {
     // allocate and register heap memory
+    const size_t bases_size = sizeof(uint64_t*) * num_pes;
     uint64_t *host_bases_cpy =
-        (uint64_t*) malloc(sizeof(uint64_t*) * num_pes);
+        (uint64_t*) malloc(bases_size);
     if (host_bases_cpy == nullptr) {
-        return ROC_SHMEM_UNKNOWN_ERROR;
+        return Status::ROC_SHMEM_UNKNOWN_ERROR;
     }
 
+    const size_t rkeys_size = sizeof(uint32_t) * num_pes;
     uint32_t *host_rkey_cpy =
-        (uint32_t*) malloc(sizeof(uint32_t) * num_pes);
+        (uint32_t*) malloc(rkeys_size);
     if (host_rkey_cpy == nullptr) {
         free(host_bases_cpy);
-        return ROC_SHMEM_UNKNOWN_ERROR;
+        return Status::ROC_SHMEM_UNKNOWN_ERROR;
     }
 
     CHECK_HIP(hipMalloc(&heap_bases, sizeof(char*) * num_pes));
@@ -235,9 +235,9 @@ GPUIBBackend::allocate_heap_memory()
     CHECK_HIP(hipExtMallocWithFlags(&base_heap,
                                     heap_size,
                                     hipDeviceMallocFinegrained));
-    roc_shmem_status_t status;
+    Status status;
     status = connection->reg_mr(base_heap, heap_size, &heap_mr);
-    if (status != ROC_SHMEM_SUCCESS) {
+    if (status != Status::ROC_SHMEM_SUCCESS) {
         free(host_bases_cpy);
         free(host_rkey_cpy);
         return status;
@@ -250,12 +250,12 @@ GPUIBBackend::allocate_heap_memory()
 
     CHECK_HIP(hipMemcpy(host_bases_cpy,
                         heap_bases,
-                        sizeof(uint64_t*) * num_pes,
+                        bases_size,
                         hipMemcpyDeviceToHost));
 
     CHECK_HIP(hipMemcpy(host_rkey_cpy,
                         heap_rkey,
-                        sizeof(uint32_t*) * num_pes,
+                        rkeys_size,
                         hipMemcpyDeviceToHost));
 
     MPI_Allgather(MPI_IN_PLACE,
@@ -276,12 +276,12 @@ GPUIBBackend::allocate_heap_memory()
 
     CHECK_HIP(hipMemcpy(heap_bases,
                         host_bases_cpy,
-                        sizeof(uint64_t*) * num_pes,
+                        bases_size,
                         hipMemcpyHostToDevice));
 
     CHECK_HIP(hipMemcpy(heap_rkey,
                         host_rkey_cpy,
-                        sizeof(uint32_t*) * num_pes,
+                        rkeys_size,
                         hipMemcpyHostToDevice));
 
     free(host_bases_cpy);
@@ -290,17 +290,17 @@ GPUIBBackend::allocate_heap_memory()
     current_heap_offset = 0;
     lkey = heap_mr->lkey;
 
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 GPUIBBackend::initialize_ipc()
 {
     ipcImpl.ipcHostInit(my_pe, heap_bases);
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 GPUIBBackend::setup_gpu_qps()
 {
     int connections;
@@ -312,29 +312,27 @@ GPUIBBackend::setup_gpu_qps()
     for (int i = 0; i < connections; i++) {
         new (&gpu_qps[i]) QueuePair(this);
 
-        roc_shmem_status_t status;
+        Status status;
         status = connection->init_gpu_qp_from_connection(gpu_qps[i], i);
 
-        if (status != ROC_SHMEM_SUCCESS) {
+        if (status != Status::ROC_SHMEM_SUCCESS) {
             return status;
         }
     }
 
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 GPUIBBackend::setup_default_ctx()
 {
+    CHECK_HIP(hipMalloc(&default_ctx, sizeof(GPUIBContext)));
+    new (default_ctx) GPUIBContext(*this, 0);
 
-    Context *ctx;
-    CHECK_HIP(hipMalloc(&ctx, sizeof(GPUIBContext)));
-    new (ctx) GPUIBContext(*this, 0);
+    hipMemcpyToSymbol(HIP_SYMBOL(SHMEM_CTX_DEFAULT), &default_ctx,
+                      sizeof(default_ctx), 0, hipMemcpyHostToDevice);
 
-    hipMemcpyToSymbol(HIP_SYMBOL(SHMEM_CTX_DEFAULT), &ctx,
-                      sizeof(ctx), 0, hipMemcpyHostToDevice);
-
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
 GPUIBBackend::GPUIBBackend(unsigned num_wgs)
@@ -345,7 +343,7 @@ GPUIBBackend::GPUIBBackend(unsigned num_wgs)
         heap_size = atoi(value);
     }
 
-    roc_shmem_status_t status;
+    Status status;
 
 #ifdef USE_DC
     connection = new DynamicConnection(this);
@@ -354,29 +352,29 @@ GPUIBBackend::GPUIBBackend(unsigned num_wgs)
 #endif
 
     status = connection->init_mpi_once();
-    assert(status == ROC_SHMEM_SUCCESS);
+    assert(status == Status::ROC_SHMEM_SUCCESS);
 
-    type = GPU_IB_BACKEND;
+    type = BackendType::GPU_IB_BACKEND;
     MPI_Comm_size(MPI_COMM_WORLD, &num_pes);
     MPI_Comm_rank(MPI_COMM_WORLD, &my_pe);
 
     status = connection->initialize(num_wg);
-    assert(status == ROC_SHMEM_SUCCESS);
+    assert(status == Status::ROC_SHMEM_SUCCESS);
 
     status = exchange_hdp_info();
-    assert(status == ROC_SHMEM_SUCCESS);
+    assert(status == Status::ROC_SHMEM_SUCCESS);
 
     status = allocate_heap_memory();
-    assert(status == ROC_SHMEM_SUCCESS);
+    assert(status == Status::ROC_SHMEM_SUCCESS);
 
     status = initialize_ipc();
-    assert(status == ROC_SHMEM_SUCCESS);
+    assert(status == Status::ROC_SHMEM_SUCCESS);
 
     status = setup_atomic_region();
-    assert(status == ROC_SHMEM_SUCCESS);
+    assert(status == Status::ROC_SHMEM_SUCCESS);
 
     status = connection->initialize_gpu_policy(&connection_policy, heap_rkey);
-    assert(status == ROC_SHMEM_SUCCESS);
+    assert(status == Status::ROC_SHMEM_SUCCESS);
 
     roc_shmem_collective_init();
     roc_shmem_g_init();
@@ -384,10 +382,10 @@ GPUIBBackend::GPUIBBackend(unsigned num_wgs)
     connection->post_wqes();
 
     status = setup_gpu_qps();
-    assert(status == ROC_SHMEM_SUCCESS);
+    assert(status == Status::ROC_SHMEM_SUCCESS);
 
     status = setup_default_ctx();
-    assert(status == ROC_SHMEM_SUCCESS);
+    assert(status == Status::ROC_SHMEM_SUCCESS);
 }
 
 void
@@ -421,19 +419,48 @@ GPUIBBackend::roc_shmem_g_init()
     MPI_Barrier(MPI_COMM_WORLD);
 }
 
-GPUIBBackend::~GPUIBBackend()
-{
-    auto status = connection->finalize();
-    if (status) {
-        delete connection;
-    }
-    hdp_policy->~HdpPolicy();
-    CHECK_HIP(hipFree(hdp_policy));
-    CHECK_HIP(hipFree(atomic_ret));
-    CHECK_HIP(hipFree(connection_policy));
+template<typename T1, typename T2>
+typename std::enable_if<std::is_same<T1, T2>::value, bool>::type
+check_it(T1* hdp_rocm_policy) {
+   free_rocm_hdp(hdp_rocm_policy->hdp);
+   return true;
 }
 
-roc_shmem_status_t
+template<typename T1, typename T2>
+typename std::enable_if<!std::is_same<T1, T2>::value, bool>::type
+check_it(T1* hdp) {
+   return false;
+}
+
+GPUIBBackend::~GPUIBBackend()
+{
+    CHECK_HIP(hipFree(hdp_rkey));             hdp_rkey = nullptr;
+    CHECK_HIP(hipFree(hdp_address));          hdp_address = nullptr;
+
+    // free hdp:
+    //TODO: this memory leak fix is not tested becasue of known crashes when
+    // turned USE_HDP_MAP off. A better way is to destruct in the desctructor,
+    // but there is compilation issue to just provide a desctructor for host.
+    // It has no effect on HdpMapPolicy.
+    check_it<HdpPolicy, HdpRocmPolicy>(hdp_policy);
+
+    hdp_policy->~HdpPolicy();
+    CHECK_HIP(hipFree(hdp_policy));           hdp_policy=nullptr;
+    CHECK_HIP(hipFree(atomic_ret));           atomic_ret=nullptr;
+    CHECK_HIP(hipFree(heap_bases));           heap_bases = nullptr;
+    CHECK_HIP(hipFree(gpu_qps));              gpu_qps = nullptr;
+    CHECK_HIP(hipFree(default_ctx->rtn_gpu_handle));
+    CHECK_HIP(hipFree(default_ctx));          default_ctx = nullptr;
+    CHECK_HIP(hipFree(connection_policy));    connection_policy = nullptr;
+    connection->free_rkey_handle(heap_rkey);
+    auto status = connection->finalize();
+    if (status == Status::ROC_SHMEM_SUCCESS) {
+        delete connection;
+        connection = nullptr;
+    }
+}
+
+Status
 GPUIBBackend::net_malloc(void **ptr, size_t size)
 {
     *ptr = (char*)  heap_bases[my_pe] + current_heap_offset;
@@ -441,10 +468,10 @@ GPUIBBackend::net_malloc(void **ptr, size_t size)
     current_heap_offset = current_heap_offset + (size / sizeof(char));
 
     MPI_Barrier(MPI_COMM_WORLD);
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 GPUIBBackend::dynamic_shared(size_t *shared_bytes)
 {
     uint32_t heap_usage = sizeof(uint64_t) * num_pes;
@@ -459,5 +486,5 @@ GPUIBBackend::dynamic_shared(size_t *shared_bytes)
     *shared_bytes = heap_usage + rtn_usage + ipc_usage + sizeof(GPUIBContext)
         + sizeof(WGState);
 
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }

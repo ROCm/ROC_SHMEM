@@ -31,12 +31,14 @@ class DynamicConnection : public Connection
     explicit DynamicConnection(GPUIBBackend *backend);
     virtual ~DynamicConnection() override;
 
-    virtual roc_shmem_status_t get_remote_conn(int &remote_conn) override;
+    virtual Status get_remote_conn(int &remote_conn) override;
 
     virtual void post_wqes() override;
 
-    virtual roc_shmem_status_t
+    virtual Status
     initialize_rkey_handle(uint32_t **heap_rkey_handle, ibv_mr *mr) override;
+    void free_rkey_handle(uint32_t *heap_rkey_handle) override;
+
 
     uint32_t * get_vec_dct_num() const { return vec_dct_num; }
 
@@ -51,9 +53,9 @@ class DynamicConnection : public Connection
 
     virtual QPInitAttr qpattr(ibv_qp_cap cap) override;
 
-    roc_shmem_status_t connect_dci(ibv_qp *qp, uint8_t port);
+    Status connect_dci(ibv_qp *qp, uint8_t port);
 
-    roc_shmem_status_t create_dct(int32_t &dct_num,
+    Status create_dct(int32_t &dct_num,
                                   ibv_cq *cq,
                                   ibv_srq *srq,
                                   uint8_t port);
@@ -65,22 +67,22 @@ class DynamicConnection : public Connection
     ibv_exp_dct_init_attr dct_init_attr(ibv_cq *cq, ibv_srq *srq,
                                         uint8_t port) const;
 
-    virtual roc_shmem_status_t
+    virtual Status
     create_qps_1() override;
 
-    virtual roc_shmem_status_t
+    virtual Status
     create_qps_2(int port, int my_rank,
                  ibv_port_attr *ib_port_att) override;
 
-    virtual roc_shmem_status_t
+    virtual Status
     create_qps_3(int port, ibv_qp *qp, int offset,
                  ibv_port_attr *ib_port_att) override;
 
-    virtual roc_shmem_status_t allocate_dynamic_members(int num_wg) override;
+    virtual Status allocate_dynamic_members(int num_wg) override;
 
-    virtual roc_shmem_status_t free_dynamic_members() override;
+    virtual Status free_dynamic_members() override;
 
-    virtual roc_shmem_status_t
+    virtual Status
     initialize_1(int port, int num_wg) override;
 
     virtual void

@@ -85,6 +85,8 @@ class HdpRocmPolicy : public HdpBasePolicy
   public:
     __device__ HdpRocmPolicy() {};
     HdpRocmPolicy();
+
+    hsa_amd_hdp_flush_t * hdp = nullptr;
 };
 
 /*

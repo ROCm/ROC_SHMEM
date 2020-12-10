@@ -33,27 +33,33 @@ class Transport
 {
   public:
     /** Host API **/
-    virtual roc_shmem_status_t initTransport(int num_queues,
+    virtual Status initTransport(int num_queues,
         struct ro_net_handle *ro_net_gpu_handle) = 0;
-    virtual roc_shmem_status_t finalizeTransport() = 0;
-    virtual roc_shmem_status_t allocateMemory(void **ptr, size_t size) = 0;
-    virtual roc_shmem_status_t deallocateMemory(void *ptr) = 0;
-    virtual roc_shmem_status_t barrier(int wg_id, int threadId, bool blocking)
+    virtual Status finalizeTransport() = 0;
+    virtual Status allocateMemory(void **ptr, size_t size) = 0;
+    virtual Status deallocateMemory(void *ptr) = 0;
+    virtual Status barrier(int wg_id, int threadId, bool blocking)
                                       = 0;
-    virtual roc_shmem_status_t reduction(void *dst, void *src, int size, int pe,
+    virtual Status reduction(void *dst, void *src, int size, int pe,
                                         int wg_id, int start, int logPstride,
                                         int sizePE, void *pWrk, long *pSync,
                                         ROC_SHMEM_OP op, ro_net_types type,
                                         int threadId, bool blocking) = 0;
-    virtual roc_shmem_status_t putMem(void *dst, void *src, int size, int pe,
+    virtual Status broadcast(void *dst, void *src, int size, int pe,
+                                        int wg_id, int start, int logPstride,
+                                        int sizePE, int PE_root, long *pSync,
+                                        ro_net_types type,
+                                        int threadId, bool blocking) = 0;
+
+    virtual Status putMem(void *dst, void *src, int size, int pe,
                                       int wg_id, int threadId, bool blocking,
                                       bool inline_data = false) = 0;
-    virtual roc_shmem_status_t getMem(void *dst, void *src, int size, int pe,
+    virtual Status getMem(void *dst, void *src, int size, int pe,
                                      int wg_id, int threadId, bool blocking)
                                      = 0;
     virtual bool readyForFinalize() = 0;
-    virtual roc_shmem_status_t quiet(int wg_id, int threadId) = 0;
-    virtual roc_shmem_status_t progress() = 0;
+    virtual Status quiet(int wg_id, int threadId) = 0;
+    virtual Status progress() = 0;
     virtual int numOutstandingRequests() = 0;
     int getMyPe() const { return my_pe; }
     int getNumPes() const { return num_pes; }
@@ -78,26 +84,32 @@ class MPITransport : public Transport
   public:
     MPITransport();
     virtual ~MPITransport();
-    roc_shmem_status_t initTransport(int num_queues,
+    Status initTransport(int num_queues,
         struct ro_net_handle *ro_net_gpu_handle) override;
-    roc_shmem_status_t finalizeTransport() override;
-    roc_shmem_status_t allocateMemory(void **ptr, size_t size) override;
-    roc_shmem_status_t deallocateMemory(void *ptr) override;
-    roc_shmem_status_t barrier(int wg_id, int threadId, bool blocking)
+    Status finalizeTransport() override;
+    Status allocateMemory(void **ptr, size_t size) override;
+    Status deallocateMemory(void *ptr) override;
+    Status barrier(int wg_id, int threadId, bool blocking)
                                override;
-    roc_shmem_status_t reduction(void *dst, void *src, int size, int pe,
+    Status reduction(void *dst, void *src, int size, int pe,
                                 int wg_id, int start, int logPstride,
                                 int sizePE, void* pWrk, long *pSync,
                                 ROC_SHMEM_OP op, ro_net_types type,
                                 int threadId, bool blocking)
                                 override;
-    roc_shmem_status_t putMem(void *dst, void *src, int size, int pe,
+    Status broadcast(void *dst, void *src, int size, int pe,
+                                int wg_id, int start, int logPstride,
+                                int sizePE, int PE_root, long *pSync,
+                                ro_net_types type,
+                                int threadId, bool blocking)
+                                override;
+    Status putMem(void *dst, void *src, int size, int pe,
                               int wg_id, int threadId, bool blocking,
                               bool inline_data = false) override;
-    roc_shmem_status_t getMem(void *dst, void *src, int size, int pe,
+    Status getMem(void *dst, void *src, int size, int pe,
                               int wg_id, int threadId, bool blocking) override;
-    roc_shmem_status_t quiet(int wg_id, int threadId) override;
-    roc_shmem_status_t progress() override;
+    Status quiet(int wg_id, int threadId) override;
+    Status progress() override;
     virtual int numOutstandingRequests() override;
     virtual void insertRequest(const queue_element_t *element, int queue_id)
         override;
@@ -197,23 +209,27 @@ class OpenSHMEMTransport : public Transport
 {
   public:
     OpenSHMEMTransport();
-    roc_shmem_status_t initTransport(int num_queues,
+    Status initTransport(int num_queues,
                                      struct ro_net_handle *ro_net_gpu_handle)
                                      override;
-    roc_shmem_status_t finalizeTransport() override;
-    roc_shmem_status_t allocateMemory(void **ptr, size_t size) override;
-    roc_shmem_status_t deallocateMemory(void *ptr) override;
-    roc_shmem_status_t barrier(int wg_id) override;
-    roc_shmem_status_t reduction(void *dst, void *src, int size, int pe,
+    Status finalizeTransport() override;
+    Status allocateMemory(void **ptr, size_t size) override;
+    Status deallocateMemory(void *ptr) override;
+    Status barrier(int wg_id) override;
+    Status reduction(void *dst, void *src, int size, int pe,
                                 int wg_id, int start, int logPstride,
                                 int sizePE, void* pWrk, long* pSync,
                                 RO_NET_Op op) override;
-    roc_shmem_status_t putMem(void *dst, void *src, int size, int pe,
+    Status broadcast(void *dst, void *src, int size, int pe,
+                                int wg_id, int start, int logPstride,
+                                int sizePE, int PE_root, long* pSync) override;
+
+    Status putMem(void *dst, void *src, int size, int pe,
                               int wg_id) override;
-    roc_shmem_status_t getMem(void *dst, void *src, int size, int pe,
+    Status getMem(void *dst, void *src, int size, int pe,
                               int wg_id) override;
-    roc_shmem_status_t quiet(int wg_id) override;
-    roc_shmem_status_t progress() override;
+    Status quiet(int wg_id) override;
+    Status progress() override;
     virtual int numOutstandingRequests() override;
 
   private:

@@ -20,19 +20,25 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef _PRIMITIVE_TESTER_HPP_
-#define _PRIMITIVE_TESTER_HPP_
+#ifndef _BARRIER_ALL_TESTER_HPP_
+#define _BARRIER_ALL_TESTER_HPP_
 
 #include "tester.hpp"
 
 /******************************************************************************
+ * DEVICE TEST KERNEL
+ *****************************************************************************/
+__global__ void
+BarrierAllTest(TestType type);
+
+/******************************************************************************
  * HOST TESTER CLASS
  *****************************************************************************/
-class PrimitiveTester : public Tester
+class BarrierAllTester : public Tester
 {
   public:
-    explicit PrimitiveTester(TesterArguments args);
-    virtual ~PrimitiveTester();
+    explicit BarrierAllTester(TesterArguments args);
+    virtual ~BarrierAllTester();
 
   protected:
     virtual void
@@ -46,9 +52,6 @@ class PrimitiveTester : public Tester
 
     virtual void
     verifyResults(uint64_t size) override;
-
-    char *s_buf = nullptr;
-    char *r_buf = nullptr;
 };
 
 #endif

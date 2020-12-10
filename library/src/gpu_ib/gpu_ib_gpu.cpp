@@ -19,7 +19,6 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  *****************************************************************************/
-
 #include "config.h"
 
 #ifdef DEBUG
@@ -64,7 +63,7 @@ __host__
 GPUIBContext::GPUIBContext(const Backend &backend, long options)
     : Context(backend, true)
 {
-    type = GPU_IB_BACKEND;
+    type = BackendType::GPU_IB_BACKEND;
 
     int remote_conn = getNumQueuePairs();
 
@@ -95,6 +94,7 @@ GPUIBContext::GPUIBContext(const Backend &backend, long options)
     barrier_sync = b->barrier_sync;
     current_heap_offset = b->current_heap_offset;
     g_ret = b->g_ret;
+    ipcImpl.ipc_bases = b->ipcImpl.ipc_bases;
 }
 
 __device__
@@ -111,7 +111,7 @@ GPUIBContext::GPUIBContext(const Backend &b, long option)
 
     GPUIBBackend* roc_shmem_handle = static_cast<GPUIBBackend *>(gpu_handle);
 
-    type = GPU_IB_BACKEND;
+    type = BackendType::GPU_IB_BACKEND;
 
     int remote_conn = getNumQueuePairs();
 
@@ -174,9 +174,10 @@ GPUIBContext::ctx_destroy()
 __device__ void
 GPUIBContext::fence()
 {
-    ipcImpl.ipcFence();
+    //ipcImpl.ipcFence();
     for (int i = 0; i < getNumQueuePairs(); i++)
         rtn_gpu_handle[i].fence(i);
+    flushStores();
 }
 
 __device__ void
@@ -185,10 +186,15 @@ GPUIBContext::putmem_nbi(void *dest, const void *source, size_t nelems, int pe)
     GPU_DPRINTF("Function: gpu_ib_putmem_nbi\n");
 
     uint64_t L_offset = (char *) dest - base_heap[my_pe];
-    if(ipcImpl.isIpcAvailable(my_pe, pe)){
+
+    if (ipcImpl.isIpcAvailable(my_pe, pe)) {
         ipcImpl.ipcCopy(ipcImpl.ipc_bases[pe] + L_offset, (void*) source, nelems);
-    }
-    else{
+    } else {
+        bool must_send_message = wf_coal.coalesce(pe, source, dest, nelems);
+        if (!must_send_message) {
+            return;
+        }
+
         getQueuePair(pe)->put_nbi(base_heap[pe] + L_offset,
                                   source, nelems, pe, true);
     }
@@ -200,11 +206,14 @@ GPUIBContext::getmem_nbi(void *dest, const void *source, size_t nelems, int pe)
     GPU_DPRINTF("Function: gpu_ib_getmem_nbi\n");
 
     uint64_t L_offset = (char *) source - base_heap[my_pe];
-    if(ipcImpl.isIpcAvailable(my_pe, pe)){
+    if (ipcImpl.isIpcAvailable(my_pe, pe)) {
         ipcImpl.ipcCopy(dest, ipcImpl.ipc_bases[pe] + L_offset, nelems);
-    }
-    else
-    {
+    } else {
+        bool must_send_message = wf_coal.coalesce(pe, source, dest, nelems);
+        if (!must_send_message) {
+            return;
+        }
+
         getQueuePair(pe)->get_nbi(base_heap[pe] + L_offset, dest,
                               nelems, pe, true);
     }
@@ -213,9 +222,23 @@ GPUIBContext::getmem_nbi(void *dest, const void *source, size_t nelems, int pe)
 __device__ void
 GPUIBContext::quiet()
 {
-    ipcImpl.ipcFence();
+    //ipcImpl.ipcFence();
     for (int i = 0; i < getNumQueuePairs(); i++)
         rtn_gpu_handle[i].quiet_single();
+    flushStores();
+}
+
+__device__ void*
+GPUIBContext::shmem_ptr(const void* dest, int pe)
+{
+    GPU_DPRINTF("Function: gpu_ib_shmem_ptr\n");
+
+    void * ret = NULL;
+    if(ipcImpl.isIpcAvailable(my_pe, pe)){
+        uint64_t L_offset = (char *) dest - base_heap[my_pe];
+        ret = ipcImpl.ipc_bases[pe] + L_offset;
+    }
+    return ret;
 }
 
 __device__ void
@@ -226,9 +249,10 @@ GPUIBContext::getmem(void *dest, const void *source, size_t nelems, int pe)
 {
     GPU_DPRINTF("Function: gpu_ib_getmem\n");
     getmem_nbi(dest, source, nelems, pe);
-    ipcImpl.ipcFence();
+    //ipcImpl.ipcFence();
 
     getQueuePair(pe)->quiet_single();
+    flushStores();
 }
 
 __device__ void
@@ -236,9 +260,10 @@ GPUIBContext::putmem(void *dest, const void *source, size_t nelems, int pe)
 {
     GPU_DPRINTF("Function: gpu_ib_putmem\n");
     putmem_nbi(dest, source, nelems, pe);
-    ipcImpl.ipcFence();
+    //ipcImpl.ipcFence();
 
     getQueuePair(pe)->quiet_single();
+    flushStores();
 }
 
 __device__ int64_t

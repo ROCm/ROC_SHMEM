@@ -23,6 +23,8 @@
 #ifndef _TESTER_HPP_
 #define _TESTER_HPP_
 
+#include <vector>
+
 #include <roc_shmem.hpp>
 
 #include "tester_arguments.hpp"
@@ -48,7 +50,16 @@ enum TestType
     InitTestType            = 13,
     PingPongTestType        = 14,
     BarrierTestType         = 15,
-    RandomAccessTestType    = 16
+    RandomAccessTestType    = 16,
+    BarrierAllTestType      = 17,
+    SyncAllTestType         = 18,
+    SyncTestType            = 19,
+    BroadcastTestType       = 20,
+    CollectTestType         = 21,
+    FCollectTestType        = 22,
+    AllToAll                = 23,
+    AllToAllsTestType       = 24,
+    ShmemPtrTestType        = 25
 };
 
 enum OpType
@@ -56,6 +67,8 @@ enum OpType
     PutType =0,
     GetType =1
 };
+
+typedef int ShmemContextType;
 
 /******************************************************************************
  * TESTER INTERFACE
@@ -69,7 +82,7 @@ class Tester
     void
     execute();
 
-    static Tester*
+    static std::vector<Tester*>
     create(TesterArguments args);
 
   protected:
@@ -91,6 +104,7 @@ class Tester
     TesterArguments args;
 
     TestType _type;
+    ShmemContextType _shmem_context = 8; //SHMEM_CTX_WP_PRIVATE
 
     hipStream_t stream;
 

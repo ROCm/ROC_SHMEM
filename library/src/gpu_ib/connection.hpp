@@ -40,9 +40,6 @@ class QueuePair;
 
 class Connection
 {
-  private:
-    using Status = roc_shmem_status_t;
-
   protected:
     typedef struct ib_state {
         struct ibv_context *context;
@@ -150,20 +147,21 @@ class Connection
 
     Status init_mpi_once();
 
-    virtual roc_shmem_status_t get_remote_conn(int &remote_conn) = 0;
+    virtual Status get_remote_conn(int &remote_conn) = 0;
 
     unsigned total_number_connections();
 
-    virtual roc_shmem_status_t
+    virtual Status
     initialize_rkey_handle(uint32_t **heap_rkey_handle, ibv_mr *mr) = 0;
+    virtual void free_rkey_handle(uint32_t *heap_rkey_handle) = 0;
 
-    roc_shmem_status_t
+    Status
     initialize_gpu_policy(ConnectionImpl **conn, uint32_t *heap_rkey);
 
     /*
      * Populate a QueuePair for use on the GPU from the internal IB state.
      */
-    roc_shmem_status_t
+    Status
     init_gpu_qp_from_connection(QueuePair &qp, int conn_num);
 
   protected:
@@ -190,22 +188,22 @@ class Connection
     Status
     try_to_modify_qp(ibv_qp *qp, T state);
 
-    virtual roc_shmem_status_t
+    virtual Status
     create_qps_1() = 0;
 
-    virtual roc_shmem_status_t
+    virtual Status
     create_qps_2(int port, int my_rank,
                  ibv_port_attr *ib_port_att) = 0;
 
-    virtual roc_shmem_status_t
+    virtual Status
     create_qps_3(int port, ibv_qp *qp, int offset,
                  ibv_port_attr *ib_port_att) = 0;
 
-    virtual roc_shmem_status_t allocate_dynamic_members(int num_wg) = 0;
+    virtual Status allocate_dynamic_members(int num_wg) = 0;
 
-    virtual roc_shmem_status_t free_dynamic_members() = 0;
+    virtual Status free_dynamic_members() = 0;
 
-    virtual roc_shmem_status_t
+    virtual Status
     initialize_1(int port,
                  int num_wg) = 0;
 
@@ -216,7 +214,7 @@ class Connection
     virtual int
     get_sq_dv_offset(int pe_idx, int num_qps, int wg_idx) = 0;
 
-    roc_shmem_status_t
+    Status
     set_sq_dv(int num_wgs, int wg_idx, int pe_idx);
 
     /*
@@ -235,10 +233,10 @@ class Connection
 
     void init_peer_attr(ibv_exp_peer_direct_attr *attr1, int rtn_id);
 
-    roc_shmem_status_t
+    Status
     post_send(ibv_qp *qp, ibv_exp_send_wr *wr, ibv_exp_send_wr **bad_wr);
 
-    roc_shmem_status_t
+    Status
     cpu_post_wqe(ibv_qp *qp, void* addr, uint32_t lkey,
                  void* remote_addr, uint32_t rkey, size_t size,
                  ibv_ah *ah, int dc_key);
@@ -290,6 +288,7 @@ class Connection
     Status ib_init(ibv_device *ib_dev, uint8_t port);
 
     char *requested_dev = nullptr;
+    ibv_device **dev_list = nullptr;
 };
 
 #endif // __CONNECTION_HPP__

@@ -34,11 +34,12 @@ PrimitiveTest(int loop,
               char *s_buf,
               char *r_buf,
               int size,
-              TestType type)
+              TestType type,
+              ShmemContextType ctx_type)
 {
     __shared__ roc_shmem_ctx_t ctx;
     roc_shmem_wg_init();
-    roc_shmem_wg_ctx_create(SHMEM_CTX_WG_PRIVATE, &ctx);
+    roc_shmem_wg_ctx_create(ctx_type, &ctx);
 
     if (hipThreadIdx_x == 0) {
         uint64_t start;
@@ -117,7 +118,8 @@ PrimitiveTester::launchKernel(dim3 gridSize,
                        s_buf,
                        r_buf,
                        size,
-                       _type);
+                       _type,
+                       _shmem_context);
 
     num_msgs = (loop + args.skip) * gridSize.x;
     num_timed_msgs = loop * gridSize.x;

@@ -31,7 +31,7 @@ Backend::Backend(unsigned num_wgs)
     int num_cus;
     if (hipDeviceGetAttribute(&num_cus,
         hipDeviceAttributeMultiprocessorCount, 0)) {
-        exit(-ROC_SHMEM_UNKNOWN_ERROR);
+        exit(-static_cast<int>(Status::ROC_SHMEM_UNKNOWN_ERROR));
     }
 
     int max_num_wgs = num_cus * 32;
@@ -67,7 +67,7 @@ Backend::Backend(unsigned num_wgs)
                       sizeof(this), 0, hipMemcpyHostToDevice);
 }
 
-roc_shmem_status_t
+Status
 Backend::dump_stats()
 {
     const auto &stats = globalStats;
@@ -80,7 +80,7 @@ Backend::dump_stats()
             "%llu BarrierAll %llu Wait Until %llu Finalizes %llu  Coalesced "
             "%llu Atomic_FAdd %llu Atomic_FCswap %llu Atomic_FInc %llu "
             "Atomic_Fetch %llu Atomic_Add %llu Atomic_Cswap %llu "
-            "Atomic_Inc %llu Tests %llu SyncAll %llu Total %lu\n",
+            "Atomic_Inc %llu Tests %llu SHMEM_PTR %llu SyncAll %llu Total %lu\n",
             my_pe, stats.getStat(NUM_PUT), stats.getStat(NUM_P),
             stats.getStat(NUM_PUT_NBI), stats.getStat(NUM_GET),
             stats.getStat(NUM_G),
@@ -92,12 +92,12 @@ Backend::dump_stats()
             stats.getStat(NUM_ATOMIC_FINC), stats.getStat(NUM_ATOMIC_FETCH),
             stats.getStat(NUM_ATOMIC_ADD), stats.getStat(NUM_ATOMIC_CSWAP),
             stats.getStat(NUM_ATOMIC_INC), stats.getStat(NUM_TEST),
-            stats.getStat(NUM_SYNC_ALL), total);
+            stats.getStat(NUM_SHMEM_PTR), stats.getStat(NUM_SYNC_ALL), total);
 
     return dump_backend_stats();
 }
 
-roc_shmem_status_t
+Status
 Backend::reset_stats()
 {
     globalStats.resetStats();
@@ -107,6 +107,7 @@ Backend::reset_stats()
 
 Backend::~Backend()
 {
+    CHECK_HIP(hipFree(print_lock));
     CHECK_HIP(hipFree(bufferTokens));
 }
 
@@ -124,12 +125,12 @@ Backend::create_wg_state()
     Context *ctx = nullptr;
 
     switch (type) {
-        case RO_BACKEND:
+        case BackendType::RO_BACKEND:
             ctx = (Context *) WGState::instance()->
                 allocateDynamicShared(sizeof(ROContext));
             new (ctx) ROContext(*this, SHMEM_CTX_WG_PRIVATE);
             break;
-        case GPU_IB_BACKEND:
+        case BackendType::GPU_IB_BACKEND:
             ctx = (Context *) WGState::instance()->
                 allocateDynamicShared(sizeof(GPUIBContext));
             new (ctx) GPUIBContext(*this, SHMEM_CTX_WG_PRIVATE);

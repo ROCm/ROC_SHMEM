@@ -56,6 +56,9 @@ TesterArguments::TesterArguments(int argc, char *argv[])
         } else if (arg == "-ta") {
             i++;
             thread_access = atoi(argv[i]);
+        } else if (arg == "-x") {
+            i++;
+            shmem_context = atoi(argv[i]);
         } else {
             show_usage(argv[0]);
             exit(-1);
@@ -73,6 +76,7 @@ TesterArguments::TesterArguments(int argc, char *argv[])
       case AMO_IncTestType:
       case AMO_FetchTestType:
       case BarrierTestType:
+      case ShmemPtrTestType:
         min_msg_size = 8;
         max_msg_size = 8;
         break;
@@ -100,6 +104,7 @@ TesterArguments::show_usage(std::string executable_name)
     std::cout << "\t-c <Coalescing Coefficient>\n";
     std::cout << "\t-o <Operation type for the random_access test>\n";
     std::cout << "\t-ta <Number of Thread Accessing the communication>\n";
+    std::cout << "\t-x <shmem context>\n";
 }
 
 void
@@ -108,10 +113,15 @@ TesterArguments::get_rocshmem_arguments()
     numprocs = roc_shmem_n_pes();
     myid = roc_shmem_my_pe();
 
-    if (numprocs != 2) {
-        if (myid == 0) {
-            std::cerr << "This test requires exactly two processes\n";
+    TestType type = (TestType) algorithm;
+    if ((type != ReductionTestType) &&
+        (type != BarrierAllTestType) &&
+        (type != BroadcastTestType)) {
+        if (numprocs != 2) {
+            if (myid == 0) {
+                std::cerr << "This test requires exactly two processes\n";
+            }
+            exit(-1);
         }
-        exit(-1);
     }
 }

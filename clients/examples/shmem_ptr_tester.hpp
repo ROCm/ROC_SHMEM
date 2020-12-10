@@ -20,19 +20,19 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef _PRIMITIVE_TESTER_HPP_
-#define _PRIMITIVE_TESTER_HPP_
+#ifndef _SHMEM_PTR_TESTER_HPP_
+#define _SHMEM_PTR_TESTER_HPP_
 
 #include "tester.hpp"
 
 /******************************************************************************
  * HOST TESTER CLASS
  *****************************************************************************/
-class PrimitiveTester : public Tester
+class ShmemPtrTester : public Tester
 {
   public:
-    explicit PrimitiveTester(TesterArguments args);
-    virtual ~PrimitiveTester();
+    explicit ShmemPtrTester(TesterArguments args);
+    virtual ~ShmemPtrTester();
 
   protected:
     virtual void
@@ -47,8 +47,9 @@ class PrimitiveTester : public Tester
     virtual void
     verifyResults(uint64_t size) override;
 
-    char *s_buf = nullptr;
     char *r_buf = nullptr;
+    int  *_available = nullptr;
+
 };
 
 #endif

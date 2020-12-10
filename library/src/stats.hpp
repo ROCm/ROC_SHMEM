@@ -47,7 +47,9 @@ enum roc_shmem_stats {
     NUM_ATOMIC_CSWAP,
     NUM_ATOMIC_INC,
     NUM_TEST,
+    NUM_SHMEM_PTR,
     NUM_SYNC_ALL,
+    NUM_BROADCAST,
     NUM_STATS
 };
 

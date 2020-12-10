@@ -67,12 +67,13 @@ RandomAccessTest(int loop,
                int num_waves,
                uint32_t * threads_bins,
                uint32_t * off_bins,
-               uint32_t *PE_bins)
+               uint32_t *PE_bins,
+               ShmemContextType ctx_type)
 {
     uint64_t start;
     __shared__ roc_shmem_ctx_t ctx;
     roc_shmem_wg_init();
-    roc_shmem_wg_ctx_create(SHMEM_CTX_WG_PRIVATE, &ctx);
+    roc_shmem_wg_ctx_create(ctx_type, &ctx);
 
     int pe = roc_shmem_my_pe(ctx);
     int offset;
@@ -228,7 +229,8 @@ RandomAccessTester::launchKernel(dim3 gridSize,
                        _num_waves,
                        _threads_bins,
                        _off_bins,
-                       _PE_bins);
+                       _PE_bins,
+                       _shmem_context);
     }
     num_msgs = (loop + args.skip) * _num_waves * _thread_access;
     num_timed_msgs = loop *  _num_waves * _thread_access;

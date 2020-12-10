@@ -58,6 +58,7 @@ class TesterArguments
     unsigned thread_access = 64;
     unsigned coal_coef = 64;
     unsigned op_type = 0;
+    unsigned shmem_context = 8; // SHMEM_CTX_WG_PRIVATE
 
     /**
      * Arguments obtained from rocshmem

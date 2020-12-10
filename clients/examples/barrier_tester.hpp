@@ -20,19 +20,26 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef _PRIMITIVE_TESTER_HPP_
-#define _PRIMITIVE_TESTER_HPP_
+#ifndef _BARRIER_TESTER_HPP_
+#define _BARRIER_TESTER_HPP_
 
 #include "tester.hpp"
 
 /******************************************************************************
+ * DEVICE TEST KERNEL
+ *****************************************************************************/
+__global__ void
+BarrierTest(int loop,
+            uint64_t *timer);
+
+/******************************************************************************
  * HOST TESTER CLASS
  *****************************************************************************/
-class PrimitiveTester : public Tester
+class BarrierTester : public Tester
 {
   public:
-    explicit PrimitiveTester(TesterArguments args);
-    virtual ~PrimitiveTester();
+    explicit BarrierTester(TesterArguments args);
+    virtual ~BarrierTester();
 
   protected:
     virtual void
@@ -46,9 +53,6 @@ class PrimitiveTester : public Tester
 
     virtual void
     verifyResults(uint64_t size) override;
-
-    char *s_buf = nullptr;
-    char *r_buf = nullptr;
 };
 
 #endif

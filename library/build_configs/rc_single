@@ -19,7 +19,7 @@ cmake \
     -DUSE_HDP_MAP=OFF \
     -DUSE_IPC=OFF \
     -DUSE_THREADS=OFF \
-    -DWF_COAL=OFF \
+    -DUSE_WF_COAL=OFF \
     $src_path
 cmake --build . --parallel 8
 cmake --install .

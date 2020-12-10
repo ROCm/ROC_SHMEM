@@ -22,21 +22,28 @@
 
 #include "tester.hpp"
 
+#include <functional>
+#include <vector>
+
 #include <hip/hip_runtime.h>
 #include <mpi.h>
 #include <roc_shmem.hpp>
 
+#include "barrier_all_tester.hpp"
+#include "broadcast_tester.hpp"
 #include "primitive_tester.hpp"
 #include "primitive_amo_tester.hpp"
 #include "ping_pong_tester.hpp"
 #include "swarm_tester.hpp"
-#include "collective_tester.hpp"
+#include "reduction_tester.hpp"
 #include "random_access_tester.hpp"
+#include "shmem_ptr_tester.hpp"
 
 Tester::Tester(TesterArguments args)
     : args(args)
 {
     _type = (TestType) args.algorithm;
+    _shmem_context = args.shmem_context;
     hipStreamCreate(&stream);
     hipEventCreate(&start_event);
     hipEventCreate(&stop_event);
@@ -46,12 +53,16 @@ Tester::Tester(TesterArguments args)
 Tester::~Tester()
 {
     hipFree(timer);
+    hipEventDestroy(stop_event);
+    hipEventDestroy(start_event);
+    hipStreamDestroy(stream);
 }
 
-Tester*
+std::vector<Tester*>
 Tester::create(TesterArguments args)
 {
     int rank = args.myid;
+    std::vector<Tester*> testers;
 
     if (rank == 0)
         std::cout << "*** Creating Test: ";
@@ -62,76 +73,230 @@ Tester::create(TesterArguments args)
         case InitTestType:
             if (rank == 0)
                 std::cout << "Init ***" << std::endl;
-            return new PrimitiveTester(args);
+            testers.push_back(new PrimitiveTester(args));
+            return testers;
         case GetTestType:
             if (rank == 0)
                 std::cout << "Blocking Gets***" << std::endl;
-            return new PrimitiveTester(args);
+            testers.push_back(new PrimitiveTester(args));
+            return testers;
         case GetNBITestType:
             if (rank == 0)
                 std::cout << "Non-Blocking Gets***" << std::endl;
-            return new PrimitiveTester(args);
+            testers.push_back(new PrimitiveTester(args));
+            return testers;
         case PutTestType:
             if (rank == 0)
                 std::cout << "Blocking Puts***" << std::endl;
-            return new PrimitiveTester(args);
+            testers.push_back(new PrimitiveTester(args));
+            return testers;
         case PutNBITestType:
             if (rank == 0)
                 std::cout << "Non-Blocking Puts***" << std::endl;
-            return new PrimitiveTester(args);
+            testers.push_back(new PrimitiveTester(args));
+            return testers;
         case GetSwarmTestType:
             if (rank == 0)
                 std::cout << "Get Swarm***" << std::endl;
-            return new GetSwarmTester(args);
+            testers.push_back(new GetSwarmTester(args));
+            return testers;
         case ReductionTestType:
             if (rank == 0)
                 std::cout << "All-to-All Reduction***" << std::endl;
-            return new CollectiveTester(args);
+
+            testers.push_back(
+                new ReductionTester<float, ROC_SHMEM_SUM>(
+                    args,
+                    [](float& f1, float& f2)
+                    {
+                        f1 = 1;
+                        f2 = 1;
+                    },
+                    [](float v, float n_pes)
+                    {
+                        return (v == n_pes) ?
+                            std::make_pair(true, "") :
+                            std::make_pair(false,
+                                "Got " + std::to_string(v) + ", Expect " + std::to_string(n_pes));
+                    }
+                )
+            );
+
+#if 0
+            testers.push_back(
+                new ReductionTester<double, ROC_SHMEM_SUM>(
+                    args,
+                    [](double& f1, double& f2)
+                    {
+                        f1=1;
+                        f2=1;
+                    },
+                    [](double v, double n_pes)
+                    {
+                        return (v == n_pes) ?
+                            std::make_pair(true, "") :
+                            std::make_pair(false,
+                                "Got "+ std::to_string(v) + ", Expect " + std::to_string(n_pes));
+                    }
+                )
+            );
+
+            testers.push_back( new ReductionTester<long double, ROC_SHMEM_SUM>(args,
+                            [](long double& f1,long  double& f2){f1=1; f2=1;},
+                            [](long double v){ return (v==2.0) ? std::make_pair(true, "") :
+                                   std::make_pair(false, "Got "+ std::to_string(v) +", Expect 2.0. [r3]."); }));
+            testers.push_back( new ReductionTester<short, ROC_SHMEM_SUM>(args,
+                            [](short& f1, short& f2){f1=1; f2=2;},
+                            [](short v){ return (v==3) ? std::make_pair(true, "") :
+                                   std::make_pair(false, "Got "+ std::to_string(v) +", Expect 3. [r4]."); }));
+            testers.push_back( new ReductionTester<int, ROC_SHMEM_SUM>(args,
+                            [](int& f1, int& f2){f1=1; f2=2;},
+                            [](int v){ return (v==3) ? std::make_pair(true, "") :
+                                   std::make_pair(false, "Got "+ std::to_string(v) +", Expect 3. [r5]."); }));
+            testers.push_back( new ReductionTester<long long, ROC_SHMEM_SUM>(args,
+                            [](long long& f1, long long& f2){f1=1; f2=2;},
+                            [](long long v){ return (v==3) ? std::make_pair(true, "") :
+                                   std::make_pair(false, "Got "+ std::to_string(v) +", Expect 3. [r6]."); }));
+            testers.push_back( new ReductionTester<long long, ROC_SHMEM_SUM>(args,
+                            [](long long& f1, long long& f2){f1=1; f2=2;},
+                            [](long long v){ return (v==3) ? std::make_pair(true, "") :
+                                   std::make_pair(false, "Got "+ std::to_string(v) +", Expect 3. [r7]."); }));
+            // seems like deadlock or soemthing, this test hang forever
+            testers.push_back( new ReductionTester<short, ROC_SHMEM_MIN>(args,
+                            [](short& f1, short& f2){f1=1; f2=2;},
+                            [](short v){ return (v==1) ? std::make_pair(true, "") :
+                                   std::make_pair(false, "Got "+ std::to_string(v) +", Expect 1. [r8]."); }));
+            testers.push_back( new ReductionTester<int, ROC_SHMEM_MIN>(args,
+                            [](int& f1, int& f2){f1=1; f2=2;},
+                            [](int v){ return (v==1) ? std::make_pair(true, "") :
+                                   std::make_pair(false, "Got "+ std::to_string(v) +", Expect 1. [r9]."); }));
+            testers.push_back( new ReductionTester<long long, ROC_SHMEM_MIN>(args,
+                            [](long long& f1, long long& f2){f1=1; f2=2;},
+                            [](long long v){ return (v==1) ? std::make_pair(true, "") :
+                                   std::make_pair(false, "Got "+ std::to_string(v) +", Expect 1. [r10]."); }));
+            testers.push_back( new ReductionTester<long long, ROC_SHMEM_MIN>(args,
+                            [](long long& f1, long long& f2){f1=1; f2=2;},
+                            [](long long v){ return (v==1) ? std::make_pair(true, "") :
+                                   std::make_pair(false, "Got "+ std::to_string(v) +", Expect 1. [r11]."); }));
+            testers.push_back( new ReductionTester<int, ROC_SHMEM_MAX>(args,
+                            [](int& f1, int& f2){f1=1; f2=2;},
+                            [](int v){ return (v==2) ? std::make_pair(true, "") :
+                                   std::make_pair(false, "Got "+ std::to_string(v) +", Expect 2. [r12]."); }));
+            testers.push_back( new ReductionTester<long long, ROC_SHMEM_MAX>(args,
+                            [](long long& f1, long long& f2){f1=1; f2=2;},
+                            [](long long v){ return (v==2) ? std::make_pair(true, "") :
+                                   std::make_pair(false, "Got "+ std::to_string(v) +", Expect 2. [r13]."); }));
+            testers.push_back( new ReductionTester<long long, ROC_SHMEM_MAX>(args,
+                            [](long long& f1, long long& f2){f1=1; f2=2;},
+                            [](long long v){ return (v==2) ? std::make_pair(true, "") :
+                                   std::make_pair(false, "Got "+ std::to_string(v) +", Expect 2. [r14]."); }));
+#endif
+            return testers;
+        case BroadcastTestType:
+            if (rank == 0) {
+                std::cout << "Broadcast Test***" << std::endl;
+            }
+            testers.push_back(
+                new BroadcastTester<long>(
+                    args,
+                    [](long& f1, long& f2)
+                    {
+                        f1 = 1;
+                        f2 = 2;
+                    },
+                    [rank](long v)
+                    {
+                        long expected_val;
+                        /**
+                         * The verification routine here requires that the
+                         * PE_root value is 0 which denotes that the
+                         * sending processing element is rank 0.
+                         *
+                         * The difference in expected values arises from
+                         * the specification for broadcast where the
+                         * PE_root processing element does not copy the
+                         * contents from its own source to dest during
+                         * the broadcast.
+                         */
+                        if (rank == 0) {
+                            expected_val = 2;
+                        } else {
+                            expected_val = 1;
+                        }
+
+                        return (v == expected_val) ?
+                            std::make_pair(true, ""):
+                            std::make_pair(false,
+                                           "Rank " + std::to_string(rank) +
+                                           ", Got " + std::to_string(v) +
+                                           ", Expect " +
+                                           std::to_string(expected_val));
+                    }
+                )
+            );
+            return testers;
         case AMO_FAddTestType:
             if (rank == 0)
                 std::cout << "AMO Fetch_Add***" << std::endl;
-            return new PrimitiveAMOTester(args);
+            testers.push_back(new PrimitiveAMOTester(args));
+            return testers;
         case AMO_FIncTestType:
             if (rank == 0)
                 std::cout << "AMO Fetch_Inc***" << std::endl;
-            return new PrimitiveAMOTester(args);
+            testers.push_back(new PrimitiveAMOTester(args));
+            return testers;
         case AMO_FetchTestType:
             if (rank == 0)
                 std::cout << "AMO Fetch***" << std::endl;
-            return new PrimitiveAMOTester(args);
+            testers.push_back(new PrimitiveAMOTester(args));
+            return testers;
         case AMO_FCswapTestType:
             if (rank == 0)
                 std::cout << "AMO Fetch_CSWAP***" << std::endl;
-            return new PrimitiveAMOTester(args);
+            testers.push_back(new PrimitiveAMOTester(args));
+            return testers;
         case AMO_AddTestType:
             if (rank == 0)
                 std::cout << "AMO Add***" << std::endl;
-            return new PrimitiveAMOTester(args);
+            testers.push_back(new PrimitiveAMOTester(args));
+            return testers;
         case AMO_IncTestType:
             if (rank == 0)
                 std::cout << "AMO Inc***" << std::endl;
-            return new PrimitiveAMOTester(args);
+            testers.push_back(new PrimitiveAMOTester(args));
+            return testers;
         case AMO_CswapTestType:
             if (rank == 0)
                 std::cout << "AMO Cswap***" << std::endl;
-            return new PrimitiveAMOTester(args);
+            testers.push_back(new PrimitiveAMOTester(args));
+            return testers;
         case PingPongTestType:
             if (rank == 0)
                 std::cout << "PingPong***" << std::endl;
-            return new PingPongTester(args);
-         case BarrierTestType:
+            testers.push_back(new PingPongTester(args));
+            return testers;
+         case BarrierAllTestType:
             if (rank == 0)
                 std::cout << "Barrier_All***" << std::endl;
-            return new CollectiveTester(args);
+            testers.push_back(new BarrierAllTester(args));
+            return testers;
          case RandomAccessTestType:
             if (rank == 0)
                 std::cout << "Random_Access***" << std::endl;
-            return new RandomAccessTester(args);
+            testers.push_back(new RandomAccessTester(args));
+            return testers;
+        case ShmemPtrTestType:
+            if (rank == 0)
+                std::cout << "Shmem_Ptr***" << std::endl;
+            testers.push_back(new ShmemPtrTester(args));
+            return testers;
         default:
             if (rank == 0)
                 std::cout << "Unknown***" << std::endl;
-            return new PrimitiveTester(args);
+            testers.push_back(new PrimitiveTester(args));
+            return testers;
     }
+    return testers;
 }
 
 void
@@ -219,6 +384,7 @@ Tester::peLaunchesKernel()
      */
     is_launcher = is_launcher ||
                   (_type == ReductionTestType) ||
+                  (_type == BroadcastTestType) ||
                   (_type == PingPongTestType)  ||
                   (_type == BarrierTestType)   ||
                   (_type == RandomAccessTestType);

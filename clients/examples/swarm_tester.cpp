@@ -33,7 +33,8 @@ GetSwarmTest(int loop,
              uint64_t *timer,
              char *s_buf,
              char *r_buf,
-             int size)
+             int size,
+             ShmemContextType ctx_type)
 {
     __shared__ roc_shmem_ctx_t ctx;
 
@@ -41,7 +42,7 @@ GetSwarmTest(int loop,
     roc_shmem_wg_init_thread(SHMEM_THREAD_MULTIPLE, &provided);
     assert(provided == SHMEM_THREAD_MULTIPLE);
 
-    roc_shmem_wg_ctx_create(SHMEM_CTX_WG_PRIVATE, &ctx);
+    roc_shmem_wg_ctx_create(ctx_type, &ctx);
 
     __syncthreads();
 
@@ -98,7 +99,8 @@ GetSwarmTester::launchKernel(dim3 gridSize,
                        timer,
                        s_buf,
                        r_buf,
-                       size);
+                       size,
+                       _shmem_context);
 
     num_msgs = (loop + args.skip) * gridSize.x * blockSize.x;
     num_timed_msgs = loop * gridSize.x * blockSize.x;

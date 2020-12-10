@@ -20,7 +20,7 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#include "ping_pong_tester.hpp"
+#include "barrier_all_tester.hpp"
 
 #include <roc_shmem.hpp>
 
@@ -28,37 +28,31 @@
  * DEVICE TEST KERNEL
  *****************************************************************************/
 __global__ void
-PingPongTest(int loop,
-             int skip,
-             uint64_t *timer,
-             int *r_buf,
-             ShmemContextType ctx_type)
+BarrierAllTest(int loop,
+               uint64_t *timer)
 {
     __shared__ roc_shmem_ctx_t ctx;
 
     roc_shmem_wg_init();
-    roc_shmem_wg_ctx_create(ctx_type, &ctx);
+    roc_shmem_wg_ctx_create(SHMEM_CTX_WG_PRIVATE, &ctx);
 
-    int pe = roc_shmem_my_pe(ctx);
+    uint64_t start;
+    if (hipThreadIdx_x == 0) {
+        start = roc_shmem_timer();
+    }
+
+    __syncthreads();
+
+    for (int i = 0; i < loop; i++) {
+        roc_shmem_wg_barrier_all(ctx);
+    }
+
+    __syncthreads();
 
     if (hipThreadIdx_x == 0) {
-        uint64_t start;
-
-        for (int i = 0; i < loop + skip; i++) {
-            if (i == skip) {
-                start = roc_shmem_timer();
-            }
-
-            if (pe == 0) {
-                roc_shmem_p(ctx, r_buf, i + 1, 1);
-                roc_shmem_wait_until(r_buf, ROC_SHMEM_CMP_EQ, i + 1);
-            } else {
-                roc_shmem_wait_until(r_buf, ROC_SHMEM_CMP_EQ, i + 1);
-                roc_shmem_p(ctx, r_buf, i + 1, 0);
-            }
-        }
-        timer[hipBlockIdx_x] =  roc_shmem_timer() - start;
+        timer[hipBlockIdx_x] = roc_shmem_timer() - start;
     }
+
     roc_shmem_wg_ctx_destroy(ctx);
     roc_shmem_wg_finalize();
 }
@@ -66,48 +60,39 @@ PingPongTest(int loop,
 /******************************************************************************
  * HOST TESTER CLASS METHODS
  *****************************************************************************/
-PingPongTester::PingPongTester(TesterArguments args)
+BarrierAllTester::BarrierAllTester(TesterArguments args)
     : Tester(args)
 {
-    r_buf = (int*)roc_shmem_malloc(sizeof(int));
 }
 
-PingPongTester::~PingPongTester()
+BarrierAllTester::~BarrierAllTester()
 {
-    roc_shmem_free(r_buf);
 }
 
 void
-PingPongTester::resetBuffers()
-{
-    memset(r_buf, 0, sizeof(int));
-}
-
-void
-PingPongTester::launchKernel(dim3 gridSize,
-                             dim3 blockSize,
-                             int loop,
-                             uint64_t size)
+BarrierAllTester::launchKernel(dim3 gridSize,
+                               dim3 blockSize,
+                               int loop,
+                               uint64_t size)
 {
     size_t shared_bytes;
     roc_shmem_dynamic_shared(&shared_bytes);
 
-    hipLaunchKernelGGL(PingPongTest,
+    hipLaunchKernelGGL(BarrierAllTest,
                        gridSize,
                        blockSize,
                        shared_bytes,
                        stream,
                        loop,
-                       args.skip,
-                       timer,
-                       r_buf,
-                       _shmem_context);
-
-    num_msgs = (loop + args.skip) * gridSize.x;
-    num_timed_msgs = loop * gridSize.x;
+                       timer);
 }
 
 void
-PingPongTester::verifyResults(uint64_t size)
+BarrierAllTester::resetBuffers()
+{
+}
+
+void
+BarrierAllTester::verifyResults(uint64_t size)
 {
 }

@@ -43,7 +43,7 @@
 /**
  * @brief Status codes for user-facing ROC_SHMEM calls.
  */
-enum roc_shmem_status_t {
+enum class Status {
     ROC_SHMEM_UNKNOWN_ERROR,
     ROC_SHMEM_INVALID_ARGUMENTS,
     ROC_SHMEM_OOM_ERROR,
@@ -86,6 +86,7 @@ constexpr size_t SHMEM_REDUCE_SYNC_SIZE = 256;
 constexpr size_t SHMEM_BCAST_SYNC_SIZE = 256;
 constexpr size_t SHMEM_SYNC_VALUE = 0;
 
+const int SHMEM_CTX_ZERO = 0;
 const int SHMEM_CTX_SERIALIZED = 1;
 const int SHMEM_CTX_PRIVATE = 2;
 const int SHMEM_CTX_NOSTORE = 4;
@@ -122,7 +123,7 @@ extern __constant__ roc_shmem_ctx_t SHMEM_CTX_DEFAULT;
  * @return Status of the initialization.
  *
  */
-roc_shmem_status_t roc_shmem_init(unsigned num_wgs = 0);
+Status roc_shmem_init(unsigned num_wgs = 0);
 
 /**
  * @brief Function that dumps internal stats to stdout.
@@ -130,7 +131,7 @@ roc_shmem_status_t roc_shmem_init(unsigned num_wgs = 0);
  * @return Status of operation.
  *
  */
-roc_shmem_status_t roc_shmem_dump_stats();
+Status roc_shmem_dump_stats();
 
 /**
  * @brief Reset all internal stats.
@@ -138,7 +139,7 @@ roc_shmem_status_t roc_shmem_dump_stats();
  * @return Status of operation.
  *
  */
-roc_shmem_status_t roc_shmem_reset_stats();
+Status roc_shmem_reset_stats();
 
 /**
  * @brief Finalize the ROC_SHMEM runtime.
@@ -146,7 +147,7 @@ roc_shmem_status_t roc_shmem_reset_stats();
  * @return Status of finalization.
  *
  */
-roc_shmem_status_t roc_shmem_finalize();
+Status roc_shmem_finalize();
 
 /**
  * @brief Allocate memory of \p size bytes from the symmetric heap. This is a
@@ -170,7 +171,7 @@ void* roc_shmem_malloc(size_t size);
  * @return Status of the operation.
  *
  */
-roc_shmem_status_t roc_shmem_free(void* ptr);
+Status roc_shmem_free(void* ptr);
 
 /**
  * @brief Query for the number of PEs.
@@ -201,7 +202,7 @@ int roc_shmem_my_pe();
  * @return Status of the operation.
  *
  */
-roc_shmem_status_t roc_shmem_dynamic_shared(size_t *shared_bytes);
+Status roc_shmem_dynamic_shared(size_t *shared_bytes);
 
 
 
@@ -819,6 +820,41 @@ __device__ void roc_shmem_wg_to_all(roc_shmem_ctx_t ctx, T *dest,
                                     int logPE_stride, int PE_size, T *pWrk,
                                     long *pSync);
 
+
+/**
+ * @brief Perform a broadcast between PEs in the active set. The caller
+ * is blocked until the broadcase completes.
+ *
+ * This function must be called as a work-group collective.
+ *
+ * @param[in] dest         Destination address. Must be an address on the
+ *                         symmetric heap.
+ * @param[in] source       Source address. Must be an address on the symmetric
+                           heap.
+ * @param[in] nelement     Size of the buffer to participate in the broadcast.
+ * @param[in] PE_root      Zero-based ordinal of the PE, with respect to the
+                           active set, from which the data is copied
+ * @param[in] PE_start     PE to start the reduction.
+ * @param[in] logPE_stride Stride of PEs participating in the reduction.
+ * @param[in] PE_size      Number PEs participating in the reduction.
+ * @param[in] pSync        Temporary sync buffer provided to ROC_SHMEM. Must
+                           be of size at least SHMEM_REDUCE_SYNC_SIZE.
+ *
+ * @return void
+ *
+ */
+template <typename T>
+__device__ void
+roc_shmem_wg_broadcast(roc_shmem_ctx_t ctx,
+                       T *dest,
+                       const T *source,
+                       int nelement,
+                       int PE_root,
+                       int PE_start,
+                       int logPE_stride,
+                       int PE_size,
+                       long *pSync);
+
 /**
  * @brief perform a collective barrier between all PEs in the system.
  * The caller is blocked until the barrier is resolved.
@@ -858,7 +894,6 @@ __device__ void roc_shmem_wg_sync_all(roc_shmem_ctx_t ctx);
  * coalesce contiguous messages and elect a leader thread to call into the
  * ROC_SHMEM function.
  *
- * @param[in] ctx Context with which to perform this operation.
  * @param[in] ptr Pointer to memory on the symmetric heap to wait for.
  * @param[in] cmp Operation for the comparison.
  * @param[in] val Value to compare the memory at \p ptr to.
@@ -867,8 +902,7 @@ __device__ void roc_shmem_wg_sync_all(roc_shmem_ctx_t ctx);
  *
  */
 template <typename T>
-__device__ void roc_shmem_wait_until(roc_shmem_ctx_t ctx, T *ptr,
-                                     roc_shmem_cmps cmp, T val);
+__device__ void roc_shmem_wait_until(T *ptr, roc_shmem_cmps cmp, T val);
 
 /**
  * @brief test if the condition (* \p ptr \p cmps \p val) is
@@ -879,7 +913,6 @@ __device__ void roc_shmem_wait_until(roc_shmem_ctx_t ctx, T *ptr,
  * coalesce contiguous messages and elect a leader thread to call into the
  * ROC_SHMEM function.
  *
- * @param[in] ctx Context with which to perform this operation.
  * @param[in] ptr Pointer to memory on the symmetric heap to wait for.
  * @param[in] cmp Operation for the comparison.
  * @param[in] val Value to compare the memory at \p ptr to.
@@ -888,8 +921,18 @@ __device__ void roc_shmem_wait_until(roc_shmem_ctx_t ctx, T *ptr,
  *
  */
 template <typename T>
-__device__ int roc_shmem_test(roc_shmem_ctx_t ctx, T *ptr,
-                              roc_shmem_cmps cmp, T val);
+__device__ int roc_shmem_test(T *ptr, roc_shmem_cmps cmp, T val);
+
+
+/**
+ * @brief Query a local pointer to a symmetric data object on the
+ * specified \pe . Returns an address that may be used to directly reference
+ * dest on the specified \pe. This address can be accesses with LD/ST ops.
+ *
+ * Can be called per thread with no performance penalty.
+ *
+ */
+__device__ void* roc_shmem_ptr(const void * dest, int pe);
 
 /**
  * @brief Query the current time. Similar to gettimeofday() on the CPU. To use

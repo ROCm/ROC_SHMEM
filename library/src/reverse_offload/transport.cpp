@@ -163,7 +163,28 @@ MPITransport::submitRequestsToMPI()
                     next_element->pWrk, next_element->pSync));
 
             break;
-            case RO_NET_BARRIER_ALL: //Barrier_all;
+         case RO_NET_BROADCAST:
+            broadcast(next_element->dst, next_element->src,
+                                    next_element->size,
+                                    next_element->PE, queue_idx,
+                                    next_element->PE,
+                                    next_element->logPE_stride,
+                                    next_element->PE_size,
+                                    next_element->PE_root,
+                                    next_element->pSync,
+                                    (ro_net_types) next_element->datatype,
+                                    next_element->threadId, true);
+
+            DPRINTF(("Received BROADCAST  dst %p src %p size %d "
+                    "PE_start %d, logPE_stride %d, PE_size %d, PE_root %d, "
+                    "pSync %p\n", next_element->dst, next_element->src,
+                    next_element->size, next_element->PE,
+                    next_element->logPE_stride, next_element->PE_size,
+                    next_element->PE_root, next_element->pSync));
+
+            break;
+
+        case RO_NET_BARRIER_ALL: //Barrier_all;
             barrier(queue_idx, next_element->threadId, true);
 
             DPRINTF(("Received Barrier_all\n"));
@@ -191,7 +212,7 @@ MPITransport::submitRequestsToMPI()
     delete next_element;
 }
 
-roc_shmem_status_t
+Status
 MPITransport::initTransport(int num_queues,
                             ro_net_handle *ro_net_gpu_handle)
 {
@@ -205,18 +226,18 @@ MPITransport::initTransport(int num_queues,
     progress_thread =
         new std::thread(&MPITransport::threadProgressEngine, this);
     while (!transport_up);
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 MPITransport::finalizeTransport()
 {
     progress_thread->join();
     delete progress_thread;
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 MPITransport::allocateMemory(void **ptr, size_t size)
 {
     if (gpu_heap) {
@@ -236,10 +257,10 @@ MPITransport::allocateMemory(void **ptr, size_t size)
     window_vec.emplace_back(window, *ptr, size);
     DPRINTF(("Creating MPI Window ptr %p size %zu num_windows %zu\n", *ptr,
             size, window_vec.size()));
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 MPITransport::deallocateMemory(void *ptr)
 {
     if (ptr != nullptr) {
@@ -254,7 +275,7 @@ MPITransport::deallocateMemory(void *ptr)
         }
         window_vec.erase(window_vec.begin() + idx);
     }
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
 MPI_Comm
@@ -307,7 +328,7 @@ MPITransport::findWinIdx(void *dst) const
     exit(-1);
 }
 
-roc_shmem_status_t
+Status
 MPITransport::barrier(int wg_id, int threadId, bool blocking)
 {
     MPI_Request request;
@@ -316,7 +337,7 @@ MPITransport::barrier(int wg_id, int threadId, bool blocking)
     req_prop_vec.emplace_back(threadId, wg_id, blocking);
     req_vec.push_back(request);
     outstanding[wg_id]++;
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
 static MPI_Op
@@ -370,7 +391,7 @@ convertType(ro_net_types type)
     }
 }
 
-roc_shmem_status_t
+Status
 MPITransport::reduction(void *dst, void *src, int size, int pe, int wg_id,
                         int start, int logPstride, int sizePE,
                         void *pWrk, long *pSync, ROC_SHMEM_OP op,
@@ -393,10 +414,37 @@ MPITransport::reduction(void *dst, void *src, int size, int pe, int wg_id,
     req_prop_vec.emplace_back(threadId, wg_id, blocking);
     req_vec.push_back(request);
     outstanding[wg_id]++;
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
+}
+Status
+MPITransport::broadcast(void *dst, void *src, int size, int pe, int wg_id,
+                        int start, int logPstride, int sizePE,
+                        int root, long *pSync, ro_net_types type,
+                        int threadId, bool blocking)
+{
+    MPI_Request request;
+    int new_rank;
+    void *data;
+
+    MPI_Datatype mpi_type = convertType(type);
+    MPI_Comm comm = createComm(start, logPstride, sizePE);
+    MPI_Comm_rank(comm, &new_rank);
+    if(new_rank == root)
+        data = src;
+    else
+        data = dst;
+
+    NET_CHECK(MPI_Ibcast(data, size, mpi_type, root, comm,
+                                 &request));
+
+    req_prop_vec.emplace_back(threadId, wg_id, blocking);
+    req_vec.push_back(request);
+    outstanding[wg_id]++;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+
+Status
 MPITransport::putMem(void *dst, void *src, int size, int pe, int wg_id,
                      int threadId, bool blocking, bool inline_data)
 {
@@ -423,10 +471,10 @@ MPITransport::putMem(void *dst, void *src, int size, int pe, int wg_id,
     req_prop_vec.emplace_back(threadId, wg_id, blocking, src, inline_data);
     req_vec.push_back(request);
     outstanding[wg_id]++;
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 MPITransport::getMem(void *dst, void *src, int size, int pe, int wg_id,
                      int threadId, bool blocking)
 {
@@ -442,10 +490,10 @@ MPITransport::getMem(void *dst, void *src, int size, int pe, int wg_id,
    req_prop_vec.emplace_back(threadId, wg_id, blocking);
    req_vec.push_back(request);
 
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 MPITransport::progress()
 {
     MPI_Status status;
@@ -527,10 +575,10 @@ MPITransport::progress()
         }
     }
 
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 MPITransport::quiet(int wg_id, int threadId)
 {
     if (!outstanding[wg_id]) {
@@ -540,7 +588,7 @@ MPITransport::quiet(int wg_id, int threadId)
     } else {
         waiting_quiet[wg_id].emplace_back(threadId);
     }
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
 int
@@ -572,7 +620,7 @@ OpenSHMEMTransport::OpenSHMEMTransport()
     my_pe = shmem_my_pe();
 }
 
-roc_shmem_status_t
+Status
 OpenSHMEMTransport::initTransport(int num_queues)
 {
     // setup a context per queue
@@ -582,42 +630,42 @@ OpenSHMEMTransport::initTransport(int num_queues)
                                    ctx_vec.data() + i));
     }
 
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 OpenSHMEMTransport::finalizeTransport()
 {
     shmem_finalize();
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 OpenSHMEMTransport::allocateMemory(void **ptr, size_t size)
 {
     // TODO: only works for host memory
     if ((*ptr = shmem_malloc(size)) == nullptr)
         return ROC_SHMEM_OOM_ERROR;
     CHECK_HIP(hipHostRegister(*ptr, size, 0));
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 OpenSHMEMTransport::deallocateMemory(void *ptr)
 {
     CHECK_HIP(hipHostUnregister(ptr));
     shmem_free(ptr);
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 OpenSHMEMTransport::barrier(int wg_id)
 {
     shmem_barrier_all();
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 OpenSHMEMTransport::reduction(void *dst, void *src, int size, int pe,
                               int wg_id, int start, int logPstride, int sizePE,
                               void *pWrk, long *pSync, RO_NET_Op op)
@@ -625,26 +673,37 @@ OpenSHMEMTransport::reduction(void *dst, void *src, int size, int pe,
     assert(op == RO_NET_SUM);
     shmem_float_sum_to_all((float *) dst, (float *) src, size, pe, logPstride,
                            sizePE, (float *) pWrk, pSync);
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
+OpenSHMEMTransport::broadcast(void *dst, void *src, int size, int pe,
+                              int wg_id, int start, int logPstride, int sizePE,
+                              int root, long *pSync)
+{
+    shmem_broadcast((float *) dst, (float *) src, size, root, pe, logPstride,
+                           sizePE, pSync);
+    return Status::ROC_SHMEM_SUCCESS;
+}
+
+
+Status
 OpenSHMEMTransport::putMem(void *dst, void *src, int size, int pe, int wg_id)
 {
     assert(wg_id < ctx_vec.size());
     shmem_ctx_putmem_nbi(ctx_vec[wg_id], dst, src, size, pe);
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 OpenSHMEMTransport::getMem(void *dst, void *src, int size, int pe, int wg_id)
 {
     assert(wg_id < ctx_vec.size());
     shmem_ctx_getmem_nbi(ctx_vec[wg_id], dst, src, size, pe);
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 OpenSHMEMTransport::progress(int wg_id,
                              struct ro_net_handle *ronet_gpu_handle)
 {
@@ -665,13 +724,13 @@ OpenSHMEMTransport::progress(int wg_id,
         }
     }
 
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 OpenSHMEMTransport::quiet(int wg_id)
 {
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
 int

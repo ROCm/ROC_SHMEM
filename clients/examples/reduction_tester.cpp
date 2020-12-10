@@ -20,51 +20,46 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#include "collective_tester.hpp"
-
-#include <roc_shmem.hpp>
-
 /******************************************************************************
  * DEVICE TEST KERNEL
  *****************************************************************************/
-__global__ void
-CollectiveTest(int loop,
-               int skip,
-               uint64_t *timer,
-               float *s_buf,
-               float *r_buf,
-               float *pWrk,
-               long *pSync,
-               int size,
-               TestType type)
+template<typename T1, ROC_SHMEM_OP T2>
+__global__
+void ReductionTest(int loop,
+                   int skip,
+                   uint64_t *timer,
+                   T1 *s_buf,
+                   T1 *r_buf,
+                   T1 *pWrk,
+                   long *pSync,
+                   int size,
+                   TestType type,
+                   ShmemContextType ctx_type)
 {
     __shared__ roc_shmem_ctx_t ctx;
 
     roc_shmem_wg_init();
-    roc_shmem_wg_ctx_create(SHMEM_CTX_WG_PRIVATE, &ctx);
+    roc_shmem_wg_ctx_create(ctx_type, &ctx);
 
-    uint64_t start;
-    if (hipThreadIdx_x == 0) {
-        start = roc_shmem_timer();
-
-    }
+    int n_pes = roc_shmem_n_pes(ctx);
 
     __syncthreads();
 
-    for (int i = 0; i < loop; i++) {
-        switch(type) {
-            case ReductionTestType:
-                roc_shmem_wg_to_all<float, ROC_SHMEM_SUM>(
-                        ctx, r_buf, s_buf, size, 0, 0, 2, pWrk, pSync);
-                break;
-
-            case BarrierTestType:
-                roc_shmem_wg_barrier_all(ctx);
-                break;
-
-            default:
-                break;
+    uint64_t start;
+    for (int i = 0; i < loop + skip; i++) {
+        if (i == skip && hipThreadIdx_x == 0) {
+            start = roc_shmem_timer();
         }
+        roc_shmem_wg_to_all<T1, T2>(ctx,
+                                    r_buf,
+                                    s_buf,
+                                    size,
+                                    0,
+                                    0,
+                                    n_pes,
+                                    pWrk,
+                                    pSync);
+        roc_shmem_wg_barrier_all(ctx);
     }
 
     __syncthreads();
@@ -80,15 +75,18 @@ CollectiveTest(int loop,
 /******************************************************************************
  * HOST TESTER CLASS METHODS
  *****************************************************************************/
-CollectiveTester::CollectiveTester(TesterArguments args)
-    : Tester(args)
+template<typename T1, ROC_SHMEM_OP T2>
+ReductionTester<T1, T2>::ReductionTester(TesterArguments args,
+                                         std::function<void(T1&, T1&)> f1,
+                                         std::function<std::pair<bool, std::string>(const T1&, const T1&)> f2)
+    : Tester(args), init_buf{f1}, verify_buf{f2}
 {
-    s_buf = (float *)roc_shmem_malloc(args.max_msg_size * sizeof(float));
-    r_buf = (float *)roc_shmem_malloc(args.max_msg_size * sizeof(float));
+    s_buf = (T1 *)roc_shmem_malloc(args.max_msg_size * sizeof(T1));
+    r_buf = (T1 *)roc_shmem_malloc(args.max_msg_size * sizeof(T1));
 
     size_t p_wrk_size =
         std::max(args.max_msg_size / 2 + 1, SHMEM_REDUCE_MIN_WRKDATA_SIZE);
-    pWrk = (float *)roc_shmem_malloc(p_wrk_size * sizeof(float));
+    pWrk = (T1 *)roc_shmem_malloc(p_wrk_size * sizeof(T1));
 
     size_t p_sync_size = SHMEM_REDUCE_SYNC_SIZE;
     pSync = (long *)roc_shmem_malloc(p_sync_size * sizeof(long));
@@ -98,7 +96,8 @@ CollectiveTester::CollectiveTester(TesterArguments args)
     }
 }
 
-CollectiveTester::~CollectiveTester()
+template<typename T1, ROC_SHMEM_OP T2>
+ReductionTester<T1, T2>::~ReductionTester()
 {
     roc_shmem_free(s_buf);
     roc_shmem_free(r_buf);
@@ -106,16 +105,17 @@ CollectiveTester::~CollectiveTester()
     roc_shmem_free(pSync);
 }
 
+template<typename T1, ROC_SHMEM_OP T2>
 void
-CollectiveTester::launchKernel(dim3 gridSize,
-                               dim3 blockSize,
-                               int loop,
-                               uint64_t size)
+ReductionTester<T1, T2>::launchKernel(dim3 gridSize,
+                                      dim3 blockSize,
+                                      int loop,
+                                      uint64_t size)
 {
     size_t shared_bytes;
     roc_shmem_dynamic_shared(&shared_bytes);
 
-    hipLaunchKernelGGL(CollectiveTest,
+    hipLaunchKernelGGL(ReductionTest<T1, T2>,
                        gridSize,
                        blockSize,
                        shared_bytes,
@@ -128,28 +128,34 @@ CollectiveTester::launchKernel(dim3 gridSize,
                        pWrk,
                        pSync,
                        size,
-                       _type);
+                       _type,
+                       _shmem_context);
+
+    num_msgs = loop + args.skip;
+    num_timed_msgs = loop;
 }
 
+template<typename T1, ROC_SHMEM_OP T2>
 void
-CollectiveTester::resetBuffers()
+ReductionTester<T1, T2>::resetBuffers()
 {
     for (int i = 0; i < args.max_msg_size; i++) {
-        s_buf[i] = 1.0;
-        r_buf[i] = 1.0;
+        init_buf(s_buf[i], r_buf[i]);
     }
 }
 
+template<typename T1, ROC_SHMEM_OP T2>
 void
-CollectiveTester::verifyResults(uint64_t size)
+ReductionTester<T1, T2>::verifyResults(uint64_t size)
 {
-    if(_type == ReductionTestType) {
-        for (int i = 0; i < size; i++) {
-            if (r_buf[i] != 2.0) {
-                fprintf(stderr, "Data validation error at idx %d\n", i);
-                fprintf(stderr, "Got %f, Expected %f\n", r_buf[i], 2.0);
-                exit(-1);
-            }
+    int n_pes = roc_shmem_n_pes();
+    for (int i = 0; i < size; i++) {
+        auto r = verify_buf(r_buf[i], (T1)n_pes);
+        if (r.first == false) {
+            fprintf(stderr, "Data validation error at idx %d\n", i);
+            fprintf(stderr, "%s.\n", r.second.c_str());
+            exit(-1);
         }
     }
 }
+

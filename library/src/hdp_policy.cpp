@@ -74,7 +74,7 @@ HdpRocmPolicy::HdpRocmPolicy()
     // TODO: Multi-device?
     int dev_id = 0;
 
-    hsa_amd_hdp_flush_t * hdp = rocm_hdp();
+    hdp = rocm_hdp();
     cpu_hdp_flush = hdp[dev_id].HDP_MEM_FLUSH_CNTL;
     gpu_hdp_flush = cpu_hdp_flush;
 }

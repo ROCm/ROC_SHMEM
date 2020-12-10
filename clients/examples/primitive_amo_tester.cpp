@@ -33,11 +33,12 @@ PrimitiveAMOTest(int loop,
                  uint64_t *timer,
                  char *r_buf,
                  int64_t *ret_val,
-                 TestType type)
+                 TestType type,
+                 ShmemContextType ctx_type)
 {
     __shared__ roc_shmem_ctx_t ctx;
     roc_shmem_wg_init();
-    roc_shmem_wg_ctx_create(SHMEM_CTX_WG_PRIVATE, &ctx);
+    roc_shmem_wg_ctx_create(ctx_type, &ctx);
 
     if (hipThreadIdx_x == 0) {
         uint64_t start;
@@ -140,7 +141,8 @@ PrimitiveAMOTester::launchKernel(dim3 gridsize,
                        timer,
                        r_buf,
                        _ret_val,
-                       _type);
+                       _type,
+                       _shmem_context);
 
     num_msgs = (loop + args.skip) * gridsize.x;
     num_timed_msgs = loop * gridsize.x;

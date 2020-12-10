@@ -48,13 +48,13 @@ ROBackend::~ROBackend()
     ro_net_free_runtime(ro_net_gpu_handle);
 }
 
-roc_shmem_status_t
+Status
 ROBackend::dynamic_shared(size_t *shared_bytes)
 {
     *shared_bytes = sizeof(ROContext) + sizeof(ro_net_wg_handle) +
         sizeof(WGState);
 
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
 ROBackend::ROBackend(unsigned num_wgs)
@@ -68,7 +68,7 @@ ROBackend::ROBackend(unsigned num_wgs)
     memset(ro_net_gpu_handle, 0, sizeof(ro_net_handle));
 
     backend_handle = ro_net_gpu_handle;
-    type = RO_BACKEND;
+    type = BackendType::RO_BACKEND;
 
     char *value;
 
@@ -95,14 +95,14 @@ ROBackend::ROBackend(unsigned num_wgs)
 
     if (!transport) {
         ro_net_free_runtime(ro_net_gpu_handle);
-        exit(-ROC_SHMEM_OOM_ERROR);
+        exit(-static_cast<int>(Status::ROC_SHMEM_OOM_ERROR));
     }
 
     int num_threads = 1;
 
     int count = 0;
     if (hipGetDeviceCount(&count) != hipSuccess)
-        exit(-ROC_SHMEM_UNKNOWN_ERROR);
+        exit (-static_cast<int>(Status::ROC_SHMEM_UNKNOWN_ERROR));
 
     if (count == 0) {
         std::cerr << "No GPU found!" << std::endl;
@@ -116,10 +116,10 @@ ROBackend::ROBackend(unsigned num_wgs)
 
     if (num_threads > 0 &&
         ((num_wg < num_threads) || ((num_wg % num_threads) != 0))) {
-        exit(-ROC_SHMEM_INVALID_ARGUMENTS);
+        exit(-static_cast<int>(Status::ROC_SHMEM_INVALID_ARGUMENTS));
     }
 
-    roc_shmem_status_t return_code;
+    Status return_code;
 
     ro_net_gpu_handle->queue_size = DEFAULT_QUEUE_SIZE;
     if ((value = getenv("RO_NET_QUEUE_SIZE")) != nullptr) {
@@ -130,7 +130,7 @@ ROBackend::ROBackend(unsigned num_wgs)
     posix_memalign((void**)&elt, 64, sizeof(queue_element_t));
     if (!elt) {
         net_free(ro_net_gpu_handle);
-        exit(-ROC_SHMEM_OOM_ERROR);
+        exit(-static_cast<int>(Status::ROC_SHMEM_OOM_ERROR));
     }
 
     // allocate the resources for internal barriers
@@ -150,9 +150,9 @@ ROBackend::ROBackend(unsigned num_wgs)
     ro_net_gpu_handle->profiler = profiler_ptr;
 
     if ((return_code = transport->initTransport(num_wg, ro_net_gpu_handle)) !=
-        ROC_SHMEM_SUCCESS) {
+        Status::ROC_SHMEM_SUCCESS) {
         net_free(ro_net_gpu_handle);
-        exit(-return_code);
+        exit(-static_cast<int>(return_code));
     }
 
     queue_element_t **queues;
@@ -222,20 +222,20 @@ ROBackend::ROBackend(unsigned num_wgs)
     }
 }
 
-roc_shmem_status_t
+Status
 ROBackend::net_malloc(void **ptr, size_t size)
 {
     transport->allocateMemory(ptr, size);
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 ROBackend::net_free(void * ptr)
 {
     return transport->deallocateMemory(ptr);
 }
 
-roc_shmem_status_t
+Status
 ROBackend::reset_backend_stats()
 {
     struct ro_net_handle *ro_net_gpu_handle =
@@ -244,10 +244,10 @@ ROBackend::reset_backend_stats()
     for (int i = 0; i < num_wg; i++)
         ro_net_gpu_handle->profiler[i].resetStats();
 
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 ROBackend::dump_backend_stats()
 {
     struct ro_net_handle *ro_net_gpu_handle =
@@ -299,10 +299,10 @@ ROBackend::dump_backend_stats()
             my_pe, num_wg,
             ro_net_gpu_handle->num_threads);
 
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 ROBackend::ro_net_free_runtime(struct ro_net_handle * ro_net_gpu_handle)
 {
     assert(ro_net_gpu_handle);
@@ -344,7 +344,7 @@ ROBackend::ro_net_free_runtime(struct ro_net_handle * ro_net_gpu_handle)
 
     CHECK_HIP(hipHostFree(ro_net_gpu_handle));
 
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
 bool

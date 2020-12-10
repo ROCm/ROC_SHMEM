@@ -80,57 +80,57 @@ ReliableConnection::rts(dest_info_t *dest)
     return rts;
 }
 
-roc_shmem_status_t
+Status
 ReliableConnection::create_qps_1()
 {
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 ReliableConnection::create_qps_2(int port, int my_rank,
                                  ibv_port_attr *ib_port_att)
 {
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 ReliableConnection::create_qps_3(int port, ibv_qp *qp, int offset,
                                  ibv_port_attr *ib_port_att)
 {
-    roc_shmem_status_t status = init_qp_status(qp, port);
-    if (status != ROC_SHMEM_SUCCESS) {
-        return ROC_SHMEM_UNKNOWN_ERROR;
+    Status status = init_qp_status(qp, port);
+    if (status != Status::ROC_SHMEM_SUCCESS) {
+        return Status::ROC_SHMEM_UNKNOWN_ERROR;
     }
 
     all_qp[offset].lid = ib_port_att->lid;
     all_qp[offset].qpn = qp->qp_num;
     all_qp[offset].psn = 0;
 
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 ReliableConnection::get_remote_conn(int &remote_conn)
 {
     remote_conn = backend->num_pes;
 
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 ReliableConnection::allocate_dynamic_members(int num_wg)
 {
     all_qp.resize(backend->num_pes * num_wg);
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 ReliableConnection::free_dynamic_members()
 {
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 ReliableConnection::initialize_1(int port, int num_wg)
 {
     MPI_Alltoall(MPI_IN_PLACE,
@@ -141,12 +141,12 @@ ReliableConnection::initialize_1(int port, int num_wg)
                  MPI_CHAR,
                  MPI_COMM_WORLD);
 
-    roc_shmem_status_t status;
+    Status status;
 
     for (int i = 0; i < qps.size(); i++) {
         status = change_status_rtr(qps[i], &all_qp[i], port);
-        if (status != ROC_SHMEM_SUCCESS) {
-            return ROC_SHMEM_UNKNOWN_ERROR;
+        if (status != Status::ROC_SHMEM_SUCCESS) {
+            return Status::ROC_SHMEM_UNKNOWN_ERROR;
         }
     }
 
@@ -154,14 +154,14 @@ ReliableConnection::initialize_1(int port, int num_wg)
 
     for (int i = 0; i < qps.size(); i++) {
         status = change_status_rts(qps[i], &all_qp[i]);
-        if (status != ROC_SHMEM_SUCCESS) {
-            return ROC_SHMEM_UNKNOWN_ERROR;
+        if (status != Status::ROC_SHMEM_SUCCESS) {
+            return Status::ROC_SHMEM_UNKNOWN_ERROR;
         }
     }
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 ReliableConnection::initialize_rkey_handle(uint32_t **heap_rkey_handle,
                                            ibv_mr *mr)
 {
@@ -169,7 +169,13 @@ ReliableConnection::initialize_rkey_handle(uint32_t **heap_rkey_handle,
                             sizeof(uint32_t) * backend->num_pes));
     (*heap_rkey_handle)[backend->my_pe]  = mr->rkey;
 
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
+}
+
+void
+ReliableConnection::free_rkey_handle(uint32_t *heap_rkey_handle)
+{
+    CHECK_HIP(hipHostFree(heap_rkey_handle));
 }
 
 Connection::QPInitAttr

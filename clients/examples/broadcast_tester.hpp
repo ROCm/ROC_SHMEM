@@ -20,19 +20,25 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef _PRIMITIVE_TESTER_HPP_
-#define _PRIMITIVE_TESTER_HPP_
+#ifndef _BROADCAST_TESTER_HPP_
+#define _BROADCAST_TESTER_HPP_
 
 #include "tester.hpp"
+
+#include <functional>
+#include <utility>
 
 /******************************************************************************
  * HOST TESTER CLASS
  *****************************************************************************/
-class PrimitiveTester : public Tester
+template<typename T1>
+class BroadcastTester : public Tester
 {
   public:
-    explicit PrimitiveTester(TesterArguments args);
-    virtual ~PrimitiveTester();
+    explicit BroadcastTester(TesterArguments args,
+                             std::function<void(T1&, T1&)> f1,
+                             std::function<std::pair<bool, std::string>(const T1&)> f2);
+    virtual ~BroadcastTester();
 
   protected:
     virtual void
@@ -47,8 +53,15 @@ class PrimitiveTester : public Tester
     virtual void
     verifyResults(uint64_t size) override;
 
-    char *s_buf = nullptr;
-    char *r_buf = nullptr;
+    T1 *source_buf;
+    T1 *dest_buf;
+    long *pSync;
+
+private:
+    std::function<void(T1&, T1&)> init_buf;
+    std::function<std::pair<bool, std::string>(const T1&)> verify_buf;
 };
+
+#include "broadcast_tester.cpp"
 
 #endif

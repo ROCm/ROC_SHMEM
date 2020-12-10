@@ -55,9 +55,10 @@ Connection::Connection(GPUIBBackend *b, int k)
 
 Connection::~Connection()
 {
+    delete ib_state;
 }
 
-roc_shmem_status_t
+Status
 Connection::reg_mr(void *ptr, size_t size, ibv_mr **mr)
 {
     *mr = ibv_reg_mr(ib_state->pd, ptr, size,
@@ -67,9 +68,9 @@ Connection::reg_mr(void *ptr, size_t size, ibv_mr **mr)
                     IBV_EXP_ACCESS_REMOTE_ATOMIC);
 
     if (*mr == nullptr) {
-        return ROC_SHMEM_UNKNOWN_ERROR;
+        return Status::ROC_SHMEM_UNKNOWN_ERROR;
     }
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
 unsigned
@@ -80,21 +81,20 @@ Connection::total_number_connections()
     return backend->num_wg * connections;
 }
 
-roc_shmem_status_t
+Status
 Connection::initialize(int num_wg)
 {
-    roc_shmem_status_t status;
+    Status status;
 
     status = allocate_dynamic_members(num_wg);
-    if (status != ROC_SHMEM_SUCCESS) {
+    if (status != Status::ROC_SHMEM_SUCCESS) {
         return status;
     }
 
-    struct ibv_device **dev_list = nullptr;
-    int ib_devices;
+    int ib_devices {0};
     dev_list = ibv_get_device_list(&ib_devices);
     if (dev_list == nullptr){
-        return ROC_SHMEM_UNKNOWN_ERROR;
+        return Status::ROC_SHMEM_UNKNOWN_ERROR;
     }
 
     struct ibv_device *ib_dev = dev_list[0];
@@ -110,7 +110,7 @@ Connection::initialize(int num_wg)
 
     uint8_t port = 1;
     status = ib_init(ib_dev, port);
-    if (status != ROC_SHMEM_SUCCESS) {
+    if (status != Status::ROC_SHMEM_SUCCESS) {
         return status;
     }
 
@@ -124,75 +124,80 @@ Connection::initialize(int num_wg)
         malloc(sizeof(sq_post_dv_t) * total_number_connections()));
 
     if (sq_post_dv == nullptr) {
-        return ROC_SHMEM_UNKNOWN_ERROR;
+        return Status::ROC_SHMEM_UNKNOWN_ERROR;
     }
 
     status = create_qps(port, rtn_id, backend->my_pe,
                         &ib_state->portinfo);
-    if (status != ROC_SHMEM_SUCCESS) {
+    if (status != Status::ROC_SHMEM_SUCCESS) {
         return status;
     }
 
     status = initialize_1(port, num_wg);
-    if (status != ROC_SHMEM_SUCCESS) {
+    if (status != Status::ROC_SHMEM_SUCCESS) {
         return status;
     }
 
     MPI_Barrier(MPI_COMM_WORLD);
     free_dynamic_members();
 
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 Connection::finalize()
 {
+    ibv_free_device_list(dev_list);
+
     int ret = ibv_dereg_mr(backend->heap_mr);
     if (ret) {
-        return ROC_SHMEM_UNKNOWN_ERROR;
+        return Status::ROC_SHMEM_UNKNOWN_ERROR;
     }
+
+    ibv_dereg_mr(backend->hdp_mr);
+    ibv_dereg_mr(backend->mr);
 
     MPI_Finalize();
 
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 Connection::ib_init(struct ibv_device *ib_dev,
                     uint8_t port)
 {
     ib_state = new ib_state_t;
     if (!ib_state) {
-        return ROC_SHMEM_UNKNOWN_ERROR;
+        return Status::ROC_SHMEM_UNKNOWN_ERROR;
     }
 
     ib_state->context = ibv_open_device(ib_dev);
     if (!ib_state->context) {
         delete ib_state;
-        return ROC_SHMEM_UNKNOWN_ERROR;
+        return Status::ROC_SHMEM_UNKNOWN_ERROR;
     }
 
     ib_state->pd = ibv_alloc_pd(ib_state->context);
     if (!ib_state->pd) {
         delete ib_state;
-        return ROC_SHMEM_UNKNOWN_ERROR;
+        return Status::ROC_SHMEM_UNKNOWN_ERROR;
     }
 
     ibv_query_port(ib_state->context, port, &ib_state->portinfo);
 
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
 template <typename StateType>
-roc_shmem_status_t
+Status
 Connection::try_to_modify_qp(ibv_qp *qp, StateType state)
 {
     if (ibv_exp_modify_qp(qp, &state.exp_qp_attr, state.exp_attr_mask))
-        return ROC_SHMEM_UNKNOWN_ERROR;
-    return ROC_SHMEM_SUCCESS;
+        return Status::ROC_SHMEM_UNKNOWN_ERROR;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 Connection::init_qp_status(ibv_qp *qp, uint8_t port)
 {
     return try_to_modify_qp<InitQPState>(qp, initqp(port));
@@ -201,7 +206,7 @@ Connection::init_qp_status(ibv_qp *qp, uint8_t port)
 /**
  * rtr stands for 'ready to receive'
  */
-roc_shmem_status_t
+Status
 Connection::change_status_rtr(ibv_qp *qp, dest_info_t *dest, uint8_t port)
 {
     return try_to_modify_qp<RtrState>(qp, rtr(dest, port));
@@ -210,20 +215,20 @@ Connection::change_status_rtr(ibv_qp *qp, dest_info_t *dest, uint8_t port)
 /**
  * rts stands for 'ready to send'
  */
-roc_shmem_status_t
+Status
 Connection::change_status_rts(ibv_qp *qp, dest_info_t *dest)
 {
     return try_to_modify_qp<RtsState>(qp, rts(dest));
 }
 
-roc_shmem_status_t
+Status
 Connection::create_qps(uint8_t port, int rtn_id,
                        int my_rank, ibv_port_attr *ib_port_att)
 {
-    roc_shmem_status_t status;
+    Status status;
     status = create_qps_1();
-    if (status != ROC_SHMEM_SUCCESS) {
-        return ROC_SHMEM_UNKNOWN_ERROR;
+    if (status != Status::ROC_SHMEM_SUCCESS) {
+        return Status::ROC_SHMEM_UNKNOWN_ERROR;
     }
 
     ibv_qp_cap cap {};
@@ -245,13 +250,13 @@ Connection::create_qps(uint8_t port, int rtn_id,
                           0,
                           rtn_id);
         if (!entry) {
-            return ROC_SHMEM_UNKNOWN_ERROR;
+            return Status::ROC_SHMEM_UNKNOWN_ERROR;
         }
     }
 
     status = create_qps_2(port, my_rank, ib_port_att);
-    if (status != ROC_SHMEM_SUCCESS) {
-        return ROC_SHMEM_UNKNOWN_ERROR;
+    if (status != Status::ROC_SHMEM_SUCCESS) {
+        return Status::ROC_SHMEM_UNKNOWN_ERROR;
     }
 
     for (int i = 0; i < qps.size(); i++) {
@@ -261,46 +266,45 @@ Connection::create_qps(uint8_t port, int rtn_id,
                                cqs[i],
                                rtn_id);
         if (!qps[i]) {
-            return ROC_SHMEM_UNKNOWN_ERROR;
+            return Status::ROC_SHMEM_UNKNOWN_ERROR;
         }
 
         status = create_qps_3(port, qps[i], i, ib_port_att);
-        if (status != ROC_SHMEM_SUCCESS) {
-            return ROC_SHMEM_UNKNOWN_ERROR;
+        if (status != Status::ROC_SHMEM_SUCCESS) {
+            return Status::ROC_SHMEM_UNKNOWN_ERROR;
         }
     }
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 Connection::init_mpi_once()
 {
     static std::mutex init_mutex;
     const std::lock_guard<std::mutex> lock(init_mutex);
 
-    static bool init_done;
-    if (init_done) {
-        return ROC_SHMEM_SUCCESS;
+    int init_done = 0;
+    if (MPI_Initialized(&init_done) == MPI_SUCCESS){
+       if (init_done) return Status::ROC_SHMEM_SUCCESS;
     }
 
     if (MPI_Init(nullptr, nullptr) != MPI_SUCCESS) {
-        return ROC_SHMEM_UNKNOWN_ERROR;
+        return Status::ROC_SHMEM_UNKNOWN_ERROR;
     }
 
-    init_done = true;
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 Connection::initialize_gpu_policy(ConnectionImpl **conn,
                                   uint32_t *heap_rkey)
 {
     CHECK_HIP(hipMalloc((void **) conn, sizeof(ConnectionImpl)));
     new (*conn) ConnectionImpl(this, heap_rkey);
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 Connection::post_send(ibv_qp *qp, ibv_exp_send_wr *wr,
                       ibv_exp_send_wr **bad_wr)
 {
@@ -308,12 +312,12 @@ Connection::post_send(ibv_qp *qp, ibv_exp_send_wr *wr,
     assert(wr);
 
     if (ibv_exp_post_send(qp, wr, bad_wr))
-        return ROC_SHMEM_UNKNOWN_ERROR;
+        return Status::ROC_SHMEM_UNKNOWN_ERROR;
 
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-roc_shmem_status_t
+Status
 Connection::cpu_post_wqe(ibv_qp *qp, void* addr, uint32_t lkey,
                          void* remote_addr, uint32_t rkey, size_t size,
                          ibv_ah *ah, int dc_key)
@@ -373,6 +377,7 @@ Connection::buf_release(ibv_exp_peer_buf *pb)
 {
     assert(pb);
     free(pb->addr);
+    pb->addr = nullptr;
     return 0;
 }
 
@@ -444,7 +449,7 @@ Connection::create_cq(ibv_context *context, int cqe,
     return cq;
 }
 
-roc_shmem_status_t
+Status
 Connection::init_gpu_qp_from_connection(QueuePair &gpu_qp, int conn_num)
 {
     int rtn_id = 0;
@@ -521,7 +526,7 @@ Connection::init_gpu_qp_from_connection(QueuePair &gpu_qp, int conn_num)
     gpu_qp.rkey = ((uint32_t*)(sq_post_dv[conn_num].segments))[6 + key_offset];
     gpu_qp.lkey = ((uint32_t*)(sq_post_dv[conn_num].segments))[9 + key_offset];
 
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
 ibv_qp *
@@ -555,15 +560,10 @@ Connection::create_qp(ibv_pd *pd, ibv_context *context,
     qp = ibv_exp_create_qp(context, qp_attr);
 
     if (!qp) {
-        ret = EINVAL;
         printf("error ibv_exp_create_qp failed %d \n", errno);
-        goto err;
+        ibv_destroy_qp(qp);
+        ibv_destroy_cq(tx_cq);
     }
 
     return qp;
-
-err:
-    ibv_destroy_qp(qp);
-    ret = ibv_destroy_cq(tx_cq);
-    return nullptr;
 }

@@ -44,10 +44,12 @@ enum ro_net_cmds {
     RO_NET_FINALIZE,
     RO_NET_TO_ALL,
     RO_NET_BARRIER_ALL,
+    RO_NET_BROADCAST,
 };
 
 enum ro_net_types {
     RO_NET_FLOAT,
+    RO_NET_CHAR,
     RO_NET_DOUBLE,
     RO_NET_INT,
     RO_NET_LONG,
@@ -101,6 +103,7 @@ typedef struct queue_element {
     long*  pSync;
     int  op;
     int  datatype;
+    int PE_root;
 } __attribute__((__aligned__(64))) queue_element_t;
 
 typedef struct queue_desc {
@@ -178,7 +181,7 @@ __device__ bool isFull(uint64_t read_idx, uint64_t write_idx, int queue_size);
 
 __device__ void build_queue_element(ro_net_cmds type, void* dst, void * src,
                                     size_t size, int pe, int logPE_stride,
-                                    int PE_size, void* pWrk,
+                                    int PE_size, int PE_root, void* pWrk,
                                     long* pSync,
                                     struct ro_net_wg_handle *handle,
                                     bool blocking,

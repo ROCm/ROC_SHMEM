@@ -58,7 +58,7 @@ Backend *backend = nullptr;
  * Begin Host Code
  **/
 
-[[maybe_unused]] roc_shmem_status_t
+[[maybe_unused]] Status
 roc_shmem_init(unsigned num_wgs)
 {
     assert(!backend);
@@ -76,9 +76,9 @@ roc_shmem_init(unsigned num_wgs)
     }
 
     if (!backend)
-        return ROC_SHMEM_OOM_ERROR;
+        return Status::ROC_SHMEM_OOM_ERROR;
 
-   return ROC_SHMEM_SUCCESS;
+   return Status::ROC_SHMEM_SUCCESS;
 }
 
 [[maybe_unused]] int
@@ -105,21 +105,21 @@ roc_shmem_malloc(size_t size)
     return ptr;
 }
 
-[[maybe_unused]] roc_shmem_status_t
+[[maybe_unused]] Status
 roc_shmem_free(void *ptr)
 {
     VERIFY_BACKEND();
     return backend->net_free(ptr);
 }
 
-[[maybe_unused]] roc_shmem_status_t
+[[maybe_unused]] Status
 roc_shmem_reset_stats()
 {
     VERIFY_BACKEND();
     return backend->reset_stats();
 }
 
-[[maybe_unused]] roc_shmem_status_t
+[[maybe_unused]] Status
 roc_shmem_dump_stats()
 {
     /** TODO: Many stats are backend independent! **/
@@ -127,7 +127,7 @@ roc_shmem_dump_stats()
     return backend->dump_stats();
 }
 
-[[maybe_unused]] roc_shmem_status_t
+[[maybe_unused]] Status
 roc_shmem_finalize()
 {
     VERIFY_BACKEND();
@@ -135,13 +135,13 @@ roc_shmem_finalize()
     backend->~Backend();
     hipHostFree(backend);
 
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }
 
-[[maybe_unused]] roc_shmem_status_t
+[[maybe_unused]] Status
 roc_shmem_dynamic_shared(size_t *shared_bytes)
 {
     VERIFY_BACKEND();
     backend->dynamic_shared(shared_bytes);
-    return ROC_SHMEM_SUCCESS;
+    return Status::ROC_SHMEM_SUCCESS;
 }

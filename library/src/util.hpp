@@ -37,7 +37,7 @@
     }\
 }
 
-enum BackendType {
+enum class BackendType {
     RO_BACKEND,
     GPU_IB_BACKEND
 };
@@ -151,5 +151,6 @@ void rocm_memory_lock_to_fine_grain(void *ptr, size_t size, void **gpu_ptr,
                                     int gpu_id);
 
 hsa_amd_hdp_flush_t * rocm_hdp(void);
+void free_rocm_hdp(hsa_amd_hdp_flush_t* hpd);
 
 #endif

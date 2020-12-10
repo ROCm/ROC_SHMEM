@@ -96,8 +96,7 @@ WGState::reserve_wg_buffers(int num_buffers)
     // there is no correspondence between WG IDs that finish and WG IDs
     // that are scheduled to replace them.
     int hw_wv_slot = get_hw_wv_index();
-    int buffer_index = (hw_wv_slot * 64) / get_flat_block_size();
-    buffer_index %= num_buffers;
+    int buffer_index = hw_wv_slot % num_buffers;
 
     // If the number of buffers are <= the maximum number of WGs that can
     // be scheduled, then we are going to end up fighting with other WGs

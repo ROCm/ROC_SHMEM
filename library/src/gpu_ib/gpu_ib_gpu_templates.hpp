@@ -79,6 +79,8 @@ compute_reduce(T* src, T* dst, int size, int wg_id, int wg_size)
 {
     for (int i = wg_id; i < size; i += wg_size)
         OpWrap<Op>::Calc(src, dst, i);
+
+    __syncthreads();
 }
 
 template <typename T>
@@ -88,8 +90,78 @@ GPUIBContext::p(T *dest, T value, int pe)
     GPU_DPRINTF("Function: gpu_ib_p\n");
 
     // GPU_IB backend will inline packets automatically
-    putmem(dest, &value, 1, pe);
+    putmem(dest, &value, sizeof(T), pe);
 }
+
+template <typename T, ROC_SHMEM_OP Op>
+__device__ void
+GPUIBContext::internal_ring_allreduce(T *dst, const T *src, int nelems,
+                                      int PE_start, int logPE_stride,
+                                      int PE_size, T *pWrk, long *pSync,
+                                      int n_seg, int seg_size, int chunk_size)
+{
+    GPU_DPRINTF("Function: internal_ring_allreduce\n");
+
+
+    int off_seg, off_send, off_recv;
+    int send_pe = (my_pe +1)%num_pes;
+    long wait_val;
+
+    int wg_size = get_flat_block_size();
+    int wg_id = get_flat_block_id();
+
+
+    for (int i = wg_id; i < nelems; i += wg_size) {
+        dst[i] = src[i];
+    }
+    __syncthreads();
+
+
+    for (int seg = 0; seg < n_seg; seg++){
+        off_seg = seg*seg_size;
+        for (int round = 0; round < num_pes-1; round++){
+            off_send = (((my_pe +1 - round + 2*num_pes)%num_pes)*chunk_size);
+            off_recv = (((my_pe - round + 2*num_pes)%num_pes)*chunk_size);
+
+            if (is_thread_zero_in_block())
+            {
+                putmem_nbi((void*)&pWrk[off_send], (void*)&dst[off_send+off_seg],
+                                chunk_size * sizeof(T), send_pe);
+                fence();
+
+                wait_val = seg +100;
+                p(&pSync[round], wait_val, send_pe);
+
+                wait_until(&pSync[round], ROC_SHMEM_CMP_EQ, wait_val);
+                __threadfence();
+            }
+            __syncthreads();
+            T * ptr = &pWrk[off_recv];
+            compute_reduce<T, Op>(&pWrk[off_recv], &dst[off_seg+off_recv], chunk_size,
+                                  wg_id, wg_size);
+        }
+        for (int round = num_pes - 1 ; round < 2 * num_pes - 2 ; round++){
+            if (is_thread_zero_in_block())
+            {
+                int off_send2 = (((my_pe +1 - round + 2*num_pes)%num_pes)*chunk_size);
+                putmem_nbi((void*)&dst[off_send2+off_seg], (void*)&dst[off_send2+off_seg],
+                            chunk_size * sizeof(T), send_pe);
+
+                fence();
+                wait_val = seg +100;
+                p(&pSync[round], wait_val, send_pe);
+                wait_until(&pSync[round], ROC_SHMEM_CMP_EQ, wait_val);
+            }
+        }
+    }
+    __syncthreads();
+    for (int i = wg_id; i < 2*num_pes -2; i += wg_size) {
+        pSync[i] = SHMEM_SYNC_VALUE;
+    }
+    __syncthreads();
+
+}
+
 
 template <typename T, ROC_SHMEM_OP Op>
 __device__ void
@@ -101,7 +173,6 @@ GPUIBContext::internal_direct_allreduce(T *dst, const T *src, int nelems,
 
     int stride = 1 << logPE_stride;
     int finish = PE_start + stride * PE_size;
-    int n_pes = num_pes;
     int pe = my_pe;
 
     // Single thread schedules the data movement for now.  If we assume
@@ -142,7 +213,7 @@ GPUIBContext::internal_direct_allreduce(T *dst, const T *src, int nelems,
 
     __syncthreads();
 
-    for (int i = wg_id; i < n_pes; i += wg_size) {
+    for (int i = wg_id; i < num_pes; i += wg_size) {
         pSync[i] = SHMEM_SYNC_VALUE;
     }
 
@@ -159,6 +230,8 @@ GPUIBContext::to_all(T *dest, const T *source, int nreduce, int PE_start,
     size_t direct_pWrk =  num_pes * nreduce;
     size_t direct_pSync =  num_pes;
 
+    size_t ring_pSync =  2 * num_pes;
+
     size_t provided_pWrk = max(nreduce/2 + 1, SHMEM_REDUCE_MIN_WRKDATA_SIZE);
     size_t provided_pSync = SHMEM_REDUCE_SYNC_SIZE;
 
@@ -169,13 +242,27 @@ GPUIBContext::to_all(T *dest, const T *source, int nreduce, int PE_start,
     if (provided_pWrk >= direct_pWrk && provided_pSync >= direct_pSync) {
         internal_direct_allreduce<T, Op>(dest, source, nreduce, PE_start,
                                          logPE_stride, PE_size, pWrk, pSync);
-    } else {
-        // pWrk/pSync too small for direct reduction.
-        // TODO: Unfortunately, if we assert then the print won't go.  Rework
-        // when assert() library is better in HIP.
-        GPU_DPRINTF("Unsupported reduction size for gpu_ib.\n");
+    } else{
+        if(ring_pSync <= SHMEM_REDUCE_SYNC_SIZE){
+            int chunk_size = 1024;
+            size_t ring_pWrk = chunk_size * num_pes;
+            if(provided_pWrk < ring_pWrk ){
+                ring_pWrk = max(nreduce/2 , SHMEM_REDUCE_MIN_WRKDATA_SIZE);
+                chunk_size = ring_pWrk / num_pes;
+            }
+            int seg_size = ring_pWrk;
+            int n_seg = nreduce / seg_size;
+            if(n_seg == 0) {
+                n_seg = 1;
+                seg_size = nreduce;
+                chunk_size = seg_size / num_pes;
+            }
+            internal_ring_allreduce<T, Op>(dest, source, nreduce, PE_start,
+                                           logPE_stride, PE_size, pWrk, pSync,
+                                           n_seg, seg_size, chunk_size);
+        }else
+            GPU_DPRINTF("Unsupported reduction size for gpu_ib.\n");
     }
-
 }
 
 template <typename T>
@@ -231,6 +318,83 @@ GPUIBContext::get_nbi(T *dest, const T *source, size_t nelems, int pe)
 {
     GPU_DPRINTF("Function: gpu_ib_get_nbi\n");
     getmem_nbi(dest, source, sizeof(T) * nelems, pe);
+}
+
+template <typename T>
+__device__ void
+GPUIBContext::internal_put_broadcast(T *dst,
+                                     const T *src,
+                                     int nelems,
+                                     int pe_root,
+                                     int pe_start,
+                                     int log_pe_stride,
+                                     int pe_size,
+                                     long *p_sync)
+{
+    GPU_DPRINTF("Function: gpu_ib_internal_put_broadcast\n");
+
+    if (is_thread_zero_in_block()) {
+        if (my_pe == pe_root) {
+            int stride = 1 << log_pe_stride;
+            int finish = pe_start + stride * pe_size;
+            for (int i = pe_start; i < finish; i += stride) {
+                if (i != my_pe) {
+                    put_nbi(dst, src, nelems, i);
+                    p(&p_sync[my_pe], 1L, i);
+                }
+            }
+        } else {
+            wait_until(&p_sync[pe_root], ROC_SHMEM_CMP_EQ, 1L);
+            p_sync[pe_root] = SHMEM_SYNC_VALUE;
+        }
+    }
+
+    __syncthreads();
+}
+
+template <typename T>
+__device__ void
+GPUIBContext::internal_get_broadcast(T *dst,
+                                     const T *src,
+                                     int nelems,
+                                     int pe_root,
+                                     long *pSync)
+{
+    GPU_DPRINTF("Function: gpu_ib_internal_get_broadcast\n");
+    int64_t wait_val =1;
+    if (is_thread_zero_in_block()) {
+        if (my_pe != pe_root) {
+            get(dst, src, nelems, pe_root);
+            amo_add(&pSync[0], wait_val, 0, pe_root);
+        }else{
+            //root needs to wait until everyone read the data
+            wait_until(&pSync[0], ROC_SHMEM_CMP_EQ, (long)(num_pes-1));
+            pSync[0] = SHMEM_SYNC_VALUE;
+        }
+    }
+
+    __syncthreads();
+}
+
+
+template <typename T>
+__device__ void
+GPUIBContext::broadcast(T *dst,
+                        const T *src,
+                        int nelems,
+                        int pe_root,
+                        int pe_start,
+                        int log_pe_stride,
+                        int pe_size,
+                        long *p_sync)
+{
+    GPU_DPRINTF("Function: gpu_ib_broadcast\n");
+    if(num_pes < 4)
+        internal_put_broadcast(dst, src, nelems, pe_root, pe_start,
+                               log_pe_stride, pe_size, p_sync);
+    else
+        internal_get_broadcast(dst, src, nelems, pe_root, p_sync);
+
 }
 
 #endif // GPU_IB_GPU_TEMPLATES_H

@@ -32,9 +32,33 @@
 #include "ro_net_internal.hpp"
 #include "context.hpp"
 
+
+
+
 template<typename T> struct GetROType { };
 
 /* Add specializations here! */
+template<> struct GetROType<char>
+{ static constexpr ro_net_types Type = RO_NET_CHAR; };
+
+template<> struct GetROType<unsigned char>
+{ static constexpr ro_net_types Type = RO_NET_CHAR; };
+
+template<> struct GetROType<signed char>
+{ static constexpr ro_net_types Type = RO_NET_CHAR; };
+
+template<> struct GetROType<unsigned     short>
+{ static constexpr ro_net_types Type = RO_NET_SHORT; };
+
+template<> struct GetROType<unsigned int>
+{ static constexpr ro_net_types Type = RO_NET_INT; };
+
+template<> struct GetROType<unsigned long>
+{ static constexpr ro_net_types Type = RO_NET_LONG; };
+
+template<> struct GetROType<unsigned long long>
+{ static constexpr ro_net_types Type = RO_NET_LONG_LONG; };
+
 template<> struct GetROType<float>
 { static constexpr ro_net_types Type = RO_NET_FLOAT; };
 
@@ -72,7 +96,7 @@ ROContext::to_all(T *dest, const T *source, int nreduce, int PE_start,
      */
     build_queue_element(RO_NET_TO_ALL,
                         dest, (void *) source, nreduce, PE_start, logPE_stride,
-                        PE_size, pWrk, pSync,
+                        PE_size, 0, pWrk, pSync,
                         (struct ro_net_wg_handle *) backend_ctx, true,
                         Op, GetROType<T>::Type);
 
@@ -84,7 +108,7 @@ __device__ void
 ROContext::put(T *dest, const T *source, size_t nelems, int pe)
 {
     size_t size = sizeof(T) * nelems;
-    build_queue_element(RO_NET_PUT, dest, (void *) source, size, pe, 0, 0,
+    build_queue_element(RO_NET_PUT, dest, (void *) source, size, pe, 0, 0, 0,
                         nullptr, nullptr,
                         (struct ro_net_wg_handle *) backend_ctx, true);
 }
@@ -95,7 +119,7 @@ ROContext::put_nbi(T *dest, const T *source, size_t nelems, int pe)
 {
     size_t size = sizeof(T) * nelems;
     build_queue_element(RO_NET_PUT_NBI, dest, (void *) source, size, pe, 0,
-                        0, nullptr, nullptr,
+                        0, 0, nullptr, nullptr,
                         (struct ro_net_wg_handle *) backend_ctx, true);
 }
 
@@ -103,7 +127,7 @@ template <typename T>
 __device__ void
 ROContext::p(T *dest, T value, int pe)
 {
-    build_queue_element(RO_NET_P, dest, &value, sizeof(T), pe, 0, 0, nullptr,
+    build_queue_element(RO_NET_P, dest, &value, sizeof(T), pe, 0, 0, 0, nullptr,
                         nullptr, (struct ro_net_wg_handle *) backend_ctx,
                         true);
 }
@@ -120,7 +144,7 @@ __device__ void
 ROContext::get(T *dest, const T *source, size_t nelems, int pe)
 {
     size_t size = sizeof(T) * nelems;
-    build_queue_element(RO_NET_GET, dest, (void *) source, size, pe, 0, 0,
+    build_queue_element(RO_NET_GET, dest, (void *) source, size, pe, 0, 0, 0,
                         nullptr, nullptr,
                         (struct ro_net_wg_handle *) backend_ctx, true);
 }
@@ -131,8 +155,38 @@ ROContext::get_nbi(T *dest, const T *source, size_t nelems, int pe)
 {
     size_t size = sizeof(T) * nelems;
     build_queue_element(RO_NET_GET_NBI, dest, (void *) source, size, pe, 0,
-                        0, nullptr, nullptr,
+                        0, 0, nullptr, nullptr,
                         (struct ro_net_wg_handle *) backend_ctx, true);
+}
+
+template <typename T>
+__device__ void
+ROContext::broadcast(T *dest,
+                     const T *source,
+                     int nelems,
+                     int pe_root,
+                     int pe_start,
+                     int log_pe_stride,
+                     int pe_size,
+                     long *p_sync)
+{
+     if (!is_thread_zero_in_block()) {
+        __syncthreads();
+        return;
+    }
+
+    /*
+     * Need to get out of template land here, since we must pack the type
+     * and op info into the command queue at runtime.
+     */
+    build_queue_element(RO_NET_BROADCAST,
+                        dest, (void *) source, nelems, pe_start, log_pe_stride,
+                        pe_size, pe_root, nullptr, p_sync,
+                        (struct ro_net_wg_handle *) backend_ctx, true, ROC_SHMEM_SUM,
+                        GetROType<T>::Type);
+
+    __syncthreads();
+
 }
 
 #endif // RO_NET_GPU_TEMPLATES_H

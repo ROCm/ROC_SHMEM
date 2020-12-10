@@ -223,6 +223,8 @@ roc_shmem_wg_ctx_create(long option, roc_shmem_ctx_t *ctx)
          */
         *ctx = SHMEM_CTX_DEFAULT;
     }
+    if (option & SHMEM_CTX_NOSTORE)
+        get_internal_ctx(*ctx)->flush_stores = false;
 
     __syncthreads();
 }
@@ -353,6 +355,14 @@ roc_shmem_quiet(roc_shmem_ctx_t ctx)
     get_internal_ctx(ctx)->quiet();
 }
 
+__device__ void*
+roc_shmem_ptr(const void * dest, int pe)
+{
+    GPU_DPRINTF("Function: roc_shmem_ptr\n");
+
+    return get_internal_ctx(SHMEM_CTX_DEFAULT)->shmem_ptr(dest, pe);
+}
+
 template <typename T, ROC_SHMEM_OP Op> __device__ void
 roc_shmem_wg_to_all(roc_shmem_ctx_t ctx, T *dest, const T *source,
                     int nreduce, int PE_start, int logPE_stride,
@@ -366,12 +376,35 @@ roc_shmem_wg_to_all(roc_shmem_ctx_t ctx, T *dest, const T *source,
 
 template <typename T>
 __device__ void
-roc_shmem_wait_until(roc_shmem_ctx_t ctx, T *ptr, roc_shmem_cmps cmp,
-                     T val)
+roc_shmem_wg_broadcast(roc_shmem_ctx_t ctx,
+                       T *dest,
+                       const T *source,
+                       int nelem,
+                       int pe_root,
+                       int pe_start,
+                       int log_pe_stride,
+                       int pe_size,
+                       long *p_sync)
+{
+    GPU_DPRINTF("Function: roc_shmem_broadcast\n");
+
+    get_internal_ctx(ctx)->broadcast<T>(dest,
+                                        source,
+                                        nelem,
+                                        pe_root,
+                                        pe_start,
+                                        log_pe_stride,
+                                        pe_size,
+                                        p_sync);
+}
+
+template <typename T>
+__device__ void
+roc_shmem_wait_until(T *ptr, roc_shmem_cmps cmp, T val)
 {
     GPU_DPRINTF("Function: roc_shmem_wait_until\n");
 
-    Context *ctx_internal = get_internal_ctx(ctx);
+    Context *ctx_internal = get_internal_ctx(SHMEM_CTX_DEFAULT);
     ctx_internal->ctxStats.incStat(NUM_WAIT_UNTIL);
 
     ctx_internal->wait_until(ptr, cmp, val);
@@ -379,11 +412,11 @@ roc_shmem_wait_until(roc_shmem_ctx_t ctx, T *ptr, roc_shmem_cmps cmp,
 
 template <typename T>
 __device__ int
-roc_shmem_test(roc_shmem_ctx_t ctx, T *ptr, roc_shmem_cmps cmp, T val)
+roc_shmem_test(T *ptr, roc_shmem_cmps cmp, T val)
 {
     GPU_DPRINTF("Function: roc_shmem_testl\n");
 
-    Context *ctx_internal = get_internal_ctx(ctx);
+    Context *ctx_internal = get_internal_ctx(SHMEM_CTX_DEFAULT);
     ctx_internal->ctxStats.incStat(NUM_TEST);
 
     return ctx_internal->test(ptr, cmp, val);
@@ -520,7 +553,17 @@ roc_shmem_atomic_inc(roc_shmem_ctx_t ctx, T *dest, int pe)
     template __device__ void \
     roc_shmem_get<T>(T *dest, const T *source, size_t nelems, int pe); \
     template __device__ void \
-    roc_shmem_get_nbi<T>(T *dest, const T *source, size_t nelems, int pe);
+    roc_shmem_get_nbi<T>(T *dest, const T *source, size_t nelems, int pe); \
+    template __device__ void \
+    roc_shmem_wg_broadcast<T>(roc_shmem_ctx_t ctx, \
+                              T *dest, \
+                              const T *source, \
+                              int nelem, \
+                              int pe_root, \
+                              int pe_start, \
+                              int log_pe_stride, \
+                              int pe_size, \
+                              long *p_sync);
 
 #define AMO_GEN(T) \
     template __device__ T \
@@ -556,12 +599,10 @@ roc_shmem_atomic_inc(roc_shmem_ctx_t ctx, T *dest, int pe)
     roc_shmem_atomic_inc<T>(T *dest, int pe);
 
 #define WAIT_GEN(T) \
-    template __device__ void \
-    roc_shmem_wait_until<T>(roc_shmem_ctx_t ctx,  T *ptr, roc_shmem_cmps cmp, \
-                            T val);\
+     template __device__ void \
+    roc_shmem_wait_until<T>(T *ptr, roc_shmem_cmps cmp, T val);\
     template __device__ int \
-    roc_shmem_test<T>(roc_shmem_ctx_t ctx,  T *ptr, roc_shmem_cmps cmp, \
-                      T val);\
+    roc_shmem_test<T>(T *ptr, roc_shmem_cmps cmp, T val);\
     template __device__ void \
     Context::wait_until<T>(T *ptr, roc_shmem_cmps cmp, T val); \
     template __device__ int \
@@ -573,14 +614,14 @@ roc_shmem_atomic_inc(roc_shmem_ctx_t ctx, T *dest, int pe)
     TEMPLATE_GEN(T, ROC_SHMEM_MAX) \
     TEMPLATE_GEN(T, ROC_SHMEM_PROD)
 
-#define LOGIC_TEMPLATE_GEN(T) \
+#define BITWISE_TEMPLATE_GEN(T) \
     TEMPLATE_GEN(T, ROC_SHMEM_OR) \
     TEMPLATE_GEN(T, ROC_SHMEM_AND) \
     TEMPLATE_GEN(T, ROC_SHMEM_XOR)
 
 #define INT_COLL_GEN(T) \
     ARITH_TEMPLATE_GEN(T) \
-    LOGIC_TEMPLATE_GEN(T)
+    BITWISE_TEMPLATE_GEN(T)
 
 #define FLOAT_COLL_GEN(T) \
     ARITH_TEMPLATE_GEN(T)
@@ -591,10 +632,12 @@ INT_COLL_GEN(long)
 INT_COLL_GEN(long long)
 FLOAT_COLL_GEN(float)
 FLOAT_COLL_GEN(double)
-FLOAT_COLL_GEN(long double)
+// long double reduction fails. hipcc/device may not support long double.
+// so disable it for now.
+//FLOAT_COLL_GEN(long double)
 
 /* All supported OpenSHMEM RMA types */
-RMA_GEN(float) RMA_GEN(double) RMA_GEN(long double) RMA_GEN(char)
+RMA_GEN(float) RMA_GEN(double) RMA_GEN(char) // RMA_GEN(long double)
 RMA_GEN(signed char) RMA_GEN(short) RMA_GEN(int) RMA_GEN(long)
 RMA_GEN(long long) RMA_GEN(unsigned char) RMA_GEN(unsigned short)
 RMA_GEN(unsigned int) RMA_GEN(unsigned long) RMA_GEN(unsigned long long)
@@ -606,7 +649,7 @@ AMO_GEN(uint64_t)
 //AMO_GEN(unsigned long long)
 //AMO_GEN(size_t)
 //AMO_GEN(ptrdiff_t)
-WAIT_GEN(float) WAIT_GEN(double) WAIT_GEN(long double) WAIT_GEN(char)
+WAIT_GEN(float) WAIT_GEN(double) WAIT_GEN(char) //WAIT_GEN(long double)
 WAIT_GEN(signed char) WAIT_GEN(short) WAIT_GEN(int) WAIT_GEN(long)
 WAIT_GEN(long long) WAIT_GEN(unsigned char) WAIT_GEN(unsigned short)
 WAIT_GEN(unsigned int) WAIT_GEN(unsigned long) WAIT_GEN(unsigned long long)

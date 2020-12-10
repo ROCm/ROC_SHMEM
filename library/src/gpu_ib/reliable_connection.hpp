@@ -31,12 +31,13 @@ class ReliableConnection : public Connection
     explicit ReliableConnection(GPUIBBackend *backend);
     virtual ~ReliableConnection() override;
 
-    virtual roc_shmem_status_t get_remote_conn(int &remote_conn) override;
+    virtual Status get_remote_conn(int &remote_conn) override;
 
     virtual void post_wqes() override;
 
-    virtual roc_shmem_status_t
+    virtual Status
     initialize_rkey_handle(uint32_t **heap_rkey_handle, ibv_mr *mr) override;
+    void free_rkey_handle(uint32_t *heap_rkey_handle) override;
 
   private:
     virtual InitQPState initqp(uint8_t port) override;
@@ -47,21 +48,21 @@ class ReliableConnection : public Connection
 
     virtual QPInitAttr qpattr(ibv_qp_cap cap) override;
 
-    virtual roc_shmem_status_t create_qps_1() override;
+    virtual Status create_qps_1() override;
 
-    virtual roc_shmem_status_t
+    virtual Status
     create_qps_2(int port, int my_rank,
                  ibv_port_attr *ib_port_att) override;
 
-    virtual roc_shmem_status_t
+    virtual Status
     create_qps_3(int port, ibv_qp *qp, int offset,
                  ibv_port_attr *ib_port_att) override;
 
-    virtual roc_shmem_status_t allocate_dynamic_members(int num_wg) override;
+    virtual Status allocate_dynamic_members(int num_wg) override;
 
-    virtual roc_shmem_status_t free_dynamic_members() override;
+    virtual Status free_dynamic_members() override;
 
-    virtual roc_shmem_status_t
+    virtual Status
     initialize_1(int port,
                  int num_wg) override;
 

@@ -19,8 +19,7 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  *****************************************************************************/
-
-#include "ping_pong_tester.hpp"
+#include "shmem_ptr_tester.hpp"
 
 #include <roc_shmem.hpp>
 
@@ -28,86 +27,80 @@
  * DEVICE TEST KERNEL
  *****************************************************************************/
 __global__ void
-PingPongTest(int loop,
-             int skip,
-             uint64_t *timer,
-             int *r_buf,
-             ShmemContextType ctx_type)
+ShmemPtrTest( char *r_buf,
+              int *available)
 {
-    __shared__ roc_shmem_ctx_t ctx;
-
     roc_shmem_wg_init();
-    roc_shmem_wg_ctx_create(ctx_type, &ctx);
-
-    int pe = roc_shmem_my_pe(ctx);
 
     if (hipThreadIdx_x == 0) {
-        uint64_t start;
-
-        for (int i = 0; i < loop + skip; i++) {
-            if (i == skip) {
-                start = roc_shmem_timer();
-            }
-
-            if (pe == 0) {
-                roc_shmem_p(ctx, r_buf, i + 1, 1);
-                roc_shmem_wait_until(r_buf, ROC_SHMEM_CMP_EQ, i + 1);
-            } else {
-                roc_shmem_wait_until(r_buf, ROC_SHMEM_CMP_EQ, i + 1);
-                roc_shmem_p(ctx, r_buf, i + 1, 0);
-            }
+        char * local_addr = r_buf + 4;
+        void * remote_addr = roc_shmem_ptr((void*)local_addr, 1);
+        if( remote_addr != NULL){
+            *available = 1;
+            ((char*)remote_addr)[0] = '1';
         }
-        timer[hipBlockIdx_x] =  roc_shmem_timer() - start;
     }
-    roc_shmem_wg_ctx_destroy(ctx);
+
     roc_shmem_wg_finalize();
 }
 
 /******************************************************************************
  * HOST TESTER CLASS METHODS
  *****************************************************************************/
-PingPongTester::PingPongTester(TesterArguments args)
+ShmemPtrTester::ShmemPtrTester(TesterArguments args)
     : Tester(args)
 {
-    r_buf = (int*)roc_shmem_malloc(sizeof(int));
+    hipMalloc((void**)&_available, sizeof(int) );
+    r_buf = (char *)roc_shmem_malloc(args.max_msg_size);
+
 }
 
-PingPongTester::~PingPongTester()
+ShmemPtrTester::~ShmemPtrTester()
 {
+    hipFree(_available);
     roc_shmem_free(r_buf);
 }
 
 void
-PingPongTester::resetBuffers()
+ShmemPtrTester::resetBuffers()
 {
-    memset(r_buf, 0, sizeof(int));
+    memset(r_buf, '0', args.max_msg_size);
+    memset(_available, 0, sizeof(int));
 }
 
 void
-PingPongTester::launchKernel(dim3 gridSize,
-                             dim3 blockSize,
-                             int loop,
-                             uint64_t size)
+ShmemPtrTester::launchKernel(dim3 gridSize,
+                              dim3 blockSize,
+                              int loop,
+                              uint64_t size)
 {
     size_t shared_bytes;
     roc_shmem_dynamic_shared(&shared_bytes);
 
-    hipLaunchKernelGGL(PingPongTest,
+    hipLaunchKernelGGL(ShmemPtrTest,
                        gridSize,
                        blockSize,
                        shared_bytes,
                        stream,
-                       loop,
-                       args.skip,
-                       timer,
                        r_buf,
-                       _shmem_context);
+                       _available);
 
-    num_msgs = (loop + args.skip) * gridSize.x;
-    num_timed_msgs = loop * gridSize.x;
+    num_msgs = 0;
+    num_timed_msgs = 0;
 }
 
 void
-PingPongTester::verifyResults(uint64_t size)
+ShmemPtrTester::verifyResults(uint64_t size)
 {
+
+    if (args.myid == 0) {
+        if(*_available ==0){
+            fprintf(stderr,"SHMEM_PTR NOT AVAILBLE \n");
+        }
+    }else{
+        if(r_buf[4]!='1'){
+            fprintf(stderr, "Data validation error \n");
+            fprintf(stderr, "Got %c, Expected %c\n", r_buf[4], '1');
+        }
+    }
 }

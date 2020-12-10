@@ -69,7 +69,7 @@ option(USE_DC "Enable IB dynamically connected transport (DC)" OFF)
 option(USE_HDP_MAP "Enable hdp map through hdp_map module" OFF)
 option(USE_IPC "Enable IPC support (using HIP)" OFF)
 option(USE_THREADS "Enable workgroup threads to share network queues" OFF)
-option(WF_COAL "Enable wavefront message coalescing" OFF)
+option(USE_WF_COAL "Enable wavefront message coalescing" OFF)
 
 configure_file(config.h.in config.h)
 

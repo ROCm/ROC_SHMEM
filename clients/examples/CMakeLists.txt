@@ -65,15 +65,16 @@ target_include_directories(
 target_sources(
   ${PROJECT_NAME}
   PRIVATE
+    barrier_all_tester.cpp
     test_driver.cpp
     tester.cpp
     tester_arguments.cpp
-    collective_tester.cpp
     ping_pong_tester.cpp
     primitive_tester.cpp
     primitive_amo_tester.cpp
     swarm_tester.cpp
     random_access_tester.cpp
+    shmem_ptr_tester.cpp
 )
 
 ###############################################################################

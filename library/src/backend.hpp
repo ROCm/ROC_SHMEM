@@ -20,8 +20,8 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef BACKEND_H
-#define BACKEND_H
+#ifndef BACKEND_HPP
+#define BACKEND_HPP
 
 #include "config.h"
 
@@ -48,11 +48,11 @@ class Backend
      * These virtual functions have a 1:1 correspondance with the same
      * operations in the roc_shmem.hpp public API.
      */
-    virtual roc_shmem_status_t net_malloc(void **ptr, size_t size) = 0;
+    virtual Status net_malloc(void **ptr, size_t size) = 0;
 
-    virtual roc_shmem_status_t net_free(void *ptr) = 0;
+    virtual Status net_free(void *ptr) = 0;
 
-    virtual roc_shmem_status_t dynamic_shared(size_t *shared_bytes) = 0;
+    virtual Status dynamic_shared(size_t *shared_bytes) = 0;
 
     __host__ __device__ int getMyPE() const { return my_pe; }
 
@@ -66,15 +66,15 @@ class Backend
      * Dumps/resets globalStats before dispatching to derived classes
      * to dump more specific stats.
      */
-    roc_shmem_status_t dump_stats();
+    Status dump_stats();
 
-    roc_shmem_status_t reset_stats();
+    Status reset_stats();
 
     explicit Backend(unsigned num_wgs);
 
     virtual ~Backend();
 
-    BackendType type = GPU_IB_BACKEND;
+    BackendType type = BackendType::GPU_IB_BACKEND;
 
     /*
      * High level stats that do not depend on choice of backend.
@@ -100,9 +100,9 @@ class Backend
     unsigned int *bufferTokens;
 
   protected:
-    virtual roc_shmem_status_t dump_backend_stats() = 0;
+    virtual Status dump_backend_stats() = 0;
 
-    virtual roc_shmem_status_t reset_backend_stats() = 0;
+    virtual Status reset_backend_stats() = 0;
 };
 
 extern __constant__ Backend *gpu_handle;
@@ -119,17 +119,17 @@ class ROBackend : public Backend
   public:
     ro_net_handle *backend_handle = nullptr;
 
-    roc_shmem_status_t net_malloc(void **ptr, size_t size) override;
+    Status net_malloc(void **ptr, size_t size) override;
 
-    roc_shmem_status_t net_free(void *ptr) override;
+    Status net_free(void *ptr) override;
 
-    roc_shmem_status_t dynamic_shared(size_t *shared_bytes) override;
+    Status dynamic_shared(size_t *shared_bytes) override;
 
     explicit ROBackend(unsigned num_wg);
 
     virtual ~ROBackend();
 
-    roc_shmem_status_t ro_net_free_runtime(ro_net_handle *handle);
+    Status ro_net_free_runtime(ro_net_handle *handle);
 
     bool ro_net_process_queue(int queue_idx,
                               struct ro_net_handle *ro_net_gpu_handle,
@@ -138,9 +138,9 @@ class ROBackend : public Backend
     void ro_net_device_uc_malloc(void **ptr, size_t size);
 
   protected:
-    roc_shmem_status_t dump_backend_stats() override;
+    Status dump_backend_stats() override;
 
-    roc_shmem_status_t reset_backend_stats() override;
+    Status reset_backend_stats() override;
 
     void ro_net_poll(int thread_id, int num_threads);
 
@@ -170,32 +170,32 @@ class  GPUIBBackend : public Backend
     int heap_size = gibibyte;
 
   public:
-    roc_shmem_status_t net_malloc(void **ptr, size_t size) override;
+    Status net_malloc(void **ptr, size_t size) override;
 
-    roc_shmem_status_t net_free(void *ptr) override;
+    Status net_free(void *ptr) override;
 
-    roc_shmem_status_t dynamic_shared(size_t *shared_bytes) override;
+    Status dynamic_shared(size_t *shared_bytes) override;
 
     explicit GPUIBBackend(unsigned num_wg);
 
     virtual ~GPUIBBackend();
 
   protected:
-    roc_shmem_status_t exchange_hdp_info();
+    Status exchange_hdp_info();
 
-    roc_shmem_status_t allocate_heap_memory();
+    Status allocate_heap_memory();
 
-    roc_shmem_status_t initialize_ipc();
+    Status initialize_ipc();
 
-    roc_shmem_status_t setup_atomic_region();
+    Status setup_atomic_region();
 
-    roc_shmem_status_t setup_gpu_qps();
+    Status setup_gpu_qps();
 
-    roc_shmem_status_t setup_default_ctx();
+    Status setup_default_ctx();
 
-    roc_shmem_status_t dump_backend_stats() override;
+    Status dump_backend_stats() override;
 
-    roc_shmem_status_t reset_backend_stats() override;
+    Status reset_backend_stats() override;
 
     void roc_shmem_collective_init();
 
@@ -256,6 +256,8 @@ class  GPUIBBackend : public Backend
     uint32_t *heap_rkey = nullptr;
 
     ibv_mr *heap_mr = nullptr;
+    ibv_mr *hdp_mr = nullptr;
+    ibv_mr *mr = nullptr;
 
     uint32_t lkey = 0;
 
@@ -272,6 +274,10 @@ class  GPUIBBackend : public Backend
     ConnectionImpl *connection_policy = nullptr;
 
     IpcImpl ipcImpl;
+
+  private:
+    GPUIBContext* default_ctx = nullptr;
+
 };
 
-#endif //BACKEND_H
+#endif //BACKEND_HPP
