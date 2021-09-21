@@ -20,6 +20,53 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
+/* Declare the template with a generic implementation */
+template <typename T>
+__device__ void
+wg_broadcast(roc_shmem_ctx_t ctx,
+             T *dest,
+             const T *source,
+             int nelem,
+             int pe_root,
+             int pe_start,
+             int log_pe_stride,
+             int pe_size,
+             long *p_sync)
+{
+    return;
+}
+
+/* Define templates to call ROC_SHMEM */
+#define BROADCAST_DEF_GEN(T, TNAME) \
+    template <> __device__ void \
+    wg_broadcast<T>(roc_shmem_ctx_t ctx, \
+                    T *dest, \
+                    const T *source, \
+                    int nelem, \
+                    int pe_root, \
+                    int pe_start, \
+                    int log_pe_stride, \
+                    int pe_size, \
+                    long *p_sync) \
+    { \
+        roc_shmem_ctx_##TNAME##_wg_broadcast(ctx, dest, source, nelem, pe_root, pe_start, \
+                                             log_pe_stride, pe_size, p_sync); \
+    }
+
+BROADCAST_DEF_GEN(float, float)
+BROADCAST_DEF_GEN(double, double)
+BROADCAST_DEF_GEN(char, char)
+//BROADCAST_DEF_GEN(long double, longdouble)
+BROADCAST_DEF_GEN(signed char, schar)
+BROADCAST_DEF_GEN(short, short)
+BROADCAST_DEF_GEN(int, int)
+BROADCAST_DEF_GEN(long, long)
+BROADCAST_DEF_GEN(long long, longlong)
+BROADCAST_DEF_GEN(unsigned char, uchar)
+BROADCAST_DEF_GEN(unsigned short, ushort)
+BROADCAST_DEF_GEN(unsigned int, uint)
+BROADCAST_DEF_GEN(unsigned long, ulong)
+BROADCAST_DEF_GEN(unsigned long long, ulonglong)
 
 /******************************************************************************
  * DEVICE TEST KERNEL
@@ -40,7 +87,7 @@ void BroadcastTest(int loop,
     roc_shmem_wg_init();
     roc_shmem_wg_ctx_create(ctx_type, &ctx);
 
-    int n_pes = roc_shmem_n_pes(ctx);
+    int n_pes = roc_shmem_ctx_n_pes(ctx);
 
     __syncthreads();
 
@@ -50,16 +97,16 @@ void BroadcastTest(int loop,
             start = roc_shmem_timer();
         }
 
-        roc_shmem_wg_broadcast<T1>(ctx,
-                                   dest_buf,    // T* dest
-                                   source_buf,  // const T* source
-                                   size,        // int nelement
-                                   0,           // int PE_root
-                                   0,           // int PE_start
-                                   0,           // int logPE_stride
-                                   n_pes,       // int PE_size
-                                   pSync);      // long *pSync
-        roc_shmem_wg_barrier_all(ctx);
+        wg_broadcast<T1>(ctx,
+                         dest_buf,    // T* dest
+                         source_buf,  // const T* source
+                         size,        // int nelement
+                         0,           // int PE_root
+                         0,           // int PE_start
+                         0,           // int logPE_stride
+                         n_pes,       // int PE_size
+                         pSync);      // long *pSync
+        roc_shmem_ctx_wg_barrier_all(ctx);
     }
 
     __syncthreads();
@@ -83,11 +130,11 @@ BroadcastTester<T1>::BroadcastTester(TesterArguments args, std::function<void(T1
     source_buf = (T1 *)roc_shmem_malloc(args.max_msg_size * sizeof(T1));
     dest_buf = (T1 *)roc_shmem_malloc(args.max_msg_size * sizeof(T1));
 
-    size_t p_sync_size = SHMEM_BCAST_SYNC_SIZE;
+    size_t p_sync_size = ROC_SHMEM_BCAST_SYNC_SIZE;
     pSync = (long *)roc_shmem_malloc(p_sync_size * sizeof(long));
 
     for (int i = 0; i < p_sync_size; i++) {
-        pSync[i] = SHMEM_SYNC_VALUE;
+        pSync[i] = ROC_SHMEM_SYNC_VALUE;
     }
 }
 

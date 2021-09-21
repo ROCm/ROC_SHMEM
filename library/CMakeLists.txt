@@ -20,30 +20,29 @@
 # IN THE SOFTWARE.
 ###############################################################################
 
-cmake_minimum_required(VERSION 3.17.2 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.16.3 FATAL_ERROR)
 
 ###############################################################################
 # GLOBAL COMPILE FLAGS
 ###############################################################################
-set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_COMPILER /opt/rocm/bin/hipcc)
+set(CMAKE_CXX_FLAGS_DEBUG "-O0 -ggdb")
 
 ###############################################################################
 # DEFAULT BUILD TYPE
 ###############################################################################
 if(NOT CMAKE_BUILD_TYPE)
-  message(STATUS "CMAKE_BUILD_TYPE unspecified: generating Release build")
-
   set(
     CMAKE_BUILD_TYPE
-    "Release"
+    "Debug"
     CACHE
       STRING
         "build type: Release, Debug, RelWithDebInfo, MinSizeRel"
     FORCE
   )
+  message(STATUS "CMAKE_BUILD_TYPE unspecified: using ${CMAKE_BUILD_TYPE}")
 endif()
 
 ###############################################################################
@@ -53,6 +52,8 @@ set(
   CMAKE_MODULE_PATH
   ${CMAKE_MODULE_PATH}
   "${CMAKE_SOURCE_DIR}/cmake/Modules"
+  "/opt/rocm/hip/cmake"
+  "/opt/rocm/rocclr/lib/cmake/rocclr"
 )
 
 ###############################################################################
@@ -100,7 +101,7 @@ set_target_properties(
   ${PROJECT_NAME}
   PROPERTIES
     PUBLIC_HEADER
-      "${CMAKE_BINARY_DIR}/config.h;${CMAKE_CURRENT_SOURCE_DIR}/include/roc_shmem.hpp"
+      "${CMAKE_BINARY_DIR}/config.h;${CMAKE_CURRENT_SOURCE_DIR}/include/roc_shmem.hpp;${CMAKE_CURRENT_SOURCE_DIR}/include/debug.hpp"
 )
 
 ###############################################################################
@@ -108,6 +109,28 @@ set_target_properties(
 ###############################################################################
 add_subdirectory(src)
 add_subdirectory(docs)
+
+###############################################################################
+# HIP
+###############################################################################
+find_package(hip REQUIRED)
+
+target_link_libraries(
+  ${PROJECT_NAME}
+  PUBLIC
+    hip::device
+)
+
+###############################################################################
+# HSA-RUNTIME64
+###############################################################################
+find_package(hsa-runtime64 REQUIRED)
+
+target_link_libraries(
+  ${PROJECT_NAME}
+  PUBLIC
+    hsa-runtime64::hsa-runtime64
+)
 
 ###############################################################################
 # IBVERBS

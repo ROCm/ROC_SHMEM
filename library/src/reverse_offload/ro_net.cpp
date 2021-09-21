@@ -20,8 +20,9 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#include <stdio.h>
-#include <stdlib.h>
+#include <iostream>
+#include <cstdio>
+#include <cstdlib>
 #include <unistd.h>
 #include <smmintrin.h>
 #include <immintrin.h>
@@ -35,11 +36,14 @@
 #include "util.hpp"
 #include "wg_state.hpp"
 
+extern Context *ROC_SHMEM_HOST_CTX_DEFAULT;
+
 /***
  *
  * External Host-side API functions
  *
  ***/
+
 ROBackend::~ROBackend()
 {
     struct ro_net_handle *ro_net_gpu_handle =
@@ -155,6 +159,21 @@ ROBackend::ROBackend(unsigned num_wgs)
         exit(-static_cast<int>(return_code));
     }
 
+#ifdef OPENSHMEM_TRANSPORT
+    std::cerr << "No host-facing support for OpenSHMEM RO backend" << std::endl;
+    exit(-1);
+#else
+    {
+        MPITransport *mpi_transport = static_cast<MPITransport *> (transport);
+        host_interface = mpi_transport->host_interface;
+    }
+#endif
+
+    default_host_ctx = new ROHostContext(*this, 0);
+    ROC_SHMEM_HOST_CTX_DEFAULT = default_host_ctx;
+
+    transport->default_host_ctx = default_host_ctx;
+
     queue_element_t **queues;
     CHECK_HIP(hipHostMalloc((void***)&queues,
                             sizeof(queue_element_t*) * num_wg,
@@ -212,14 +231,20 @@ ROBackend::ROBackend(unsigned num_wgs)
     CHECK_HIP(hipMalloc(&ctx, sizeof(ROContext)));
     new (ctx) ROContext(*this, 0);
 
-    hipMemcpyToSymbol(HIP_SYMBOL(SHMEM_CTX_DEFAULT), &ctx,
-                      sizeof(ctx), 0, hipMemcpyHostToDevice);
+    int * symbol_address;
+    CHECK_HIP(hipGetSymbolAddress((void**)&symbol_address, HIP_SYMBOL(ROC_SHMEM_CTX_DEFAULT)));
+
+    CHECK_HIP(hipMemcpy(symbol_address, &ctx, sizeof(ctx), hipMemcpyDefault));
+    //hipMemcpyToSymbol(HIP_SYMBOL(ROC_SHMEM_CTX_DEFAULT), &ctx,
+    //                  sizeof(ctx), 0, hipMemcpyHostToDevice);
 
     // Spawn threads to service the queues.
     for (int i = 0; i < num_threads; i++) {
         worker_threads.emplace_back(&ROBackend::ro_net_poll, this, i,
                                     num_threads);
     }
+
+    *done_init = 1;
 }
 
 Status
@@ -305,43 +330,89 @@ ROBackend::dump_backend_stats()
 Status
 ROBackend::ro_net_free_runtime(struct ro_net_handle * ro_net_gpu_handle)
 {
+    /*
+     * Validate that a handle was passed that is not a nullptr.
+     */
     assert(ro_net_gpu_handle);
 
+    /*
+     * Set this flag to denote that the runtime is being torn down.
+     */
     ro_net_gpu_handle->done_flag = 1;
+
+    /*
+     * Tear down the worker threads.
+     */
     for (auto &t : worker_threads) {
        t.join();
     }
 
+    /*
+     * Tear down the transport object.
+     */
     if (transport) {
         while(!transport->readyForFinalize());
         transport->finalizeTransport();
+
         // TODO: For some reason this always seg faults.  I have no idea why.
         // Ignoring for now since its during tear-down anyway.
         delete transport;
     }
 
+    /*
+     * Tear down the HDP.
+     */
     ro_net_gpu_handle->hdp_policy->~HdpPolicy();
     hipHostFree((void*) ro_net_gpu_handle->hdp_policy);
 
+    /*
+     * Free the host-side single element used to do memory transfers from
+     * device to host memory.
+     */
     if (elt)
         free(elt);
 
+    /*
+     * Free the profiler statistics structure.
+     */
     CHECK_HIP(hipFree(ro_net_gpu_handle->profiler));
+
+    /*
+     * Free the resources for internal barriers.
+     */
     CHECK_HIP(hipFree(ro_net_gpu_handle->barrier_ptr));
+
+    /*
+     * Free the queue descriptors.
+     */
     if (ro_net_gpu_handle->gpu_queue) {
         CHECK_HIP(hipFree(ro_net_gpu_handle->queue_descs));
     } else {
         CHECK_HIP(hipHostFree(ro_net_gpu_handle->queue_descs));
     }
 
+    /*
+     * Free the memory pointed to by the queues.
+     */
     if (ro_net_gpu_handle->gpu_queue) {
         CHECK_HIP(hipFree(*ro_net_gpu_handle->queues));
     } else {
         CHECK_HIP(hipHostFree(*ro_net_gpu_handle->queues));
     }
 
+    /*
+     * Free the queue pointer itself.
+     */
     CHECK_HIP(hipHostFree(ro_net_gpu_handle->queues));
 
+    /*
+     * Free the default host context
+     */
+    delete default_host_ctx;
+
+    /*
+     * Free the gpu_handle.
+     */
     CHECK_HIP(hipHostFree(ro_net_gpu_handle));
 
     return Status::ROC_SHMEM_SUCCESS;
@@ -352,56 +423,125 @@ ROBackend::ro_net_process_queue(int queue_idx,
                                 struct ro_net_handle *ro_net_gpu_handle,
                                 bool *finalized)
 {
-    // Check if next element from the GPU is ready
+    /*
+     * Determine which indices to access in the queue.
+     */
     queue_desc_t *queue_desc = &ro_net_gpu_handle->queue_descs[queue_idx];
     DPRINTF(("Queue Desc read_idx %zu\n", queue_desc->read_idx));
     uint64_t read_slot = queue_desc->read_idx %
         ro_net_gpu_handle->queue_size;
 
-    // Don't allow updates to the temporary element buffer
+    /*
+     * Check if next element from the device is ready.
+     */
     const queue_element_t *next_element = nullptr;
     if (ro_net_gpu_handle->gpu_queue) {
-        // Need to flush HDP read cache so we can see updates to the GPU Queue
-        // descriptor
+        /*
+         * Flush HDP read cache so we can see updates to the GPU Queue
+         * descriptor.
+         */
         ro_net_gpu_handle->hdp_policy->hdp_flush();
+
+        /*
+         * Copy the queue element from device memory to the host memory
+         * elt buffer.
+         */
         memcpy((void*)elt, &ro_net_gpu_handle->queues[queue_idx][read_slot],
             sizeof(queue_element_t));
+
+        /*
+         * Set our local variable to the next element.
+         */
         next_element = reinterpret_cast<queue_element_t*>(elt);
     } else {
+        /*
+         * Set our local variable to the next element.
+         */
         next_element = &ro_net_gpu_handle->queues[queue_idx][read_slot];
     }
 
+    /*
+     * By default, assume that no valid queue element exists. If a valid
+     * queue element is found, we'll flip this return value to true.
+     */
     bool valid = false;
+
+    /*
+     * Search for a single valid element and process that element through
+     * the transport if one is found.
+     */
     if (next_element->valid) {
         valid = true;
+
         DPRINTF(("Rank %d Processing read_slot %lu of queue %d \n",
                 my_pe, read_slot, queue_idx));
 
+        /*
+         * Pass the queue element to the transport.
+         * TODO: Who is responsible for freeing this memory?
+         */
         transport->insertRequest(new queue_element_t(*next_element),
                                  queue_idx);
 
+        /*
+         * Toggle the queue flag back to invalid since the request was
+         * just processed.
+         */
         ro_net_gpu_handle->queues[queue_idx][read_slot].valid = 0;
-        // Update the CPU's local read index
+
+        /*
+         * Update the CPU's local read index.
+         */
         queue_desc->read_idx++;
     }
 
     return valid;
 }
 
-/* Service thread routine that spins on a number of queues until the host
-   calls net_finalize.  */
 void
 ROBackend::ro_net_poll(int thread_id, int num_threads)
 {
+    /*
+     * Cast the backend handle down into this struct to directly access
+     * members.
+     *
+     * TODO: This seems error prone and needs to be changed.
+     */
     ro_net_handle *ro_net_gpu_handle =
         reinterpret_cast<ro_net_handle*>(backend_handle);
-    int gpu_dev =0;
+
+
+    /*
+     * This access assumes only one device exists and should not work
+     * generally.
+     */
+    int gpu_dev = 0;
     CHECK_HIP(hipGetDevice(&gpu_dev));
+
+    /*
+     * Continue until the runtime is torn down.
+     */
     while (!ro_net_gpu_handle->done_flag) {
+        /*
+         * Each worker thread is responsible for evaluating a queue index
+         * at a time.
+         */
         for (int i = thread_id; i < num_wg; i += num_threads) {
-            // Drain up to 64 requests from this queue if they are ready
+            /*
+             * Drain up to 64 requests from this queue if they are ready.
+             */
             int req_count = 0;
+
+            /*
+             * The finalize variable is not used.
+             */
             bool finalize;
+
+            /*
+             * This variable will evaluate to "True" as long as valid queue
+             * entries are found and processed. The loop ends when this
+             * evalutes to "False" or we evaluate 64 entries.
+             */
             bool processed_req;
             do {
                 processed_req =
@@ -416,4 +556,10 @@ void
 ROBackend::ro_net_device_uc_malloc(void **ptr, size_t size)
 {
     CHECK_HIP(hipExtMallocWithFlags(ptr, size, hipDeviceMallocFinegrained));
+}
+
+__host__ void
+ROBackend::global_exit(int status)
+{
+    transport->global_exit(status);
 }

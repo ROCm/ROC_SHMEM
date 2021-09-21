@@ -13,10 +13,10 @@ cmake \
     -DCMAKE_BUILD_TYPE=Debug \
     -DCMAKE_INSTALL_PREFIX=$install_path \
     -DCMAKE_VERBOSE_MAKEFILE=ON \
-    -DDEBUG=ON \
+    -DDEBUG=OFF \
     -DPROFILE=ON \
     -DUSE_DC=OFF \
-    -DUSE_HDP_MAP=ON \
+    -DUSE_HDP_MAP=OFF \
     -DUSE_IPC=OFF \
     -DUSE_THREADS=OFF \
     -DUSE_WF_COAL=OFF \

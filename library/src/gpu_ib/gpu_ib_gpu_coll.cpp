@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2021 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -22,72 +22,69 @@
 
 #include <roc_shmem.hpp>
 
-#include "gpu_ib_gpu_templates.hpp"
 #include "context.hpp"
+#include "gpu_ib_gpu_templates.hpp"
 #include "util.hpp"
 
 __device__ void
-GPUIBContext::internal_direct_barrier(int pe, int n_pes, int64_t *pSync)
-{
-    int64_t flag_val =1;
-    if(pe==0){
-        for(int i=1;i<n_pes;i++){
-            wait_until(&pSync[i],ROC_SHMEM_CMP_EQ, flag_val);
-            pSync[i] = SHMEM_SYNC_VALUE;
+GPUIBContext::internal_direct_barrier(int pe,
+                                      int n_pes,
+                                      int64_t *pSync) {
+    int64_t flag_val = 1;
+    if (pe == 0) {
+        for (size_t i = 1; i < n_pes; i++) {
+            wait_until(&pSync[i], ROC_SHMEM_CMP_EQ, flag_val);
+            pSync[i] = ROC_SHMEM_SYNC_VALUE;
         }
-        for(int i=1;i<n_pes;i++){
+        for (size_t i = 1; i < n_pes; i++) {
             put_nbi(&pSync[0], &flag_val, 1, i);
         }
 
-    }else{
+    } else {
         put_nbi(&pSync[pe], &flag_val, 1, 0);
-        wait_until(&pSync[0],ROC_SHMEM_CMP_EQ, flag_val);
-        pSync[0] = SHMEM_SYNC_VALUE;
-
+        wait_until(&pSync[0], ROC_SHMEM_CMP_EQ, flag_val);
+        pSync[0] = ROC_SHMEM_SYNC_VALUE;
     }
 }
 
 __device__ void
-GPUIBContext::internal_atomic_barrier(int pe, int n_pes, int64_t *pSync)
-{
-    int64_t flag_val =1;
-    if(pe==0){
-        wait_until(&pSync[0],ROC_SHMEM_CMP_EQ, (int64_t)(n_pes-1));
-        pSync[0] = SHMEM_SYNC_VALUE;
+GPUIBContext::internal_atomic_barrier(int pe,
+                                      int n_pes,
+                                      int64_t *pSync) {
+    int64_t flag_val = 1;
+    if (pe == 0) {
+        wait_until(&pSync[0], ROC_SHMEM_CMP_EQ, (int64_t)(n_pes - 1));
+        pSync[0] = ROC_SHMEM_SYNC_VALUE;
 
-        for(int i=1;i<n_pes;i++){
+        for (size_t i = 1; i < n_pes; i++) {
             put_nbi(&pSync[0], &flag_val, 1, i);
         }
-
-    }else{
+    } else {
         amo_add(&pSync[0], flag_val, 0, 0);
-        wait_until(&pSync[0],ROC_SHMEM_CMP_EQ, flag_val);
-        pSync[0] = SHMEM_SYNC_VALUE;
+        wait_until(&pSync[0], ROC_SHMEM_CMP_EQ, flag_val);
+        pSync[0] = ROC_SHMEM_SYNC_VALUE;
     }
 }
 
 __device__ void
-GPUIBContext::sync_all()
-{
-
+GPUIBContext::sync_all() {
+    __syncthreads();
     if (is_thread_zero_in_block()) {
         int n_pes = num_pes;
-        int pe    = my_pe;
+        int pe = my_pe;
 
-        if(n_pes <64)
+        if (n_pes < 64) {
             internal_direct_barrier(pe, n_pes, barrier_sync);
-        else
+        } else {
             internal_atomic_barrier(pe, n_pes, barrier_sync);
-
+        }
     }
     __threadfence();
     __syncthreads();
-
 }
 
 __device__ void
-GPUIBContext::barrier_all()
-{
+GPUIBContext::barrier_all() {
     sync_all();
     if (is_thread_zero_in_block()) {
         quiet();

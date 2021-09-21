@@ -8,22 +8,6 @@ import subprocess
 import sys
 
 ###############################################################################
-############################ TEST SUITE FUNCTIONS #############################
-###############################################################################
-def smoke_test():
-    generate_tests()
-    return
-
-def short_test():
-    return smoke_test()
-
-def long_test(config):
-    return smoke_test()
-
-def nightly_test():
-    return smoke_test()
-
-###############################################################################
 ############################ TEST SUITE VARIABLES #############################
 ###############################################################################
 algorithms = {
@@ -152,12 +136,6 @@ def parse_command_line():
                         nargs='*',
                         default=None)
 
-    parser.add_argument('--test_suite',
-                        dest='test_suite',
-                        type=str,
-                        default='short',
-                        choices=['smoke', 'short', 'long', 'nightly'])
-
     return parser.parse_args()
 
 def convert_arguments_to_dictionary(args):
@@ -168,7 +146,7 @@ def determine_algos_from_library_config_type(config):
         return config
 
     gpu_ib = re.match('^[rd]c_', config['library_build_config_type'])
-    thread_single = re.match('single', config['library_build_config_type'])
+    thread_single = re.match('.*single.*', config['library_build_config_type'])
 
     if not gpu_ib:
         config['algorithms'] = reverse_offload_algorithms
@@ -202,15 +180,11 @@ option_keyword_dictionary = {
 ########################## TEST GENERATION FUNCTIONS ##########################
 ###############################################################################
 def separate_dictionaries(dictionary):
-    test_suite = {}
     library_build_config = {}
     mpirun = {}
     path = {}
     driver = {}
 
-    test_suite_keys = [
-        'test_suite'
-    ]
     library_build_config_keys = [
         'library_build_config_type'
     ]
@@ -224,9 +198,7 @@ def separate_dictionaries(dictionary):
     ]
 
     for key, value in dictionary.items():
-        if key in test_suite_keys:
-            test_suite[key] = value
-        elif key in library_build_config_keys:
+        if key in library_build_config_keys:
             library_build_config[key] = value
         elif key in mpirun_keys:
             mpirun[key] = value
@@ -235,7 +207,7 @@ def separate_dictionaries(dictionary):
         else:
             driver[key] = value
 
-    return test_suite, library_build_config, mpirun, path, driver
+    return library_build_config, mpirun, path, driver
 
 def convert_dict_values_to_list_of_lists(dictionary):
     values = dictionary.values()
@@ -293,7 +265,7 @@ def stringify_config(keys, combo_list):
     return string_list
 
 def generate_test_commands(config_templates):
-    (test_suite, build_config, mpirun, path, driver) = \
+    (build_config, mpirun, path, driver) = \
         separate_dictionaries(config_templates)
 
     driver_keys, driver_combos = create_config_combinations(driver)
@@ -353,14 +325,15 @@ def write_output():
 ###############################################################################
 def single_test(test):
     try:
-        subprocess.run(test, shell=True)
+        subprocess.run(test, shell=True, check=True)
     except subprocess.CalledProcessError as e:
-        print(e.message)
+        print(e)
     return
 
 def all_tests():
     for test in generate_tests():
-        single_test(test)
+        print(test)
+        #single_test(test)
     return
 
 ###############################################################################

@@ -29,6 +29,9 @@
 #include <mutex>
 #include <queue>
 
+#include "context.hpp"
+#include "host.hpp"
+
 class Transport
 {
   public:
@@ -64,9 +67,13 @@ class Transport
     int getMyPe() const { return my_pe; }
     int getNumPes() const { return num_pes; }
 
+    virtual void global_exit(int status) = 0;
+
     virtual ~Transport() { }
     virtual void insertRequest(const queue_element_t *element, int queue_id)
                                = 0;
+
+    ROHostContext *default_host_ctx = nullptr;
 
     /** Device API **/
 
@@ -113,7 +120,12 @@ class MPITransport : public Transport
     virtual int numOutstandingRequests() override;
     virtual void insertRequest(const queue_element_t *element, int queue_id)
         override;
-    virtual bool readyForFinalize() { return !transport_up; }
+    virtual bool readyForFinalize() override { return !transport_up; }
+    MPI_Comm ro_net_comm_world;
+
+    HostInterface *host_interface = nullptr;
+
+    void global_exit(int status) override;
 
   private:
     class MPIWindowRange {

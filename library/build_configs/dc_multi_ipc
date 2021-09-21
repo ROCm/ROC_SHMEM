@@ -16,7 +16,7 @@ cmake \
     -DDEBUG=OFF \
     -DPROFILE=OFF \
     -DUSE_DC=ON \
-    -DUSE_HDP_MAP=ON \
+    -DUSE_HDP_MAP=OFF \
     -DUSE_IPC=ON \
     -DUSE_THREADS=ON \
     -DUSE_WF_COAL=OFF \

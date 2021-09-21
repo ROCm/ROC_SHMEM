@@ -28,6 +28,7 @@
 #include <cstdint>
 #include "hdp_policy.hpp"
 #include "stats.hpp"
+#include "util.hpp"
 
 #define DEFAULT_QUEUE_SIZE 64
 

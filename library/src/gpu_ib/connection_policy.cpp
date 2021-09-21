@@ -20,63 +20,63 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#include "config.h"
-
-#include "queue_pair.hpp"
 #include "connection_policy.hpp"
-#include "dynamic_connection.hpp"
 
 #include <infiniband/mlx5dv.h>
+
+#include "config.h"  // NOLINT(build/include_subdir)
+#include "dynamic_connection.hpp"
+#include "queue_pair.hpp"
 
 #ifdef DEBUG
 #define HIP_ENABLE_PRINTF 1
 #endif
 
 RCConnectionImpl::RCConnectionImpl(Connection *conn,
-                                   uint32_t *_vec_rkey)
-{ }
+                                   uint32_t *_vec_rkey) {
+}
 
 DCConnectionImpl::DCConnectionImpl(Connection *conn,
                                    uint32_t *_vec_rkey)
-  : vec_dct_num(static_cast<DynamicConnection *>(conn)->get_vec_dct_num()),
+  : vec_dct_num(static_cast<DynamicConnection*>(conn)->get_vec_dct_num()),
     vec_rkey(_vec_rkey),
-    vec_lids(static_cast<DynamicConnection *>(conn)->get_vec_lids())
-{ }
+    vec_lids(static_cast<DynamicConnection*>(conn)->get_vec_lids()) {
+}
 
 __device__ uint32_t
-RCConnectionImpl::getNumWqesImpl(uint8_t opcode)
-{
+RCConnectionImpl::getNumWqesImpl(uint8_t opcode) {
     return 1;
 }
 
 __device__ uint32_t
-DCConnectionImpl::getNumWqesImpl(uint8_t opcode)
-{
-    // FIXME: we assume all threads in wave are performing ATOMIC ops
-    // while this might be common, we do no thave such restriction
-    // so need to be fixed
+DCConnectionImpl::getNumWqesImpl(uint8_t opcode) {
+    // FIXME: We assume all threads in wave are performing ATOMIC ops.
+    // While this might be common, we do not have such restriction
+    // so need to be fixed.
+    // Since OFED 5.2, a DC segments uses 48bytes - so with or without
+    // atomic we need 2 wqes.
+    // return 2;
     return (opcode == MLX5_OPCODE_ATOMIC_FA ||
             opcode == MLX5_OPCODE_ATOMIC_CS) ? 2 : 1;
 }
 
 __device__ bool
-RCConnectionImpl::updateConnectionSegmentImpl(mlx5_base_av *wqe, int pe)
-{ return false; }
+RCConnectionImpl::updateConnectionSegmentImpl(ib_mlx5_base_av_t *wqe, int pe) {
+    return false;
+}
 
 __device__ bool
-DCConnectionImpl::updateConnectionSegmentImpl(mlx5_base_av *wqe, int pe)
-{
+DCConnectionImpl::updateConnectionSegmentImpl(ib_mlx5_base_av_t *wqe, int pe) {
     wqe->dqp_dct = vec_dct_num[pe];
     wqe->rlid = vec_lids[pe];
     return true;
 }
 
 __device__ void
-RCConnectionImpl::setRkeyImpl(uint32_t &rkey, int pe)
-{ }
+RCConnectionImpl::setRkeyImpl(uint32_t *rkey, int pe) {
+}
 
 __device__ void
-DCConnectionImpl::setRkeyImpl(uint32_t &rkey, int pe)
-{
-    rkey = vec_rkey[pe];
+DCConnectionImpl::setRkeyImpl(uint32_t *rkey, int pe) {
+    *rkey = vec_rkey[pe];
 }

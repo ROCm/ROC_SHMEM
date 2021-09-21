@@ -1,0 +1,10 @@
+# argument1 - operation to run
+# argument2 - loop count
+# e.g ./gdbrun 14 10 (launches pingpong for 10 times)
+
+set -e
+for i in {1..$2};
+do
+    mpirun -np 2 xterm -e gdb -x gdbscript --args build/rocshmem_example_driver -t 1 -w 1 -s 32768 -a $1  -x 8
+    test $? -eq 0 || exit 1
+done

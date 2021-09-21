@@ -34,7 +34,7 @@ BarrierAllTest(int loop,
     __shared__ roc_shmem_ctx_t ctx;
 
     roc_shmem_wg_init();
-    roc_shmem_wg_ctx_create(SHMEM_CTX_WG_PRIVATE, &ctx);
+    roc_shmem_wg_ctx_create(ROC_SHMEM_CTX_WG_PRIVATE, &ctx);
 
     uint64_t start;
     if (hipThreadIdx_x == 0) {
@@ -44,7 +44,7 @@ BarrierAllTest(int loop,
     __syncthreads();
 
     for (int i = 0; i < loop; i++) {
-        roc_shmem_wg_barrier_all(ctx);
+        roc_shmem_ctx_wg_barrier_all(ctx);
     }
 
     __syncthreads();

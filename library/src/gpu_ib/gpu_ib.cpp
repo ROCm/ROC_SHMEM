@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2021 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -20,471 +20,403 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
 #include <endian.h>
-
-#include <roc_shmem.hpp>
 #include <mpi.h>
+#include <unistd.h>
 
-#include "dynamic_connection.hpp"
-#include "reliable_connection.hpp"
+#include <cstdio>
+#include <cstdlib>
+#include <mutex>  // NOLINT(build/c++11)
+#include <roc_shmem.hpp>
+
 #include "context.hpp"
 #include "backend.hpp"
-#include "queue_pair.hpp"
+#include "host.hpp"
 #include "wg_state.hpp"
 
+#include "queue_pair.hpp"
+
+extern Context *ROC_SHMEM_HOST_CTX_DEFAULT;
+
 Status
-GPUIBBackend::net_free(void *ptr)
-{
+GPUIBBackend::net_free(void *ptr) {
     return Status::ROC_SHMEM_SUCCESS;
 }
 
 Status
-GPUIBBackend::dump_backend_stats()
-{
-    /*
-     * TODO: Refactor this into the Stats class to remove the ifdef.
-     */
-#ifdef PROFILE
-    int statblocks = connection->total_number_connections();
-
-    uint64_t cycles_ring_sq_db = 0;
-    uint64_t cycles_update_wqe = 0;
-    uint64_t cycles_poll_cq = 0;
-    uint64_t cycles_next_cq = 0;
-    uint64_t cycles_init = gpu_qps[statblocks - 1].profiler.getStat(INIT);
-    uint64_t cycles_finalize =
-        gpu_qps[statblocks - 1].profiler.getStat(FINALIZE);
-
-    uint64_t total_rtn_quiet_count = 0;
-    uint64_t total_rtn_db_count = 0;
-    uint64_t total_rtn_wqe_count = 0;
-
-    for (int i = 0; i < statblocks; i++) {
-        cycles_ring_sq_db += gpu_qps[i].profiler.getStat(RING_SQ_DB);
-        cycles_update_wqe += gpu_qps[i].profiler.getStat(UPDATE_WQE);
-        cycles_poll_cq += gpu_qps[i].profiler.getStat(POLL_CQ);
-        cycles_next_cq += gpu_qps[i].profiler.getStat(NEXT_CQ);
-        total_rtn_quiet_count += gpu_qps[i].profiler.getStat(RTN_QUIET_COUNT);
-        total_rtn_db_count += gpu_qps[i].profiler.getStat(RTN_DB_COUNT);
-        total_rtn_wqe_count += gpu_qps[i].profiler.getStat(RTN_WQE_COUNT);
-    }
-
-    double us_ring_sq_db = (double) cycles_ring_sq_db / gpu_clock_freq_mhz;
-    double us_update_wqe = (double) cycles_update_wqe / gpu_clock_freq_mhz;
-    double us_poll_cq = (double) cycles_poll_cq / gpu_clock_freq_mhz;
-    double us_next_cq = (double) cycles_next_cq / gpu_clock_freq_mhz;
-    double us_init = (double) cycles_init / gpu_clock_freq_mhz;
-    double us_finalize = (double) cycles_finalize / gpu_clock_freq_mhz;
-
-    const int FIELD_WIDTH = 20;
-    const int FLOAT_PRECISION = 2;
-
-    printf("RTN Counts: Internal Quiets %lu DB Rings %lu WQE Posts "
-           "%lu\n", total_rtn_quiet_count, total_rtn_db_count,
-           total_rtn_wqe_count);
-
-    printf("\n%*s%*s%*s%*s%*s%*s\n", FIELD_WIDTH + 1, "Init (us)",
-           FIELD_WIDTH + 1, "Finalize (us)",
-           FIELD_WIDTH + 1, "Ring SQ DB (us)",
-           FIELD_WIDTH + 1, "Update WQE (us)",
-           FIELD_WIDTH + 1, "Poll CQ (us)",
-           FIELD_WIDTH + 1, "Next CQ (us)");
-
-    uint64_t totalFinalize = globalStats.getStat(NUM_FINALIZE);
-    printf("%*.*f %*.*f %*.*f %*.*f %*.*f %*.*f\n",
-           FIELD_WIDTH, FLOAT_PRECISION, us_init / totalFinalize,
-           FIELD_WIDTH, FLOAT_PRECISION, us_finalize / totalFinalize,
-           FIELD_WIDTH, FLOAT_PRECISION, us_ring_sq_db / total_rtn_db_count,
-           FIELD_WIDTH, FLOAT_PRECISION, us_update_wqe / total_rtn_wqe_count,
-           FIELD_WIDTH, FLOAT_PRECISION, us_poll_cq / total_rtn_quiet_count,
-           FIELD_WIDTH, FLOAT_PRECISION, us_next_cq / total_rtn_quiet_count);
-#endif
-    return Status::ROC_SHMEM_SUCCESS;
+GPUIBBackend::dump_backend_stats() {
+    return networkImpl.dump_backend_stats(&globalStats);
 }
 
 Status
-GPUIBBackend::reset_backend_stats()
-{
-    int statblocks = connection->total_number_connections();
-
-    for (int i = 0; i < statblocks; i++)
-        gpu_qps[i].profiler.resetStats();
-
-    return Status::ROC_SHMEM_SUCCESS;
+GPUIBBackend::reset_backend_stats() {
+    return networkImpl.reset_backend_stats();
 }
 
 Status
-GPUIBBackend::exchange_hdp_info()
-{
-    CHECK_HIP(hipMalloc((void**) &hdp_policy, sizeof(HdpPolicy)));
+GPUIBBackend::initialize_hdp() {
+    CHECK_HIP(hipMalloc(reinterpret_cast<void**>(&hdp_policy),
+                        sizeof(HdpPolicy)));
     new (hdp_policy) HdpPolicy();
-
-    Status status;
-    status = connection->reg_mr(hdp_policy->get_hdp_flush_addr(), 32, &hdp_mr);
-    if (status != Status::ROC_SHMEM_SUCCESS) {
-        return status;
-    }
-
-    // exchange the hdp info for a fence implementation
-    CHECK_HIP(hipMalloc((void**)&hdp_rkey,
-                        sizeof(uint32_t) * num_pes));
-
-    CHECK_HIP(hipMalloc((void**)&hdp_address,
-                         sizeof(uintptr_t) * num_pes));
-
-    uint32_t *host_hdp_cpy =
-        (uint32_t*) malloc(sizeof(uint32_t) * num_pes);
-    if (host_hdp_cpy == nullptr) {
-        return Status::ROC_SHMEM_UNKNOWN_ERROR;
-    }
-
-    uint32_t **host_hdp_address_cpy =
-        (uint32_t**) malloc(sizeof(uint32_t*) * num_pes);
-    if (host_hdp_address_cpy == nullptr) {
-        free(host_hdp_cpy);
-        return Status::ROC_SHMEM_UNKNOWN_ERROR;
-    }
-
-    int my_rank = my_pe;
-    host_hdp_cpy[my_rank] = htobe32(hdp_mr->rkey);
-    host_hdp_address_cpy[my_rank] = hdp_policy->get_hdp_flush_addr();
-
-    MPI_Allgather(MPI_IN_PLACE,
-                  sizeof(uint32_t),
-                  MPI_CHAR,
-                  host_hdp_cpy,
-                  sizeof(uint32_t),
-                  MPI_CHAR,
-                  MPI_COMM_WORLD);
-
-    MPI_Allgather(MPI_IN_PLACE,
-                  sizeof(uintptr_t),
-                  MPI_CHAR,
-                  host_hdp_address_cpy,
-                  sizeof(uint32_t *),
-                  MPI_CHAR,
-                  MPI_COMM_WORLD);
-
-    CHECK_HIP(hipMemcpy(hdp_rkey,
-                        host_hdp_cpy,
-                        sizeof(uint32_t) * num_pes,
-                        hipMemcpyHostToDevice));
-
-    CHECK_HIP(hipMemcpy(hdp_address,
-                        host_hdp_address_cpy,
-                        sizeof(uint32_t *) * num_pes,
-                        hipMemcpyHostToDevice));
-
-    free(host_hdp_cpy);
-    free(host_hdp_address_cpy);
-
     return Status::ROC_SHMEM_SUCCESS;
 }
 
 Status
-GPUIBBackend::setup_atomic_region()
-{
-    CHECK_HIP(hipMalloc((void**)&atomic_ret, sizeof(rtn_atomic_ret_t)));
-
-    CHECK_HIP(hipExtMallocWithFlags((void**)&atomic_ret->atomic_base_ptr,
-                                    sizeof(uint64_t) * max_nb_atomic * num_wg,
-                                    hipDeviceMallocFinegrained));
-
-    memset(atomic_ret->atomic_base_ptr, 0,
-           sizeof(uint64_t) * max_nb_atomic * num_wg);
-
-    Status status;
-    status = connection->reg_mr(atomic_ret->atomic_base_ptr,
-                                sizeof(uint64_t) * max_nb_atomic * num_wg,
-                                &mr);
-
-    if (status != Status::ROC_SHMEM_SUCCESS) {
-        return status;
-    }
-
-    atomic_ret->atomic_lkey = htobe32(mr->lkey);
-
-    return Status::ROC_SHMEM_SUCCESS;
-}
-
-Status
-GPUIBBackend::allocate_heap_memory()
-{
-    // allocate and register heap memory
-    const size_t bases_size = sizeof(uint64_t*) * num_pes;
-    uint64_t *host_bases_cpy =
-        (uint64_t*) malloc(bases_size);
+GPUIBBackend::allocate_heap_memory() {
+    /*
+     * Allocate host-side memory to hold symmetric heap base addresses for
+     * all processing elements.
+     */
+    const size_t bases_size = num_pes * sizeof(void*);
+    void **host_bases_cpy =
+        reinterpret_cast<void**>(malloc(bases_size));
     if (host_bases_cpy == nullptr) {
         return Status::ROC_SHMEM_UNKNOWN_ERROR;
     }
 
-    const size_t rkeys_size = sizeof(uint32_t) * num_pes;
-    uint32_t *host_rkey_cpy =
-        (uint32_t*) malloc(rkeys_size);
-    if (host_rkey_cpy == nullptr) {
-        free(host_bases_cpy);
-        return Status::ROC_SHMEM_UNKNOWN_ERROR;
-    }
+    /*
+     * Allocate device-side memory to hold symmetric heap base addresses for
+     * all processing elements.
+     */
+    CHECK_HIP(hipMalloc(&heap_bases,
+                        num_pes * sizeof(char*)));
 
-    CHECK_HIP(hipMalloc(&heap_bases, sizeof(char*) * num_pes));
-
+    /*
+     * Allocate fine-grained device-side memory for this processing
+     * element's heap base.
+     */
     void *base_heap;
     CHECK_HIP(hipExtMallocWithFlags(&base_heap,
                                     heap_size,
                                     hipDeviceMallocFinegrained));
-    Status status;
-    status = connection->reg_mr(base_heap, heap_size, &heap_mr);
-    if (status != Status::ROC_SHMEM_SUCCESS) {
-        free(host_bases_cpy);
-        free(host_rkey_cpy);
-        return status;
-    }
 
-    // TODO: I'm not sure if this is needed)
-    connection->initialize_rkey_handle(&heap_rkey, heap_mr);
+    /*
+     * Write this processing element's personal symmetric heap base to
+     * the device-side memory using fine-grained memory accesses.
+     */
+    heap_bases[my_pe] = reinterpret_cast<char*>(base_heap);
 
-    heap_bases[my_pe] = (char*) base_heap;
+    /*
+     * Copy the device-side heap bases address array to the host-side heap
+     * bases address array.
+     */
+    hipStream_t stream;
+    hipStreamCreateWithFlags(&stream,
+                             hipStreamNonBlocking);
+    CHECK_HIP(hipMemcpyAsync(host_bases_cpy,
+                             heap_bases,
+                             bases_size,
+                             hipMemcpyDeviceToHost,
+                             stream));
+    hipStreamSynchronize(stream);
 
-    CHECK_HIP(hipMemcpy(host_bases_cpy,
-                        heap_bases,
-                        bases_size,
-                        hipMemcpyDeviceToHost));
-
-    CHECK_HIP(hipMemcpy(host_rkey_cpy,
-                        heap_rkey,
-                        rkeys_size,
-                        hipMemcpyDeviceToHost));
-
+    /*
+     * Do all-to-all exchange of symmetric heap base address between the
+     * processing elements.
+     */
     MPI_Allgather(MPI_IN_PLACE,
-                  sizeof(uint64_t),
+                  sizeof(void*),
                   MPI_CHAR,
                   host_bases_cpy,
-                  sizeof(uint64_t),
+                  sizeof(void*),
                   MPI_CHAR,
-                  MPI_COMM_WORLD);
+                  team_world_comm);
 
-    MPI_Allgather(MPI_IN_PLACE,
-                  sizeof(uint32_t),
-                  MPI_CHAR,
-                  host_rkey_cpy,
-                  sizeof(uint32_t),
-                  MPI_CHAR,
-                  MPI_COMM_WORLD);
+    /*
+     * Copy the recently updated host-side heap base address array back to
+     * the device-side memory.
+     */
+    CHECK_HIP(hipMemcpyAsync(heap_bases,
+                             host_bases_cpy,
+                             bases_size,
+                             hipMemcpyHostToDevice,
+                             stream));
+    hipStreamSynchronize(stream);
+    hipStreamDestroy(stream);
 
-    CHECK_HIP(hipMemcpy(heap_bases,
-                        host_bases_cpy,
-                        bases_size,
-                        hipMemcpyHostToDevice));
+    /*
+     * Create an MPI window on the allocated GPU heap, so that we can
+     * offload the implementation of host-facing APIs on this memory
+     * to the MPI library. Store the base of this window.
+     */
+    MPI_Win heap_win;
+    MPI_Win_create(base_heap,
+                   heap_size,
+                   1,
+                   MPI_INFO_NULL,
+                   team_world_comm,
+                   &heap_win);
+    heap_window_info = new WindowInfo(heap_win,
+                                      base_heap,
+                                      heap_size);
 
-    CHECK_HIP(hipMemcpy(heap_rkey,
-                        host_rkey_cpy,
-                        rkeys_size,
-                        hipMemcpyHostToDevice));
+    /*
+     * Start a shared access epoch on windows of all ranks,
+     * and let the library there is no need to check for
+     * lock exclusivity during operations on this window
+     * (MPI_MODE_NOCHECK).
+     */
+    MPI_Win_lock_all(MPI_MODE_NOCHECK, heap_window_info->get_win());
 
+    /*
+     * Free the host-side resources used to do the processing element
+     * exchange of keys and addresses for the symmetric heap base.
+     */
     free(host_bases_cpy);
-    free(host_rkey_cpy);
 
+    /*
+     * Initialize the heap offset.
+     * TODO(bpotter): this looks like it is set to zero twice
+     * since it is also set to zero as a default member value.
+     */
     current_heap_offset = 0;
-    lkey = heap_mr->lkey;
 
     return Status::ROC_SHMEM_SUCCESS;
 }
 
 Status
-GPUIBBackend::initialize_ipc()
-{
-    ipcImpl.ipcHostInit(my_pe, heap_bases);
+GPUIBBackend::initialize_ipc() {
+    ipcImpl.ipcHostInit(my_pe, heap_bases, thread_comm);
     return Status::ROC_SHMEM_SUCCESS;
 }
 
 Status
-GPUIBBackend::setup_gpu_qps()
-{
-    int connections;
-    connection->get_remote_conn(connections);
-    connections *= num_wg;
+GPUIBBackend::initialize_network() {
+    networkImpl.networkHostSetup(this);
+    return Status::ROC_SHMEM_SUCCESS;
+}
 
-    CHECK_HIP(hipMalloc(&gpu_qps, sizeof(QueuePair) * connections));
-
-    for (int i = 0; i < connections; i++) {
-        new (&gpu_qps[i]) QueuePair(this);
-
-        Status status;
-        status = connection->init_gpu_qp_from_connection(gpu_qps[i], i);
-
-        if (status != Status::ROC_SHMEM_SUCCESS) {
-            return status;
-        }
-    }
+Status
+GPUIBBackend::setup_default_host_ctx() {
+    default_host_ctx = new GPUIBHostContext(*this, 0);
+    ROC_SHMEM_HOST_CTX_DEFAULT = default_host_ctx;
 
     return Status::ROC_SHMEM_SUCCESS;
 }
 
 Status
-GPUIBBackend::setup_default_ctx()
-{
+GPUIBBackend::setup_default_ctx() {
+    /*
+     * Allocate device-side memory for default context and construct an
+     * InfiniBand context in it.
+     */
     CHECK_HIP(hipMalloc(&default_ctx, sizeof(GPUIBContext)));
     new (default_ctx) GPUIBContext(*this, 0);
 
-    hipMemcpyToSymbol(HIP_SYMBOL(SHMEM_CTX_DEFAULT), &default_ctx,
-                      sizeof(default_ctx), 0, hipMemcpyHostToDevice);
+    /*
+     * Copy the symbol to ROC_SHMEM_CTX_DEFAULT.
+     */
+    int *symbol_address;
+    CHECK_HIP(hipGetSymbolAddress(reinterpret_cast<void**>(&symbol_address),
+                                  HIP_SYMBOL(ROC_SHMEM_CTX_DEFAULT)));
+
+
+    hipStream_t stream;
+    hipStreamCreateWithFlags(&stream, hipStreamNonBlocking);
+    CHECK_HIP(hipMemcpyAsync(symbol_address,
+                             &default_ctx,
+                             sizeof(default_ctx),
+                             hipMemcpyDefault,
+                             stream));
+    hipStreamSynchronize(stream);
+    hipStreamDestroy(stream);
 
     return Status::ROC_SHMEM_SUCCESS;
 }
 
+Status
+GPUIBBackend::init_mpi_once() {
+    static std::mutex init_mutex;
+    const std::lock_guard<std::mutex> lock(init_mutex);
+
+    int provided;
+    int init_done = 0;
+    if (MPI_Initialized(&init_done) == MPI_SUCCESS) {
+        if (init_done) {
+            return Status::ROC_SHMEM_SUCCESS;
+        }
+    }
+
+    if (MPI_Init_thread(nullptr,
+                        nullptr,
+                        MPI_THREAD_MULTIPLE,
+                        &provided)
+                            != MPI_SUCCESS) {
+        return Status::ROC_SHMEM_UNKNOWN_ERROR;
+    }
+
+    return Status::ROC_SHMEM_SUCCESS;
+}
+
+std::thread
+GPUIBBackend::thread_spawn(GPUIBBackend *b) {
+    return std::thread (&GPUIBBackend::thread_func_internal, this, b);
+}
+
+void
+GPUIBBackend::thread_func_internal(GPUIBBackend *b) {
+    Status status;
+
+    status = b->initialize_ipc();
+    assert(status == Status::ROC_SHMEM_SUCCESS);
+
+    status = b->initialize_network();
+    assert(status == Status::ROC_SHMEM_SUCCESS);
+
+    status = b->setup_default_ctx();
+    assert(status == Status::ROC_SHMEM_SUCCESS);
+
+    *(b->done_init) = 1;
+}
+
 GPUIBBackend::GPUIBBackend(unsigned num_wgs)
-    : Backend(num_wgs)
-{
-    char * value;
+    : Backend(num_wgs) {
+    char *value;
     if ((value = getenv("ROC_SHMEM_HEAP_SIZE"))) {
         heap_size = atoi(value);
     }
 
     Status status;
 
-#ifdef USE_DC
-    connection = new DynamicConnection(this);
-#else
-    connection = new ReliableConnection(this);
-#endif
-
-    status = connection->init_mpi_once();
+    status = init_mpi_once();
     assert(status == Status::ROC_SHMEM_SUCCESS);
 
     type = BackendType::GPU_IB_BACKEND;
-    MPI_Comm_size(MPI_COMM_WORLD, &num_pes);
-    MPI_Comm_rank(MPI_COMM_WORLD, &my_pe);
 
-    status = connection->initialize(num_wg);
-    assert(status == Status::ROC_SHMEM_SUCCESS);
-
-    status = exchange_hdp_info();
-    assert(status == Status::ROC_SHMEM_SUCCESS);
+    MPI_Comm_dup(MPI_COMM_WORLD, &team_world_comm);
+    MPI_Comm_size(team_world_comm, &num_pes);
+    MPI_Comm_rank(team_world_comm, &my_pe);
 
     status = allocate_heap_memory();
     assert(status == Status::ROC_SHMEM_SUCCESS);
 
-    status = initialize_ipc();
+    /*
+     * Initialize HDP here instead of in the async
+     * thread since host-facing functions may use it.
+     */
+    status = initialize_hdp();
     assert(status == Status::ROC_SHMEM_SUCCESS);
 
-    status = setup_atomic_region();
-    assert(status == Status::ROC_SHMEM_SUCCESS);
+    /* Initialize the host interface */
+    host_interface = new HostInterface(hdp_policy, team_world_comm);
 
-    status = connection->initialize_gpu_policy(&connection_policy, heap_rkey);
+    /*
+     * Construct default host context independently of the
+     * default device context (done in the async thread)
+     * so that host operations can execute regardless of
+     * device operations.
+     */
+    status = setup_default_host_ctx();
     assert(status == Status::ROC_SHMEM_SUCCESS);
 
     roc_shmem_collective_init();
-    roc_shmem_g_init();
 
-    connection->post_wqes();
+    MPI_Comm_dup(team_world_comm, &thread_comm);
 
-    status = setup_gpu_qps();
-    assert(status == Status::ROC_SHMEM_SUCCESS);
+    MPI_Barrier(team_world_comm);
 
-    status = setup_default_ctx();
-    assert(status == Status::ROC_SHMEM_SUCCESS);
+    async_thread = thread_spawn(this);
 }
 
 void
-GPUIBBackend::roc_shmem_collective_init()
-{
-    int64_t *ptr = (int64_t*) heap_bases[my_pe] +
-        current_heap_offset;
+GPUIBBackend::roc_shmem_collective_init() {
+    /*
+     * Grab a pointer to the top of the symmetric heap.
+     */
+    int64_t *ptr = reinterpret_cast<int64_t*>(heap_bases[my_pe]) +
+                   current_heap_offset;
 
-    current_heap_offset += SHMEM_BARRIER_SYNC_SIZE;
+    /*
+     * Increment the heap offset to create room for a barrier variable.
+     */
+    current_heap_offset += ROC_SHMEM_BARRIER_SYNC_SIZE;
 
+    /*
+     * Assign the barrier to the location at the previous top of the heap.
+     */
     barrier_sync = ptr;
 
+    /*
+     * Initialize the barrier synchronization array with default values.
+     */
     for (int i = 0; i < num_pes; i++) {
-        barrier_sync[i] = SHMEM_SYNC_VALUE;
+        barrier_sync[i] = ROC_SHMEM_SYNC_VALUE;
     }
 
-    MPI_Barrier(MPI_COMM_WORLD);
+    /*
+     * Make sure that all processing elements have done this before
+     * continuing.
+     */
+    MPI_Barrier(team_world_comm);
 }
 
-void
-GPUIBBackend::roc_shmem_g_init()
-{
-    char *ptr = (char*) heap_bases[my_pe] +
-        current_heap_offset;
-
-    current_heap_offset = current_heap_offset +
-        sizeof(int64_t)* MAX_WG_SIZE * num_wg;
-
-    g_ret = (char*) ptr;
-
-    MPI_Barrier(MPI_COMM_WORLD);
-}
-
-template<typename T1, typename T2>
-typename std::enable_if<std::is_same<T1, T2>::value, bool>::type
-check_it(T1* hdp_rocm_policy) {
-   free_rocm_hdp(hdp_rocm_policy->hdp);
-   return true;
-}
-
-template<typename T1, typename T2>
-typename std::enable_if<!std::is_same<T1, T2>::value, bool>::type
-check_it(T1* hdp) {
-   return false;
-}
-
-GPUIBBackend::~GPUIBBackend()
-{
-    CHECK_HIP(hipFree(hdp_rkey));             hdp_rkey = nullptr;
-    CHECK_HIP(hipFree(hdp_address));          hdp_address = nullptr;
-
-    // free hdp:
-    //TODO: this memory leak fix is not tested becasue of known crashes when
-    // turned USE_HDP_MAP off. A better way is to destruct in the desctructor,
-    // but there is compilation issue to just provide a desctructor for host.
-    // It has no effect on HdpMapPolicy.
-    check_it<HdpPolicy, HdpRocmPolicy>(hdp_policy);
+GPUIBBackend::~GPUIBBackend() {
+    async_thread.join();
 
     hdp_policy->~HdpPolicy();
-    CHECK_HIP(hipFree(hdp_policy));           hdp_policy=nullptr;
-    CHECK_HIP(hipFree(atomic_ret));           atomic_ret=nullptr;
-    CHECK_HIP(hipFree(heap_bases));           heap_bases = nullptr;
-    CHECK_HIP(hipFree(gpu_qps));              gpu_qps = nullptr;
+    CHECK_HIP(hipFree(hdp_policy));
+    hdp_policy = nullptr;
+
+    delete host_interface;
+    host_interface = nullptr;
+
+    /*
+     * Close the access epoch, free the window,
+     * free my heap, and free the array that
+     * stores the bases of the heaps.
+     */
+    MPI_Win heap_win = heap_window_info->get_win();
+    MPI_Win_unlock_all(heap_win);
+    MPI_Win_free(&heap_win);
+    delete heap_window_info;
+    heap_window_info = nullptr;
+
+    CHECK_HIP(hipFree(heap_bases[my_pe]));
+    CHECK_HIP(hipFree(heap_bases));
+    heap_bases = nullptr;
+
+    MPI_Comm_free(&team_world_comm);
+
     CHECK_HIP(hipFree(default_ctx->rtn_gpu_handle));
-    CHECK_HIP(hipFree(default_ctx));          default_ctx = nullptr;
-    CHECK_HIP(hipFree(connection_policy));    connection_policy = nullptr;
-    connection->free_rkey_handle(heap_rkey);
-    auto status = connection->finalize();
-    if (status == Status::ROC_SHMEM_SUCCESS) {
-        delete connection;
-        connection = nullptr;
-    }
+    CHECK_HIP(hipFree(default_ctx));
+    default_ctx = nullptr;
+
+    networkImpl.networkHostFinalize();
 }
 
 Status
-GPUIBBackend::net_malloc(void **ptr, size_t size)
-{
-    *ptr = (char*)  heap_bases[my_pe] + current_heap_offset;
+GPUIBBackend::net_malloc(void **ptr,
+                         size_t size) {
+    *ptr = reinterpret_cast<char*>(heap_bases[my_pe]) + current_heap_offset;
 
     current_heap_offset = current_heap_offset + (size / sizeof(char));
 
-    MPI_Barrier(MPI_COMM_WORLD);
+    if (current_heap_offset > heap_size) {
+        *ptr = nullptr;
+        printf("ERROR: SHeap allocation failed\n");
+        return  Status::ROC_SHMEM_UNKNOWN_ERROR;
+    }
+
+    MPI_Barrier(team_world_comm);
     return Status::ROC_SHMEM_SUCCESS;
 }
 
 Status
-GPUIBBackend::dynamic_shared(size_t *shared_bytes)
-{
-    uint32_t heap_usage = sizeof(uint64_t) * num_pes;
-    uint32_t rtn_usage = 0;
-    uint32_t ipc_usage = 0;
+GPUIBBackend::dynamic_shared(size_t *shared_bytes) {
+    uint32_t heap_usage = num_pes * sizeof(uint64_t);
+    uint32_t network_usage = networkImpl.networkDynamicShared();
+    uint32_t ipc_usage = ipcImpl.ipcDynamicShared();
 
-    int remote_conn;
-    connection->get_remote_conn(remote_conn);
-    rtn_usage = sizeof(QueuePair) * remote_conn;
-    ipc_usage = ipcImpl.ipcDynamicShared();
-
-    *shared_bytes = heap_usage + rtn_usage + ipc_usage + sizeof(GPUIBContext)
-        + sizeof(WGState);
+    *shared_bytes = heap_usage +
+                    network_usage +
+                    ipc_usage +
+                    sizeof(GPUIBContext) +
+                    sizeof(WGState);
 
     return Status::ROC_SHMEM_SUCCESS;
+}
+
+__host__ void
+GPUIBBackend::global_exit(int status) {
+    MPI_Abort(team_world_comm, status);
 }

@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2021 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -20,47 +20,72 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#include "config.h"
+#include "ipc_policy.hpp"
 
-#ifdef DEBUG
-#define HIP_ENABLE_PRINTF 1
-#endif
+#include <mpi.h>
 
+#include "config.h"  // NOLINT(build/include_subdir)
 #include "context.hpp"
 #include "backend.hpp"
 #include "wg_state.hpp"
 #include "util.hpp"
-#include <mpi.h>
-
-
 
 __host__ uint32_t
-IpcOnImpl::ipcDynamicShared()
-{
-    return (shm_size * sizeof(uintptr_t));
+IpcOnImpl::ipcDynamicShared() {
+    while (ipc_init_done.test_and_set()) {
+    }
+
+    return shm_size * sizeof(uintptr_t);
 }
+
 __host__ void
-IpcOnImpl::ipcHostInit(int my_pe, char** heap_bases)
-{
+IpcOnImpl::ipcHostInit(int my_pe,
+                       char **heap_bases,
+                       MPI_Comm thread_comm) {
+    /*
+     * Create an MPI communicator that deals only with local processes.
+     */
     MPI_Comm shmcomm;
-    MPI_Comm_split_type(MPI_COMM_WORLD,
+    MPI_Comm_split_type(thread_comm,
                         MPI_COMM_TYPE_SHARED,
                         0,
                         MPI_INFO_NULL,
                         &shmcomm);
 
+    /*
+     * Figure out how many local process there are.
+     */
     int Shm_size;
     MPI_Comm_size(shmcomm, &Shm_size);
+    shm_size = Shm_size;
+    ipc_init_done.clear();
 
+    /*
+     * Figure out how this process' rank among local processes.
+     */
     int shm_rank;
     MPI_Comm_rank(shmcomm, &shm_rank);
 
+    /*
+     * Allocate a host-side c-array to hold the IPC handles.
+     */
+    void *ipc_mem_handle_uncast = malloc(shm_size * sizeof(hipIpcMemHandle_t));
     hipIpcMemHandle_t *vec_ipc_handle =
-        (hipIpcMemHandle_t*) malloc(sizeof(hipIpcMemHandle_t) * Shm_size);
+        reinterpret_cast<hipIpcMemHandle_t*>(ipc_mem_handle_uncast);
 
-    char * base_heap = heap_bases[my_pe];
-    CHECK_HIP(hipIpcGetMemHandle(&vec_ipc_handle[shm_rank], base_heap));
+    /*
+     * Call into the hip runtime to get an IPC handle for my symmetric
+     * heap and store that IPC handle into the host-side c-array which was
+     * just allocated.
+     */
+    char *base_heap = heap_bases[my_pe];
+    CHECK_HIP(hipIpcGetMemHandle(&vec_ipc_handle[shm_rank],
+                                 base_heap));
 
+    /*
+     * Do an all-to-all exchange with each local processing element to
+     * share the symmetric heap IPC handles.
+     */
     MPI_Allgather(MPI_IN_PLACE,
                   sizeof(hipIpcMemHandle_t),
                   MPI_CHAR,
@@ -69,44 +94,76 @@ IpcOnImpl::ipcHostInit(int my_pe, char** heap_bases)
                   MPI_CHAR,
                   shmcomm);
 
-    char ** ipc_base;
-    CHECK_HIP(hipMalloc((void**)&ipc_base, sizeof(char**) * Shm_size));
+    /*
+     * Allocate device-side array to hold the IPC symmetric heap base
+     * addresses.
+     */
+    char **ipc_base;
+    CHECK_HIP(hipMalloc(reinterpret_cast<void**>(&ipc_base),
+                        shm_size * sizeof(char**)));
 
-    for (int i = 0; i < Shm_size; i++) {
+    /*
+     * For all local processing elements, initialize the device-side array
+     * with the IPC symmetric heap base addresses.
+     */
+    for (size_t i = 0; i < shm_size; i++) {
         if (i != shm_rank) {
-            CHECK_HIP(hipIpcOpenMemHandle((void**)&ipc_base[i],
+            void **ipc_base_uncast = reinterpret_cast<void**>(&ipc_base[i]);
+            CHECK_HIP(hipIpcOpenMemHandle(ipc_base_uncast,
                                           vec_ipc_handle[i],
                                           hipIpcMemLazyEnablePeerAccess));
+            // TODO(bpotter): add some error checking here if happens to fail
         } else {
             ipc_base[i] = base_heap;
         }
     }
-    shm_size = Shm_size;
+
+    /*
+     * Set member variables used by subsequent method calls.
+     */
     ipc_bases = ipc_base;
 
+    /*
+     * Free the host-side memory used to exchange the symmetric heap base
+     * addresses.
+     */
     free(vec_ipc_handle);
-
 }
 
 __device__ void
-IpcOnImpl::ipcGpuInit(GPUIBBackend* gpu_backend, GPUIBContext* ctx,
-                      int thread_id)
-{
-    GPU_DPRINTF("Function: ipcGpuInit \n");
-    shm_size  = gpu_backend->ipcImpl.shm_size;
-    char ** ipc_base_lds = reinterpret_cast<char **>(
-        WGState::instance()->allocateDynamicShared(shm_size *
-                                                   sizeof(uintptr_t)));
+IpcOnImpl::ipcGpuInit(GPUIBBackend *gpu_backend,
+                      GPUIBContext *ctx,
+                      int thread_id) {
+    shm_size = gpu_backend->ipcImpl.shm_size;
+    auto *wg_state = WGState::instance();
+    size_t mem_in_bytes = shm_size * sizeof(uintptr_t);
+    auto *dyn_mem = wg_state->allocateDynamicShared(mem_in_bytes);
+    char **ipc_base_lds = reinterpret_cast<char**>(dyn_mem);
 
-    for (int i = thread_id; i < shm_size; i++)
-        ipc_base_lds[i]= gpu_backend->ipcImpl.ipc_bases[i];
+    for (size_t i = thread_id; i < shm_size; i++) {
+        ipc_base_lds[i] = gpu_backend->ipcImpl.ipc_bases[i];
+    }
 
-    ipc_bases =  (ipc_base_lds);
-
+    ipc_bases = ipc_base_lds;
 }
+
 __device__ void
-IpcOnImpl::ipcCopy(void * dst, void* src, size_t size)
-{
+IpcOnImpl::ipcCopy(void *dst,
+                   void *src,
+                   size_t size) {
     memcpy(dst, src, size);
 }
 
+__device__ void
+IpcOnImpl::ipcCopy_wave(void *dst,
+                        void *src,
+                        size_t size) {
+    memcpy_wave(dst, src, size);
+}
+
+__device__ void
+IpcOnImpl::ipcCopy_wg(void *dst,
+                      void *src,
+                      size_t size) {
+    memcpy_wg(dst, src, size);
+}

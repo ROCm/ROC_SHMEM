@@ -20,39 +20,36 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
+#include <mpi.h>
+
 #include "reliable_connection.hpp"
 #include "backend.hpp"
 
-#include "mpi.h"
-
 ReliableConnection::ReliableConnection(GPUIBBackend *b)
-    : Connection(b, 0)
-{
+    : Connection(b, 0) {
 }
 
-ReliableConnection::~ReliableConnection()
-{
+ReliableConnection::~ReliableConnection() {
 }
 
 Connection::InitQPState
-ReliableConnection::initqp(uint8_t port)
-{
+ReliableConnection::initqp(uint8_t port) {
     InitQPState init {};
 
-    init.exp_qp_attr.qp_access_flags = IBV_EXP_ACCESS_REMOTE_WRITE |
-                                       IBV_EXP_ACCESS_LOCAL_WRITE  |
-                                       IBV_EXP_ACCESS_REMOTE_READ  |
-                                       IBV_EXP_ACCESS_REMOTE_ATOMIC;
+    init.exp_qp_attr.qp_access_flags = IBV_ACCESS_REMOTE_WRITE |
+                                       IBV_ACCESS_LOCAL_WRITE |
+                                       IBV_ACCESS_REMOTE_READ |
+                                       IBV_ACCESS_REMOTE_ATOMIC;
     init.exp_qp_attr.port_num = port;
 
-    init.exp_attr_mask |= IBV_EXP_QP_ACCESS_FLAGS;
+    init.exp_attr_mask |= IBV_QP_ACCESS_FLAGS;
 
     return init;
 }
 
 Connection::RtrState
-ReliableConnection::rtr(dest_info_t *dest, uint8_t port)
-{
+ReliableConnection::rtr(dest_info_t *dest,
+                        uint8_t port) {
     RtrState rtr {};
 
     rtr.exp_qp_attr.dest_qp_num = dest->qpn;
@@ -60,43 +57,46 @@ ReliableConnection::rtr(dest_info_t *dest, uint8_t port)
     rtr.exp_qp_attr.ah_attr.dlid = dest->lid;
     rtr.exp_qp_attr.ah_attr.port_num = port;
 
-    rtr.exp_attr_mask |= IBV_EXP_QP_DEST_QPN           |
-                         IBV_EXP_QP_RQ_PSN             |
-                         IBV_EXP_QP_MAX_DEST_RD_ATOMIC |
-                         IBV_EXP_QP_MIN_RNR_TIMER;
+    rtr.exp_attr_mask |= IBV_QP_DEST_QPN |
+                         IBV_QP_RQ_PSN |
+                         IBV_QP_MAX_DEST_RD_ATOMIC |
+                         IBV_QP_MIN_RNR_TIMER;
 
     return rtr;
 }
 
 Connection::RtsState
-ReliableConnection::rts(dest_info_t *dest)
-{
+ReliableConnection::rts(dest_info_t *dest) {
     RtsState rts {};
 
     rts.exp_qp_attr.sq_psn = dest->psn;
 
-    rts.exp_attr_mask |= IBV_EXP_QP_SQ_PSN;
+    rts.exp_attr_mask |= IBV_QP_SQ_PSN;
 
     return rts;
 }
 
+ibv_qp *
+ReliableConnection::create_qp_0(ibv_context *context,
+                                ibv_qp_init_attr_ex *qp_attr) {
+    return ibv_create_qp_ex(context, qp_attr);
+}
+
 Status
-ReliableConnection::create_qps_1()
-{
+ReliableConnection::create_qps_1() {
     return Status::ROC_SHMEM_SUCCESS;
 }
 
 Status
-ReliableConnection::create_qps_2(int port, int my_rank,
-                                 ibv_port_attr *ib_port_att)
-{
+ReliableConnection::create_qps_2(int port,
+                                 int my_rank,
+                                 ibv_port_attr *ib_port_att) {
     return Status::ROC_SHMEM_SUCCESS;
 }
 
 Status
 ReliableConnection::create_qps_3(int port, ibv_qp *qp, int offset,
-                                 ibv_port_attr *ib_port_att)
-{
+                                 ibv_port_attr *ib_port_att) {
     Status status = init_qp_status(qp, port);
     if (status != Status::ROC_SHMEM_SUCCESS) {
         return Status::ROC_SHMEM_UNKNOWN_ERROR;
@@ -110,36 +110,32 @@ ReliableConnection::create_qps_3(int port, ibv_qp *qp, int offset,
 }
 
 Status
-ReliableConnection::get_remote_conn(int &remote_conn)
-{
-    remote_conn = backend->num_pes;
+ReliableConnection::get_remote_conn(int *remote_conn) {
+    *remote_conn = backend->num_pes;
 
     return Status::ROC_SHMEM_SUCCESS;
 }
 
 Status
-ReliableConnection::allocate_dynamic_members(int num_wg)
-{
+ReliableConnection::allocate_dynamic_members(int num_wg) {
     all_qp.resize(backend->num_pes * num_wg);
     return Status::ROC_SHMEM_SUCCESS;
 }
 
 Status
-ReliableConnection::free_dynamic_members()
-{
+ReliableConnection::free_dynamic_members() {
     return Status::ROC_SHMEM_SUCCESS;
 }
 
 Status
-ReliableConnection::initialize_1(int port, int num_wg)
-{
+ReliableConnection::initialize_1(int port, int num_wg) {
     MPI_Alltoall(MPI_IN_PLACE,
                  sizeof(dest_info_t) * num_wg,
                  MPI_CHAR,
                  all_qp.data(),
                  sizeof(dest_info_t) * num_wg,
                  MPI_CHAR,
-                 MPI_COMM_WORLD);
+                 backend->thread_comm);
 
     Status status;
 
@@ -150,7 +146,7 @@ ReliableConnection::initialize_1(int port, int num_wg)
         }
     }
 
-    MPI_Barrier(MPI_COMM_WORLD);
+    MPI_Barrier(backend->thread_comm);
 
     for (int i = 0; i < qps.size(); i++) {
         status = change_status_rts(qps[i], &all_qp[i]);
@@ -163,74 +159,95 @@ ReliableConnection::initialize_1(int port, int num_wg)
 
 Status
 ReliableConnection::initialize_rkey_handle(uint32_t **heap_rkey_handle,
-                                           ibv_mr *mr)
-{
+                                           ibv_mr *mr) {
     CHECK_HIP(hipHostMalloc(heap_rkey_handle,
                             sizeof(uint32_t) * backend->num_pes));
-    (*heap_rkey_handle)[backend->my_pe]  = mr->rkey;
+    (*heap_rkey_handle)[backend->my_pe] = mr->rkey;
 
     return Status::ROC_SHMEM_SUCCESS;
 }
 
 void
-ReliableConnection::free_rkey_handle(uint32_t *heap_rkey_handle)
-{
+ReliableConnection::free_rkey_handle(uint32_t *heap_rkey_handle) {
     CHECK_HIP(hipHostFree(heap_rkey_handle));
 }
 
 Connection::QPInitAttr
-ReliableConnection::qpattr(ibv_qp_cap cap)
-{
+ReliableConnection::qpattr(ibv_qp_cap cap) {
     QPInitAttr qpattr(cap);
     qpattr.attr.qp_type = IBV_QPT_RC;
     return qpattr;
 }
 
-// TODO: remove redundancies with the other derived class
 void
-ReliableConnection::post_wqes()
-{
-    int remote_conn;
-    get_remote_conn(remote_conn);
-
-    int num_wg = backend->num_wg;
-    int lkey = backend->lkey;
+ReliableConnection::post_dv_rc_wqe(int remote_conn) {
+    mlx5_wqe_ctrl_seg *ctrl;
+    mlx5_wqe_raddr_seg *rdma;
+    mlx5_wqe_data_seg *data;
 
     for (int i = 0; i < remote_conn; i++) {
-        uint32_t rkey = backend->heap_rkey[i];
+        int num_wg = backend->num_wg;
         for (int j = 0; j < num_wg; j++) {
-            int index = i * num_wg + j;
-            cpu_post_wqe(qps[index],
-                         nullptr,
-                         lkey,
-                         nullptr,
-                         rkey,
-                         10,
-                         nullptr,
-                         0);
+            int qp_index = i * num_wg + j;
+            uint64_t *ptr = get_address_sq(qp_index);
 
-            uint32_t nb_post = 4 * sq_size;
-            for (int k = 0; k < nb_post - 1; k++) {
-                cpu_post_wqe(qps[index],
-                             nullptr,
-                             lkey,
-                             nullptr,
-                             rkey,
-                             10,
-                             nullptr,
-                             0);
+            const uint16_t nb_post = 1;  // 4 * sq_size;
+            for (uint16_t index = 0; index < nb_post; index++) {
+                uint8_t op_mod = 0;
+                uint8_t op_code = 8;
+                uint32_t qp_num = qps[qp_index]->qp_num;
+                uint8_t fm_ce_se = 0;
+                uint8_t ds = 3;
+                ctrl = reinterpret_cast<mlx5_wqe_ctrl_seg*>(ptr);
+                mlx5dv_set_ctrl_seg(ctrl,
+                                    index,
+                                    op_code,
+                                    op_mod,
+                                    qp_num,
+                                    fm_ce_se,
+                                    ds,
+                                    0,
+                                    0);
+                ptr = ptr + 2;
+
+                rdma = reinterpret_cast<mlx5_wqe_raddr_seg*>(ptr);
+                auto temp = backend->heap_bases[(backend->my_pe + 1) % 2];
+                uint64_t r_address = reinterpret_cast<uint64_t>(temp);
+                uint32_t rkey = backend->networkImpl.heap_rkey[i];
+                set_rdma_seg(rdma,
+                             r_address,
+                             rkey);
+                ptr = ptr + 2;
+
+                data = reinterpret_cast<mlx5_wqe_data_seg*>(ptr);
+                uint32_t lkey = backend->networkImpl.heap_mr->lkey;
+                temp = backend->heap_bases[backend->my_pe];
+                uint64_t address = reinterpret_cast<uint64_t>(temp);
+                mlx5dv_set_data_seg(data,
+                                    1,
+                                    lkey,
+                                    address);
+                ptr = ptr + 4;
             }
         }
     }
 }
 
+// TODO(bpotter): remove redundancies with the other derived class
 void
-ReliableConnection::initialize_wr_fields(ibv_exp_send_wr &wr,
-                                         ibv_ah *ah, int dc_key)
-{ }
+ReliableConnection::post_wqes() {
+    int remote_conn;
+    get_remote_conn(&remote_conn);
+    post_dv_rc_wqe(remote_conn);
+}
+
+void
+ReliableConnection::initialize_wr_fields(ibv_send_wr *wr,
+                                         ibv_ah *ah,
+                                         int dc_key) {
+}
 
 int
-ReliableConnection::get_sq_dv_offset(int pe_idx, int num_qps, int wg_idx)
-{
+ReliableConnection::get_sq_dv_offset(int pe_idx, int num_qps, int wg_idx) {
     return pe_idx * num_qps + wg_idx;
 }

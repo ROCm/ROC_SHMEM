@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2020 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2021 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -20,51 +20,60 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef HDP_POLICY_HPP
-#define HDP_POLICY_HPP
+#ifndef LIBRARY_SRC_HDP_POLICY_HPP_
+#define LIBRARY_SRC_HDP_POLICY_HPP_
 
 #include <hip/hip_runtime.h>
+#include <hsa/hsa_ext_amd.h>
 
-#include "config.h"
+#include "config.h"  // NOLINT(build/include_subdir)
+#include "util.hpp"
 
 /*
  * Base class for HDP policies.
  */
-class HdpBasePolicy
-{
-    const int HDP_FLUSH_VAL = 0x01;
-
-  protected:
+class HdpBasePolicy {
+ protected:
     unsigned int *cpu_hdp_flush = nullptr;
     unsigned int *gpu_hdp_flush = nullptr;
 
-  public:
-    __device__ void hdp_flush() { *gpu_hdp_flush = HDP_FLUSH_VAL; }
+ public:
+    static const int HDP_FLUSH_VAL = 0x01;
 
-    __host__ void hdp_flush() { *cpu_hdp_flush =  HDP_FLUSH_VAL; }
+    __device__
+    void hdp_flush() {
+        STORE(gpu_hdp_flush, HDP_FLUSH_VAL);
+    }
 
-    __host__ unsigned int* get_hdp_flush_addr() const { return cpu_hdp_flush; }
+    __host__ void
+    hdp_flush() {
+        *cpu_hdp_flush =  HDP_FLUSH_VAL;
+    }
+
+    __host__ unsigned int*
+    get_hdp_flush_addr() const {
+        return cpu_hdp_flush;
+    }
 };
 
 /*
  * HDP management via the hdp_umap kernel module.
  */
-class HdpMapPolicy : public HdpBasePolicy
-{
+class HdpMapPolicy : public HdpBasePolicy {
     const int FIJI_HDP_FLUSH = 0x5480;
     const int FIJI_HDP_READ = 0x2f4c;
     const int VEGA10_HDP_FLUSH = 0x385c;
     const int VEGA10_HDP_READ = 0x3fc4;
 
-#ifdef __HIP_ARCH_GFX900__
+// #ifdef __HIP_ARCH_GFX900__
     const int HDP_FLUSH = VEGA10_HDP_FLUSH;
     const int HDP_READ = VEGA10_HDP_READ;
-#elif __HIP_ARCH_GFX803__
-    const int HDP_FLUSH = FIJI_HDP_FLUSH;
-    const int HDP_READ = FIJI_HDP_READ;
-#else
-    #error "Unknown GPU. RTN requires Fiji or Vega GPUs"
-#endif
+// #elif __HIP_ARCH_GFX803__
+//    const int HDP_FLUSH = FIJI_HDP_FLUSH;
+//    const int HDP_READ = FIJI_HDP_READ;
+// #else
+//    #error "Unknown GPU. RTN requires Fiji or Vega GPUs"
+// #endif
 
     int fd = -1;
     int hdp_flush_off = 0;
@@ -72,21 +81,26 @@ class HdpMapPolicy : public HdpBasePolicy
     int hdp_read_off = 0;
     int hdp_read_pa_off = 0;
 
-  public:
-    __device__ HdpMapPolicy() {};
+ public:
+    __device__
+    HdpMapPolicy() {
+    }
+
     HdpMapPolicy();
 };
 
 /*
  * HDP management via ROCm HDP APIs.
  */
-class HdpRocmPolicy : public HdpBasePolicy
-{
-  public:
-    __device__ HdpRocmPolicy() {};
+class HdpRocmPolicy : public HdpBasePolicy {
+ public:
+    __device__
+    HdpRocmPolicy() {
+    }
+
     HdpRocmPolicy();
 
-    hsa_amd_hdp_flush_t * hdp = nullptr;
+    hsa_amd_hdp_flush_t *hdp = nullptr;
 };
 
 /*
@@ -98,4 +112,4 @@ typedef HdpMapPolicy HdpPolicy;
 typedef HdpRocmPolicy HdpPolicy;
 #endif
 
-#endif // HDP_POLICY_HPP
+#endif  // LIBRARY_SRC_HDP_POLICY_HPP_

@@ -28,8 +28,8 @@
 
 #include <hip/hip_runtime.h>
 
-#include <stdio.h>
-#include <stdlib.h>
+#include <cstdio>
+#include <cstdlib>
 #include <unistd.h>
 
 #include <roc_shmem.hpp>
@@ -220,6 +220,7 @@ ROContext::ctx_destroy()
     __syncthreads();
 }
 
+
 __device__ int64_t
 ROContext::amo_fetch_cas(void *dst, int64_t value, int64_t cond, int pe)
 {
@@ -245,6 +246,87 @@ ROContext::amo_add(void *dst, int64_t value, int64_t cond, int pe)
 {
     assert(0);
 }
+
+/**
+  *  extensions to WG amd WAVE level API
+  */
+
+__device__ void
+ROContext::putmem_wg(void *dest, const void *source, size_t nelems, int pe)
+{
+    if(is_thread_zero_in_block())
+        build_queue_element(RO_NET_PUT, dest, (void * ) source, nelems, pe, 0, 0,
+                        0, nullptr, nullptr, backend_ctx, true);
+    __syncthreads();
+}
+
+__device__ void
+ROContext::getmem_wg(void *dest, const void *source, size_t nelems, int pe)
+{
+
+    if(is_thread_zero_in_block())
+        build_queue_element(RO_NET_GET, dest, (void *) source, nelems, pe, 0, 0,
+                        0, nullptr, nullptr, backend_ctx, true);
+    __syncthreads();
+}
+
+__device__ void
+ROContext::putmem_nbi_wg(void *dest, const void *source, size_t nelems, int pe)
+{
+
+    if(is_thread_zero_in_block())
+        build_queue_element(RO_NET_PUT_NBI, dest, (void *) source, nelems, pe, 0,
+                        0, 0, nullptr, nullptr, backend_ctx, false);
+    __syncthreads();
+}
+
+__device__ void
+ROContext::getmem_nbi_wg(void *dest, const void *source, size_t nelems, int pe)
+{
+
+    if(is_thread_zero_in_block())
+        build_queue_element(RO_NET_GET_NBI, dest, (void *) source, nelems, pe, 0,
+                        0, 0,  nullptr, nullptr, backend_ctx, false);
+    __syncthreads();
+}
+
+__device__ void
+ROContext::putmem_wave(void *dest, const void *source, size_t nelems, int pe)
+{
+    if(is_thread_zero_in_wave())
+        build_queue_element(RO_NET_PUT, dest, (void * ) source, nelems, pe, 0, 0,
+                        0, nullptr, nullptr, backend_ctx, true);
+}
+
+__device__ void
+ROContext::getmem_wave(void *dest, const void *source, size_t nelems, int pe)
+{
+
+    if(is_thread_zero_in_wave())
+        build_queue_element(RO_NET_GET, dest, (void *) source, nelems, pe, 0, 0,
+                        0, nullptr, nullptr, backend_ctx, true);
+}
+
+__device__ void
+ROContext::putmem_nbi_wave(void *dest, const void *source, size_t nelems, int pe)
+{
+
+    if(is_thread_zero_in_wave())
+        build_queue_element(RO_NET_PUT_NBI, dest, (void *) source, nelems, pe, 0,
+                        0, 0, nullptr, nullptr, backend_ctx, false);
+}
+
+__device__ void
+ROContext::getmem_nbi_wave(void *dest, const void *source, size_t nelems, int pe)
+{
+
+    if(is_thread_zero_in_wave())
+        build_queue_element(RO_NET_GET_NBI, dest, (void *) source, nelems, pe, 0,
+                        0, 0,  nullptr, nullptr, backend_ctx, false);
+}
+
+
+
 
 /***
  *
@@ -355,7 +437,7 @@ __device__ void build_queue_element(ro_net_cmds type, void* dst, void * src,
     // Blocking requires the CPU to complete the operation.
     start = handle->profiler.startTimer();
     if (blocking) {
-        int net_status;
+        int net_status = 0;
         do {
             // At will take at least 1-2us to satisfy any request, best case.
             // TODO: Vega supports 7 bits, Fiji only 4

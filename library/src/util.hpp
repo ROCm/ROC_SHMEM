@@ -25,7 +25,50 @@
 
 #include <hip/hip_runtime.h>
 
+#include <hsa/hsa.h>
+#include <hsa/hsa_ext_amd.h>
+
 #include "config.h"
+
+
+__device__  inline int _uncached_load_ubyte (uint8_t* src)
+{
+    int ret;
+    __asm__  volatile("global_load_ubyte %0 %1 off glc slc \n"
+                       "s_waitcnt vmcnt(0)"
+                      : "=v" (ret)
+                      : "v" (src));
+    return ret;
+}
+
+
+template<typename T>
+__device__ inline T _uncached_load_ (T * src)
+{
+    T ret;
+    switch(sizeof(T))
+    {
+        case 4 :  __asm__  volatile("global_load_dword %0 %1 off glc slc \n"
+                       "s_waitcnt vmcnt(0)"
+                      : "=v" (ret)
+                      : "v" (src));
+            break;
+        case 8 :  __asm__  volatile("global_load_dwordx2 %0 %1 off glc slc \n"
+                       "s_waitcnt vmcnt(0)"
+                      : "=v" (ret)
+                      : "v" (src));
+            break;
+        default:
+            break;
+    }
+    return ret;
+}
+
+
+
+
+#define LOAD(VAR) __atomic_load_n((VAR), __ATOMIC_SEQ_CST)
+#define STORE(DST, SRC) __atomic_store_n((DST), (SRC), __ATOMIC_SEQ_CST)
 
 #define CHECK_HIP(cmd) \
 {\
@@ -37,10 +80,18 @@
     }\
 }
 
-enum class BackendType {
+/**
+ * @brief Enumerates the Backend derived classes.
+ *
+ * @note Derived classes which use Backend as a base class must add
+ * themselves to this enum class to support static inheritance.
+ */
+enum class BackendType
+{
     RO_BACKEND,
     GPU_IB_BACKEND
 };
+
 
 #define SFENCE()   asm volatile("sfence" ::: "memory")
 
@@ -56,10 +107,9 @@ enum class BackendType {
 #define GPU_DPRINTF(...) do {} while (0)
 #endif
 
-// TODO: Cannot currently be extracted correctly from ROCm, so hardcoded
-const int gpu_clock_freq_mhz = 27;
+const extern int gpu_clock_freq_mhz;
 
-bool ROC_SHMEM_DEBUG = false;
+extern bool ROC_SHMEM_DEBUG;
 
 const int WF_SIZE = 64;
 
@@ -112,6 +162,12 @@ __device__ int get_flat_block_id();
  */
 __device__ int get_flat_grid_id();
 
+/*
+ * Returns true if the caller's thread flad_id is 0 in its wave.
+ */
+__device__ bool is_thread_zero_in_wave();
+
+
 __device__ uint32_t lowerID();
 __device__ int wave_SZ();
 
@@ -133,9 +189,13 @@ gpu_dprintf(const char *fmt, const Args &...args)
              */
             while (atomicCAS(print_lock, 0, 1) == 1);
 
-            printf("WG (%d, %d, %d) TH (%d, %d, %d) ", hipBlockIdx_x,
-                    hipBlockIdx_y, hipBlockIdx_z, hipThreadIdx_x,
-                    hipThreadIdx_y, hipThreadIdx_z);
+            printf("WG (%lu, %lu, %lu) TH (%lu, %lu, %lu) ",
+                    hipBlockIdx_x,
+                    hipBlockIdx_y,
+                    hipBlockIdx_z,
+                    hipThreadIdx_x,
+                    hipThreadIdx_y,
+                    hipThreadIdx_z);
             printf(fmt, args...);
 
             *print_lock = 0;
@@ -145,12 +205,15 @@ gpu_dprintf(const char *fmt, const Args &...args)
 
 __device__ void memcpy(void* dst, void* src, size_t size);
 
+__device__ void memcpy_wg(void* dst, void* src, size_t size);
+
+__device__ void memcpy_wave(void* dst, void* src, size_t size);
+
 int rocm_init();
 
 void rocm_memory_lock_to_fine_grain(void *ptr, size_t size, void **gpu_ptr,
                                     int gpu_id);
 
-hsa_amd_hdp_flush_t * rocm_hdp(void);
-void free_rocm_hdp(hsa_amd_hdp_flush_t* hpd);
-
+// Returns clock frequency used by s_memrealtime() in Mhz
+int wallClk_freq_mhz();
 #endif

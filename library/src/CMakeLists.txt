@@ -26,14 +26,14 @@
 target_sources(
   ${PROJECT_NAME}
   PRIVATE
-    backend.cpp
+    util.cpp
+    roc_shmem_gpu.cpp
     context.cpp
     hdp_policy.cpp
     roc_shmem.cpp
-    roc_shmem_gpu.cpp
-    util.cpp
     wf_coal_policy.cpp
     wg_state.cpp
+    backend.cpp
 )
 
 target_include_directories(
@@ -42,8 +42,21 @@ target_include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
+target_compile_options(
+  ${PROJECT_NAME}
+  PUBLIC
+    -fgpu-rdc
+)
+
+#target_link_options(
+  #${PROJECT_NAME}
+  #PUBLIC
+    #--hip-link
+#)
+
 ###############################################################################
 # ROCSHMEM TARGET FOR BACKENDS
 ###############################################################################
 add_subdirectory(gpu_ib)
 add_subdirectory(reverse_offload)
+add_subdirectory(host)

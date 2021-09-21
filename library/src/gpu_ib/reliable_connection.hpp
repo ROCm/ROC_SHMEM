@@ -20,60 +20,87 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef __RELIABLE_CONNECTION_HPP__
-#define __RELIABLE_CONNECTION_HPP__
+#ifndef LIBRARY_SRC_GPU_IB_RELIABLE_CONNECTION_HPP_
+#define LIBRARY_SRC_GPU_IB_RELIABLE_CONNECTION_HPP_
+
+#include <vector>
 
 #include "connection.hpp"
 
-class ReliableConnection : public Connection
-{
-  public:
+class ReliableConnection : public Connection {
+ public:
     explicit ReliableConnection(GPUIBBackend *backend);
-    virtual ~ReliableConnection() override;
 
-    virtual Status get_remote_conn(int &remote_conn) override;
+    ~ReliableConnection() override;
 
-    virtual void post_wqes() override;
+    Status
+    get_remote_conn(int *remote_conn) override;
 
-    virtual Status
-    initialize_rkey_handle(uint32_t **heap_rkey_handle, ibv_mr *mr) override;
-    void free_rkey_handle(uint32_t *heap_rkey_handle) override;
+    void
+    post_wqes() override;
 
-  private:
-    virtual InitQPState initqp(uint8_t port) override;
+    Status
+    initialize_rkey_handle(uint32_t **heap_rkey_handle,
+                           ibv_mr *mr) override;
 
-    virtual RtrState rtr(dest_info_t *dest, uint8_t port) override;
+    void
+    free_rkey_handle(uint32_t *heap_rkey_handle) override;
 
-    virtual RtsState rts(dest_info_t *dest) override;
+ private:
+    InitQPState
+    initqp(uint8_t port) override;
 
-    virtual QPInitAttr qpattr(ibv_qp_cap cap) override;
+    RtrState
+    rtr(dest_info_t *dest,
+        uint8_t port) override;
 
-    virtual Status create_qps_1() override;
+    RtsState
+    rts(dest_info_t *dest) override;
 
-    virtual Status
-    create_qps_2(int port, int my_rank,
+    QPInitAttr
+    qpattr(ibv_qp_cap cap) override;
+
+    Status
+    create_qps_1() override;
+
+    Status
+    create_qps_2(int port,
+                 int my_rank,
                  ibv_port_attr *ib_port_att) override;
 
-    virtual Status
-    create_qps_3(int port, ibv_qp *qp, int offset,
+    Status
+    create_qps_3(int port, ibv_qp *qp,
+                 int offset,
                  ibv_port_attr *ib_port_att) override;
 
-    virtual Status allocate_dynamic_members(int num_wg) override;
+    ibv_qp*
+    create_qp_0(ibv_context *context,
+                ibv_qp_init_attr_ex *qp_attr) override;
 
-    virtual Status free_dynamic_members() override;
+    Status
+    allocate_dynamic_members(int num_wg) override;
 
-    virtual Status
+    Status
+    free_dynamic_members() override;
+
+    Status
     initialize_1(int port,
                  int num_wg) override;
 
-    virtual void
-    initialize_wr_fields(ibv_exp_send_wr &wr,
-                         ibv_ah *ah, int dc_key) override;
+    void
+    initialize_wr_fields(ibv_send_wr *wr,
+                         ibv_ah *ah,
+                         int dc_key) override;
 
-    virtual int
-    get_sq_dv_offset(int pe_idx, int num_qps, int wg_idx) override;
+    int
+    get_sq_dv_offset(int pe_idx,
+                     int num_qps,
+                     int wg_idx) override;
 
     std::vector<dest_info_t> all_qp;
+
+    void
+    post_dv_rc_wqe(int remote_conn);
 };
 
-#endif // __RELIABLE_CONNECTION_HPP__
+#endif  // LIBRARY_SRC_GPU_IB_RELIABLE_CONNECTION_HPP_

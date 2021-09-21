@@ -39,8 +39,8 @@ GetSwarmTest(int loop,
     __shared__ roc_shmem_ctx_t ctx;
 
     int provided;
-    roc_shmem_wg_init_thread(SHMEM_THREAD_MULTIPLE, &provided);
-    assert(provided == SHMEM_THREAD_MULTIPLE);
+    roc_shmem_wg_init_thread(ROC_SHMEM_THREAD_MULTIPLE, &provided);
+    assert(provided == ROC_SHMEM_THREAD_MULTIPLE);
 
     roc_shmem_wg_ctx_create(ctx_type, &ctx);
 
@@ -54,7 +54,7 @@ GetSwarmTest(int loop,
         if (i == skip)
             start = roc_shmem_timer();
 
-        roc_shmem_getmem(ctx, &r_buf[index], &s_buf[index], size, 1);
+        roc_shmem_ctx_getmem(ctx, &r_buf[index], &s_buf[index], size, 1);
 
         __syncthreads();
 

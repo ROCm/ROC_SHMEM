@@ -39,7 +39,7 @@ PingPongTest(int loop,
     roc_shmem_wg_init();
     roc_shmem_wg_ctx_create(ctx_type, &ctx);
 
-    int pe = roc_shmem_my_pe(ctx);
+    int pe = roc_shmem_ctx_my_pe(ctx);
 
     if (hipThreadIdx_x == 0) {
         uint64_t start;
@@ -50,11 +50,11 @@ PingPongTest(int loop,
             }
 
             if (pe == 0) {
-                roc_shmem_p(ctx, r_buf, i + 1, 1);
-                roc_shmem_wait_until(r_buf, ROC_SHMEM_CMP_EQ, i + 1);
+                roc_shmem_ctx_int_p(ctx, r_buf, i + 1, 1);
+                roc_shmem_int_wait_until(r_buf, ROC_SHMEM_CMP_EQ, i + 1);
             } else {
-                roc_shmem_wait_until(r_buf, ROC_SHMEM_CMP_EQ, i + 1);
-                roc_shmem_p(ctx, r_buf, i + 1, 0);
+                roc_shmem_int_wait_until(r_buf, ROC_SHMEM_CMP_EQ, i + 1);
+                roc_shmem_ctx_int_p(ctx, r_buf, i + 1, 0);
             }
         }
         timer[hipBlockIdx_x] =  roc_shmem_timer() - start;

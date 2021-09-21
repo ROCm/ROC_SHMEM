@@ -51,48 +51,43 @@ PrimitiveAMOTest(int loop,
 
             switch (type) {
                 case AMO_FAddTestType:
-                    ret = roc_shmem_atomic_fetch_add<int64_t>(
+                    ret = roc_shmem_ctx_int64_atomic_fetch_add(
                                 ctx, (int64_t*)r_buf, 2, 1);
                     break;
                 case AMO_FIncTestType:
-                    ret = roc_shmem_atomic_fetch_inc<int64_t>(
+                    ret = roc_shmem_ctx_int64_atomic_fetch_inc(
                                 ctx, (int64_t*)r_buf, 1);
                     break;
                 case AMO_FetchTestType:
-                    ret = roc_shmem_atomic_fetch<int64_t>(
+                    ret = roc_shmem_ctx_int64_atomic_fetch(
                                 ctx, (int64_t*)r_buf, 1);
                     break;
                 case AMO_FCswapTestType:
-                    ret = roc_shmem_atomic_fetch_cswap<int64_t>(
+                    ret = roc_shmem_ctx_int64_atomic_compare_swap(
                                 ctx, (int64_t*)r_buf, cond, (int64_t)i, 1);
                     cond = i;
                     break;
                 case AMO_AddTestType:
-                    roc_shmem_atomic_add<int64_t>(
+                    roc_shmem_ctx_int64_atomic_add(
                             ctx, (int64_t*)r_buf, 2, 1);
                     break;
                 case AMO_IncTestType:
-                    roc_shmem_atomic_inc<int64_t>(
+                    roc_shmem_ctx_int64_atomic_inc(
                             ctx, (int64_t*)r_buf, 1);
-                    break;
-                case AMO_CswapTestType:
-                    roc_shmem_atomic_cswap<int64_t>(
-                            ctx, (int64_t*)r_buf, cond, (int64_t)i, 1);
-                    cond = i;
                     break;
                 default:
                     break;
             }
         }
 
-        roc_shmem_quiet(ctx);
+        roc_shmem_ctx_quiet(ctx);
 
         timer[hipBlockIdx_x] =  roc_shmem_timer() - start;
 
         *ret_val = ret;
 
         // do get to check the result for no-fetch ops
-        roc_shmem_getmem(ctx, r_buf, r_buf, sizeof(int64_t), 1);
+        roc_shmem_ctx_getmem(ctx, r_buf, r_buf, sizeof(int64_t), 1);
     }
 
     roc_shmem_wg_ctx_destroy(ctx);
@@ -169,9 +164,6 @@ PrimitiveAMOTester::verifyResults(uint64_t size)
                 break;
             case AMO_FCswapTestType:
                 expected_val = num_msgs - 2;
-                break;
-            case AMO_CswapTestType:
-                expected_val = num_msgs - 1;
                 break;
             default:
                 break;

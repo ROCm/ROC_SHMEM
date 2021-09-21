@@ -28,13 +28,19 @@ target_sources(
   PRIVATE
     connection.cpp
     connection_policy.cpp
+    debug.cpp
     dynamic_connection.cpp
+    endian.cpp
     gpu_ib.cpp
     gpu_ib_gpu.cpp
+    gpu_ib_host.cpp
     gpu_ib_gpu_coll.cpp
     ipc_policy.cpp
+    network_policy.cpp
+    qe_dumper.cpp
     queue_pair.cpp
     reliable_connection.cpp
+    segment_builder.cpp
     thread_policy.cpp
 )
 

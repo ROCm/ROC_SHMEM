@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2020 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2021 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -22,9 +22,10 @@
 
 #include "connection.hpp"
 
+#include <mutex>  // NOLINT(build/c++11)
 #include <vector>
 
-#include "mpi.h"
+#include "mpi.h"  // NOLINT(build/include_subdir)
 #include "util.hpp"
 #include "queue_pair.hpp"
 #include "backend.hpp"
@@ -32,8 +33,7 @@
 int Connection::use_gpu_mem = 0;
 
 Connection::Connection(GPUIBBackend *b, int k)
-  : backend(b), key_offset(k)
-{
+  : backend(b), key_offset(k) {
     char *value = nullptr;
 
     if ((value = getenv("ROC_SHMEM_USE_IB_HCA"))) {
@@ -53,37 +53,34 @@ Connection::Connection(GPUIBBackend *b, int k)
     }
 }
 
-Connection::~Connection()
-{
+Connection::~Connection() {
     delete ib_state;
 }
 
 Status
-Connection::reg_mr(void *ptr, size_t size, ibv_mr **mr)
-{
+Connection::reg_mr(void *ptr, size_t size, ibv_mr **mr) {
     *mr = ibv_reg_mr(ib_state->pd, ptr, size,
-                    IBV_EXP_ACCESS_LOCAL_WRITE |
-                    IBV_EXP_ACCESS_REMOTE_WRITE |
-                    IBV_EXP_ACCESS_REMOTE_READ |
-                    IBV_EXP_ACCESS_REMOTE_ATOMIC);
+                    IBV_ACCESS_LOCAL_WRITE |
+                    IBV_ACCESS_REMOTE_WRITE |
+                    IBV_ACCESS_REMOTE_READ |
+                    IBV_ACCESS_REMOTE_ATOMIC);
 
     if (*mr == nullptr) {
         return Status::ROC_SHMEM_UNKNOWN_ERROR;
     }
+
     return Status::ROC_SHMEM_SUCCESS;
 }
 
 unsigned
-Connection::total_number_connections()
-{
+Connection::total_number_connections() {
     int connections;
-    get_remote_conn(connections);
+    get_remote_conn(&connections);
     return backend->num_wg * connections;
 }
 
 Status
-Connection::initialize(int num_wg)
-{
+Connection::initialize(int num_wg) {
     Status status;
 
     status = allocate_dynamic_members(num_wg);
@@ -93,7 +90,7 @@ Connection::initialize(int num_wg)
 
     int ib_devices {0};
     dev_list = ibv_get_device_list(&ib_devices);
-    if (dev_list == nullptr){
+    if (dev_list == nullptr) {
         return Status::ROC_SHMEM_UNKNOWN_ERROR;
     }
 
@@ -118,10 +115,11 @@ Connection::initialize(int num_wg)
 
     int ib_fork_err = ibv_fork_init();
     if (ib_fork_err != 0)
-        printf("error: ibv)fork_init  failed \n");
+        printf("error: ibv_fork_init failed \n");
 
     sq_post_dv = static_cast<sq_post_dv_t*>(
         malloc(sizeof(sq_post_dv_t) * total_number_connections()));
+
 
     if (sq_post_dv == nullptr) {
         return Status::ROC_SHMEM_UNKNOWN_ERROR;
@@ -132,30 +130,28 @@ Connection::initialize(int num_wg)
     if (status != Status::ROC_SHMEM_SUCCESS) {
         return status;
     }
-
     status = initialize_1(port, num_wg);
     if (status != Status::ROC_SHMEM_SUCCESS) {
         return status;
     }
 
-    MPI_Barrier(MPI_COMM_WORLD);
+    MPI_Barrier(backend->thread_comm);
     free_dynamic_members();
 
     return Status::ROC_SHMEM_SUCCESS;
 }
 
 Status
-Connection::finalize()
-{
+Connection::finalize() {
     ibv_free_device_list(dev_list);
 
-    int ret = ibv_dereg_mr(backend->heap_mr);
+    int ret = ibv_dereg_mr(backend->networkImpl.heap_mr);
     if (ret) {
         return Status::ROC_SHMEM_UNKNOWN_ERROR;
     }
-
-    ibv_dereg_mr(backend->hdp_mr);
-    ibv_dereg_mr(backend->mr);
+    // comment until rocm 4.5
+    // ibv_dereg_mr(backend->networkImpl.hdp_mr);
+    ibv_dereg_mr(backend->networkImpl.mr);
 
     MPI_Finalize();
 
@@ -164,8 +160,7 @@ Connection::finalize()
 
 Status
 Connection::ib_init(struct ibv_device *ib_dev,
-                    uint8_t port)
-{
+                    uint8_t port) {
     ib_state = new ib_state_t;
     if (!ib_state) {
         return Status::ROC_SHMEM_UNKNOWN_ERROR;
@@ -183,23 +178,29 @@ Connection::ib_init(struct ibv_device *ib_dev,
         return Status::ROC_SHMEM_UNKNOWN_ERROR;
     }
 
-    ibv_query_port(ib_state->context, port, &ib_state->portinfo);
+    ibv_parent_domain_init_attr pattr;
+    init_parent_domain_attr(&pattr);
+    ib_state->pd = ibv_alloc_parent_domain(ib_state->context, &pattr);
+
+    ibv_query_port(ib_state->context,
+                   port,
+                   &ib_state->portinfo);
 
     return Status::ROC_SHMEM_SUCCESS;
 }
 
 template <typename StateType>
 Status
-Connection::try_to_modify_qp(ibv_qp *qp, StateType state)
-{
-    if (ibv_exp_modify_qp(qp, &state.exp_qp_attr, state.exp_attr_mask))
+Connection::try_to_modify_qp(ibv_qp *qp,
+                             StateType state) {
+    if (ibv_modify_qp(qp, &state.exp_qp_attr, state.exp_attr_mask))
         return Status::ROC_SHMEM_UNKNOWN_ERROR;
     return Status::ROC_SHMEM_SUCCESS;
 }
 
 Status
-Connection::init_qp_status(ibv_qp *qp, uint8_t port)
-{
+Connection::init_qp_status(ibv_qp *qp,
+                           uint8_t port) {
     return try_to_modify_qp<InitQPState>(qp, initqp(port));
 }
 
@@ -207,8 +208,9 @@ Connection::init_qp_status(ibv_qp *qp, uint8_t port)
  * rtr stands for 'ready to receive'
  */
 Status
-Connection::change_status_rtr(ibv_qp *qp, dest_info_t *dest, uint8_t port)
-{
+Connection::change_status_rtr(ibv_qp *qp,
+                              dest_info_t *dest,
+                              uint8_t port) {
     return try_to_modify_qp<RtrState>(qp, rtr(dest, port));
 }
 
@@ -216,15 +218,16 @@ Connection::change_status_rtr(ibv_qp *qp, dest_info_t *dest, uint8_t port)
  * rts stands for 'ready to send'
  */
 Status
-Connection::change_status_rts(ibv_qp *qp, dest_info_t *dest)
-{
+Connection::change_status_rts(ibv_qp *qp,
+                              dest_info_t *dest) {
     return try_to_modify_qp<RtsState>(qp, rts(dest));
 }
 
 Status
-Connection::create_qps(uint8_t port, int rtn_id,
-                       int my_rank, ibv_port_attr *ib_port_att)
-{
+Connection::create_qps(uint8_t port,
+                       int rtn_id,
+                       int my_rank,
+                       ibv_port_attr *ib_port_att) {
     Status status;
     status = create_qps_1();
     if (status != Status::ROC_SHMEM_SUCCESS) {
@@ -242,13 +245,11 @@ Connection::create_qps(uint8_t port, int rtn_id,
     cqs.resize(qp_size);
     qps.resize(qp_size);
 
+    int cqe = qp_init_attr.attr.cap.max_send_wr;
     for (auto &entry : cqs) {
         entry = create_cq(ib_state->context,
-                          qp_init_attr.attr.cap.max_send_wr,
-                          nullptr,
-                          nullptr,
-                          0,
-                          rtn_id);
+                          ib_state->pd,
+                          cqe);
         if (!entry) {
             return Status::ROC_SHMEM_UNKNOWN_ERROR;
         }
@@ -263,11 +264,11 @@ Connection::create_qps(uint8_t port, int rtn_id,
             qps[i] = create_qp(ib_state->pd,
                                ib_state->context,
                                &qp_init_attr.attr,
-                               cqs[i],
-                               rtn_id);
+                               cqs[i]);
         if (!qps[i]) {
             return Status::ROC_SHMEM_UNKNOWN_ERROR;
         }
+
 
         status = create_qps_3(port, qps[i], i, ib_port_att);
         if (status != Status::ROC_SHMEM_SUCCESS) {
@@ -278,180 +279,112 @@ Connection::create_qps(uint8_t port, int rtn_id,
 }
 
 Status
-Connection::init_mpi_once()
-{
-    static std::mutex init_mutex;
-    const std::lock_guard<std::mutex> lock(init_mutex);
-
-    int init_done = 0;
-    if (MPI_Initialized(&init_done) == MPI_SUCCESS){
-       if (init_done) return Status::ROC_SHMEM_SUCCESS;
-    }
-
-    if (MPI_Init(nullptr, nullptr) != MPI_SUCCESS) {
-        return Status::ROC_SHMEM_UNKNOWN_ERROR;
-    }
-
-    return Status::ROC_SHMEM_SUCCESS;
-}
-
-Status
 Connection::initialize_gpu_policy(ConnectionImpl **conn,
-                                  uint32_t *heap_rkey)
-{
-    CHECK_HIP(hipMalloc((void **) conn, sizeof(ConnectionImpl)));
+                                  uint32_t *heap_rkey) {
+    CHECK_HIP(hipMalloc(reinterpret_cast<void**>(conn),
+                        sizeof(ConnectionImpl)));
     new (*conn) ConnectionImpl(this, heap_rkey);
     return Status::ROC_SHMEM_SUCCESS;
 }
 
-Status
-Connection::post_send(ibv_qp *qp, ibv_exp_send_wr *wr,
-                      ibv_exp_send_wr **bad_wr)
-{
-    assert(qp);
-    assert(wr);
 
-    if (ibv_exp_post_send(qp, wr, bad_wr))
-        return Status::ROC_SHMEM_UNKNOWN_ERROR;
-
-    return Status::ROC_SHMEM_SUCCESS;
+/*
+ * Create and write the rdma segment to the SQ
+ */
+void
+Connection::set_rdma_seg(mlx5_wqe_raddr_seg *rdma,
+                         uint64_t address,
+                         uint32_t rkey) {
+    rdma->raddr = htobe64(address);
+    rdma->rkey = htobe32(rkey);
 }
 
-Status
-Connection::cpu_post_wqe(ibv_qp *qp, void* addr, uint32_t lkey,
-                         void* remote_addr, uint32_t rkey, size_t size,
-                         ibv_ah *ah, int dc_key)
-{
-    counter_wqe++;
-    ibv_sge list;
-    list.addr = (uintptr_t) addr;
-    list.length = size;
-    list.lkey = lkey;
+/*
+ * Retrieve the address of a SQ.
+ * We used this address to write the WQE directly to the SQ.
+ */
+uint64_t*
+Connection::get_address_sq(int i) {
+    mlx5dv_obj mlx_obj;
+    mlx5dv_qp qp_out;
 
-    ibv_exp_send_wr wr;
-    memset(&wr, 0, sizeof(wr));
-    wr.wr_id = (uint64_t) counter_wqe;
-    wr.sg_list = &list;
-    wr.num_sge = 1;
-    wr.exp_opcode = IBV_EXP_WR_RDMA_WRITE;
-    wr.exp_send_flags = IBV_EXP_SEND_SIGNALED;
-    wr.wr.rdma.remote_addr  = (int64_t) remote_addr;
-    wr.wr.rdma.rkey = rkey;
+    mlx_obj.qp.in = qps[i];
+    mlx_obj.qp.out = &qp_out;
 
-    initialize_wr_fields(wr, ah, dc_key);
+    mlx5dv_init_obj(&mlx_obj, MLX5DV_OBJ_QP);
 
-    ibv_exp_send_wr *bad_ewr;
-    return post_send(qp, &wr, &bad_ewr);
+    return reinterpret_cast<uint64_t*>(qp_out.sq.buf);
 }
 
-ibv_exp_peer_buf *
-Connection::buf_alloc(ibv_exp_peer_buf_alloc_attr *attr)
-{
-    assert(attr);
-    ibv_exp_peer_buf * peer_buf =
-        static_cast<ibv_exp_peer_buf*>(malloc(sizeof(ibv_exp_peer_buf)));
-
-    if (peer_buf == nullptr) {
-        printf("error, could not allocate memory \n");
-        return nullptr;
-    }
-
-    peer_buf->comp_mask = 0;
-    peer_buf->length = attr->length;
-
+void*
+Connection::buf_alloc(struct ibv_pd * pd,
+                      void *pd_context,
+                      size_t size,
+                      size_t alignment,
+                      uint64_t resource_type) {
     if (use_gpu_mem) {
-        void * dev_ptr;
-        CHECK_HIP(hipSetDevice( attr->peer_id));
-        CHECK_HIP(hipExtMallocWithFlags((void**)&dev_ptr, attr->length,
+        void *dev_ptr;
+        CHECK_HIP(hipExtMallocWithFlags(reinterpret_cast<void**>(&dev_ptr),
+                                        size,
                                         hipDeviceMallocFinegrained));
-        peer_buf->addr = dev_ptr;
-    } else {
-        free(peer_buf);
-        return nullptr;
+        memset(dev_ptr, 0, size);
+        printf("calling buf_alloc %p size %zu %zu\n",
+               dev_ptr, size, alignment);
+        return dev_ptr;
     }
-    return peer_buf;
-}
-
-int
-Connection::buf_release(ibv_exp_peer_buf *pb)
-{
-    assert(pb);
-    free(pb->addr);
-    pb->addr = nullptr;
-    return 0;
-}
-
-uint64_t
-Connection::register_va(void *start, size_t length, uint64_t rtn_id,
-                        ibv_exp_peer_buf *pb)
-{
-    CHECK_HIP(hipSetDevice(rtn_id));
-
-    void * gpu_ptr = nullptr;
-    rocm_memory_lock_to_fine_grain(start, length, &gpu_ptr, rtn_id);
-
-    return (uint64_t) (start);
-}
-
-int
-Connection::unregister_va(uint64_t target_id, uint64_t rtn_id)
-{
-    CHECK_HIP(hipSetDevice(rtn_id));
-    CHECK_HIP(hipHostUnregister ( (void*) target_id ));
-    return 0;
+    return IBV_ALLOCATOR_USE_DEFAULT;
 }
 
 void
-Connection::init_peer_attr(ibv_exp_peer_direct_attr *attr1, int rtn_id)
-{
-    // TODO: need to cache this for better perf
-    attr1->peer_id = rtn_id;
-    attr1->buf_alloc = Connection::buf_alloc;
-    attr1->buf_release = Connection::buf_release;
-    attr1->register_va = Connection::register_va;
-    attr1->unregister_va = Connection::unregister_va;
-
-    attr1->caps = (IBV_EXP_PEER_OP_STORE_DWORD_CAP    |
-                   IBV_EXP_PEER_OP_STORE_QWORD_CAP    |
-                   IBV_EXP_PEER_OP_FENCE_CAP          |
-                   IBV_EXP_PEER_OP_POLL_AND_DWORD_CAP |
-                   IBV_EXP_PEER_OP_POLL_GEQ_DWORD_CAP);
-
-    attr1->peer_dma_op_map_len = RTN_MAX_INLINE_SIZE;
-    attr1->comp_mask = IBV_EXP_PEER_DIRECT_VERSION;
-    attr1->version = 1; // EXP verbs requires to be set to 1
+Connection::buf_release(struct ibv_pd *pd,
+                        void *pd_context,
+                        void *ptr,
+                        uint64_t resource_type) {
+    if (use_gpu_mem) {
+        CHECK_HIP(hipFree(ptr));
+    } else {
+        free(ptr);
+    }
 }
 
-ibv_cq *
-Connection::create_cq(ibv_context *context, int cqe,
-                      void *cq_context, ibv_comp_channel *channel,
-                      int comp_vector, int rtn_id)
-{
+void
+Connection::init_parent_domain_attr(ibv_parent_domain_init_attr *attr1) {
+    attr1->pd = ib_state->pd;
+    attr1->td = nullptr;
+    attr1->comp_mask = IBV_PARENT_DOMAIN_INIT_ATTR_ALLOCATORS;
+    attr1->alloc = Connection::buf_alloc;
+    attr1->free = Connection::buf_release;
+    attr1->pd_context = nullptr;
+}
+
+ibv_cq*
+Connection::create_cq(ibv_context *context,
+                      ibv_pd *pd,
+                      int cqe) {
     use_gpu_mem = cq_use_gpu_mem;
-    ibv_exp_peer_direct_attr* peer_attr = &peers_attr[rtn_id];
 
-    init_peer_attr(peer_attr,  rtn_id);
+    ibv_cq_init_attr_ex cq_attr;
+    memset(&cq_attr, 0, sizeof(ibv_cq_init_attr_ex));
+    cq_attr.cqe = cqe;
+    cq_attr.cq_context = nullptr;
+    cq_attr.channel = nullptr;
+    cq_attr.comp_vector = 0;
+    cq_attr.flags = 0;  // see ibv_exp_cq_create_flags
+    cq_attr.comp_mask = IBV_CQ_INIT_ATTR_MASK_PD;
+    cq_attr.parent_domain = pd;
 
-    ibv_exp_cq_init_attr attr;
-    memset(&attr, 0, sizeof(ibv_exp_cq_init_attr));
-    attr.comp_mask = IBV_EXP_CQ_INIT_ATTR_PEER_DIRECT;
-    attr.flags = 0; // see ibv_exp_cq_create_flags
-    attr.res_domain = nullptr;
-    attr.peer_direct_attrs = peer_attr;
-
-    ibv_cq *cq = ibv_exp_create_cq(context, cqe, cq_context, channel,
-                                   comp_vector, &attr);
+    ibv_cq_ex *cq = ibv_create_cq_ex(context, &cq_attr);
     if (!cq) {
-        printf("error in ibv_exp_create_cq, %d  %s\n", errno, strerror(errno));
+        printf("error in ibv_create_cq_ex: %d %s\n", errno, strerror(errno));
         return nullptr;
     }
 
-    return cq;
+    return ibv_cq_ex_to_cq(cq);
 }
 
 Status
-Connection::init_gpu_qp_from_connection(QueuePair &gpu_qp, int conn_num)
-{
+Connection::init_gpu_qp_from_connection(QueuePair *gpu_qp,
+                                        int conn_num) {
     int rtn_id = 0;
     use_gpu_mem = cq_use_gpu_mem;
 
@@ -461,20 +394,27 @@ Connection::init_gpu_qp_from_connection(QueuePair &gpu_qp, int conn_num)
     mlx_obj.cq.out = &cq_out;
 
     mlx5dv_init_obj(&mlx_obj, MLX5DV_OBJ_CQ);
-    gpu_qp.cq_log_size = log2(cq_out.cqe_cnt);
-    gpu_qp.cq_size = cq_out.cqe_cnt;
+    gpu_qp->cq_log_size = log2(cq_out.cqe_cnt);
+    gpu_qp->cq_size = cq_out.cqe_cnt;
 
     void *gpu_ptr = nullptr;
     if (use_gpu_mem) {
-        gpu_qp.current_cq_q = (mlx5_cqe64 *) cq_out.buf;
+        gpu_qp->current_cq_q = reinterpret_cast<mlx5_cqe64*>(cq_out.buf);
     } else {
-        rocm_memory_lock_to_fine_grain((void*) cq_out.buf,
-                                       cq_out.cqe_cnt * 64, &gpu_ptr, 0);
-        gpu_qp.current_cq_q = (mlx5_cqe64 *) gpu_ptr;
+        rocm_memory_lock_to_fine_grain(reinterpret_cast<void*>(cq_out.buf),
+                                       cq_out.cqe_cnt * 64,
+                                       &gpu_ptr,
+                                       rtn_id);
+        gpu_qp->current_cq_q = reinterpret_cast<mlx5_cqe64*>(gpu_ptr);
     }
+    gpu_qp->current_cq_q_H = reinterpret_cast<mlx5_cqe64*>(cq_out.buf);
 
-    rocm_memory_lock_to_fine_grain((void*) cq_out.dbrec, 64, &gpu_ptr, 0);
-    gpu_qp.dbrec_cq = (volatile uint32_t*) gpu_ptr;
+    rocm_memory_lock_to_fine_grain(reinterpret_cast<void*>(cq_out.dbrec),
+                                   64,
+                                   &gpu_ptr,
+                                   rtn_id);
+
+    gpu_qp->dbrec_cq = reinterpret_cast<volatile uint32_t*>(gpu_ptr);
 
     use_gpu_mem = sq_use_gpu_mem;
 
@@ -484,85 +424,78 @@ Connection::init_gpu_qp_from_connection(QueuePair &gpu_qp, int conn_num)
 
     mlx5dv_init_obj(&mlx_obj, MLX5DV_OBJ_QP);
 
-    gpu_qp.max_nwqe = (qp_out.sq.wqe_cnt);
+    gpu_qp->max_nwqe = (qp_out.sq.wqe_cnt);
 
     volatile uint32_t *dbrec_send = qp_out.dbrec + 1;
 
     if (use_gpu_mem) {
-        gpu_qp.current_sq = (uint64_t *) qp_out.sq.buf;
-        gpu_qp.dbrec_send = (volatile uint32_t*) dbrec_send;
-
+        gpu_qp->current_sq = reinterpret_cast<uint64_t*>(qp_out.sq.buf);
+        gpu_qp->dbrec_send = reinterpret_cast<volatile uint32_t*>(dbrec_send);
     } else {
-        rocm_memory_lock_to_fine_grain((void*) qp_out.sq.buf,
-            qp_out.sq.wqe_cnt *64, &gpu_ptr, rtn_id);
-
-        gpu_qp.current_sq = (uint64_t *) gpu_ptr;
-
-        rocm_memory_lock_to_fine_grain((void*) dbrec_send, 32, &gpu_ptr,
+        gpu_ptr = nullptr;
+        rocm_memory_lock_to_fine_grain(reinterpret_cast<void*>(qp_out.sq.buf),
+                                       qp_out.sq.wqe_cnt * 64,
+                                       &gpu_ptr,
                                        rtn_id);
-        gpu_qp.dbrec_send = (volatile uint32_t*) gpu_ptr;
+
+        gpu_qp->current_sq = reinterpret_cast<uint64_t*>(gpu_ptr);
+
+        rocm_memory_lock_to_fine_grain(
+                reinterpret_cast<void*>(const_cast<uint32_t*>(dbrec_send)),
+                32,
+                &gpu_ptr,
+                rtn_id);
+
+        gpu_qp->dbrec_send = reinterpret_cast<volatile uint32_t*>(gpu_ptr);
     }
 
-    gpu_qp.threadImpl.setDBval(*((uint64_t *) qp_out.sq.buf));
+    gpu_qp->current_sq_H = reinterpret_cast<uint64_t*>(qp_out.sq.buf);
 
-    rocm_memory_lock_to_fine_grain(qp_out.bf.reg, qp_out.bf.size,
-                                   &gpu_ptr, rtn_id);
+    gpu_qp->setDBval(*(reinterpret_cast<uint64_t*>(qp_out.sq.buf)));
 
-    gpu_qp.db = (uint64_t*) gpu_ptr;
+    rocm_memory_lock_to_fine_grain(qp_out.bf.reg,
+                                   qp_out.bf.size * 2,
+                                   &gpu_ptr,
+                                   rtn_id);
 
-    memcpy(sq_post_dv[conn_num].segments, qp_out.sq.buf, 64);
+    gpu_qp->db.ptr = reinterpret_cast<uint64_t*>(gpu_ptr);
 
-    sq_post_dv[conn_num].wqe_idx = 0;
-    sq_post_dv[conn_num].current_sq = 0;
-
-    uint32_t ctrl_qp_sq = ((uint32_t*)(sq_post_dv[conn_num].segments))[1];
-    /*
-     * Keep the BE-byte order representation of the qp_id that was populated
-     * during the initial round of CPU wqe posting.  Remove the DS byte that
-     * will be calculated dynamically by the GPU.
-     */
-    gpu_qp.ctrl_qp_sq = ctrl_qp_sq & 0xFFFFFF;
-    gpu_qp.ctrl_sig = ((uint64_t*)(sq_post_dv[conn_num].segments))[1];
-    gpu_qp.rkey = ((uint32_t*)(sq_post_dv[conn_num].segments))[6 + key_offset];
-    gpu_qp.lkey = ((uint32_t*)(sq_post_dv[conn_num].segments))[9 + key_offset];
+    uint32_t *sq = reinterpret_cast<uint32_t*>(qp_out.sq.buf);
+    uint32_t ctrl_qp_sq = (reinterpret_cast<uint32_t*>(sq))[1];
+    gpu_qp->ctrl_qp_sq = ctrl_qp_sq & 0xFFFFFF;
+    gpu_qp->ctrl_sig = (reinterpret_cast<uint64_t*>(sq))[1];
+    gpu_qp->rkey = (reinterpret_cast<uint32_t*>(sq))[6 + key_offset];
+    gpu_qp->lkey = (reinterpret_cast<uint32_t*>(sq))[9 + key_offset];
 
     return Status::ROC_SHMEM_SUCCESS;
 }
 
-ibv_qp *
-Connection::create_qp(ibv_pd *pd, ibv_context *context,
-                      ibv_exp_qp_init_attr *qp_attr, ibv_cq * cq,
-                      int rtn_id)
-{
+ibv_qp*
+Connection::create_qp(ibv_pd *pd,
+                      ibv_context *context,
+                      ibv_qp_init_attr_ex *qp_attr,
+                      ibv_cq * cq) {
     use_gpu_mem = sq_use_gpu_mem;
 
     int ret = 0;
     ibv_qp *qp = nullptr;
     ibv_cq *tx_cq = nullptr;
-    ibv_exp_peer_direct_attr *peer_attr =  &peers_attr[rtn_id];
 
     assert(pd);
     assert(context);
     assert(qp_attr);
 
-    init_peer_attr(peer_attr, rtn_id);
-
     qp_attr->send_cq = cq;
     qp_attr->recv_cq = cq;
     qp_attr->pd = pd;
-    qp_attr->comp_mask |= IBV_EXP_QP_INIT_ATTR_PD;
-    qp_attr->comp_mask |= IBV_EXP_QP_INIT_ATTR_CREATE_FLAGS;
-    qp_attr->exp_create_flags |= IBV_EXP_QP_CREATE_IGNORE_SQ_OVERFLOW ;
 
-    qp_attr->comp_mask |= IBV_EXP_QP_INIT_ATTR_PEER_DIRECT;
-    qp_attr->peer_direct_attrs = peer_attr;
+    qp_attr->comp_mask = IBV_QP_INIT_ATTR_PD;
 
-    qp = ibv_exp_create_qp(context, qp_attr);
+    qp = create_qp_0(context, qp_attr);
 
     if (!qp) {
-        printf("error ibv_exp_create_qp failed %d \n", errno);
-        ibv_destroy_qp(qp);
-        ibv_destroy_cq(tx_cq);
+        printf("***** error ibv_create_qp failed %d m %m \n", errno, errno);
+        ibv_destroy_cq(cq);
     }
 
     return qp;

@@ -24,7 +24,7 @@
 
 #include <functional>
 #include <vector>
-
+#include <iostream>
 #include <hip/hip_runtime.h>
 #include <mpi.h>
 #include <roc_shmem.hpp>
@@ -265,11 +265,6 @@ Tester::create(TesterArguments args)
                 std::cout << "AMO Inc***" << std::endl;
             testers.push_back(new PrimitiveAMOTester(args));
             return testers;
-        case AMO_CswapTestType:
-            if (rank == 0)
-                std::cout << "AMO Cswap***" << std::endl;
-            testers.push_back(new PrimitiveAMOTester(args));
-            return testers;
         case PingPongTestType:
             if (rank == 0)
                 std::cout << "PingPong***" << std::endl;
@@ -419,9 +414,6 @@ Tester::print(uint64_t size)
     printf("%*.*f %*.*f\n",
            field_width, float_precision, latency_avg,
            field_width, float_precision, bandwidth_avg_gbs);
-
-    roc_shmem_dump_stats();
-    roc_shmem_reset_stats();
 
     fflush(stdout);
 }

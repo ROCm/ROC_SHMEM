@@ -20,6 +20,55 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
+/* Declare the template with a generic implementation */
+template <typename T, ROC_SHMEM_OP Op>
+__device__ void
+wg_to_all(roc_shmem_ctx_t ctx, T *dest, const T *source,
+                    int nreduce, int PE_start, int logPE_stride,
+                    int PE_size, T *pWrk, long *pSync)
+{
+    return;
+}
+
+/* Define templates to call ROC_SHMEM */
+#define REDUCTION_DEF_GEN(T, TNAME, Op_API, Op) \
+    template <> __device__ void \
+    wg_to_all<T, Op>(roc_shmem_ctx_t ctx, T *dest, const T *source, \
+                     int nreduce, int PE_start, int logPE_stride, \
+                     int PE_size, T *pWrk, long *pSync) \
+    { \
+        roc_shmem_ctx_##TNAME##_##Op_API##_wg_to_all(ctx, dest, source, nreduce, PE_start, \
+                                                     logPE_stride, PE_size, pWrk, pSync); \
+    }
+
+#define ARITH_REDUCTION_DEF_GEN(T, TNAME) \
+    REDUCTION_DEF_GEN(T, TNAME, sum, ROC_SHMEM_SUM) \
+    REDUCTION_DEF_GEN(T, TNAME, min, ROC_SHMEM_MIN) \
+    REDUCTION_DEF_GEN(T, TNAME, max, ROC_SHMEM_MAX) \
+    REDUCTION_DEF_GEN(T, TNAME, prod, ROC_SHMEM_PROD)
+
+#define BITWISE_REDUCTION_DEF_GEN(T, TNAME) \
+    REDUCTION_DEF_GEN(T, TNAME, or, ROC_SHMEM_OR) \
+    REDUCTION_DEF_GEN(T, TNAME, and, ROC_SHMEM_AND) \
+    REDUCTION_DEF_GEN(T, TNAME, xor, ROC_SHMEM_XOR)
+
+#define INT_REDUCTION_DEF_GEN(T, TNAME) \
+    ARITH_REDUCTION_DEF_GEN(T, TNAME) \
+    BITWISE_REDUCTION_DEF_GEN(T, TNAME)
+
+#define FLOAT_REDUCTION_DEF_GEN(T, TNAME) \
+    ARITH_REDUCTION_DEF_GEN(T, TNAME)
+
+INT_REDUCTION_DEF_GEN(int, int)
+INT_REDUCTION_DEF_GEN(short, short)
+INT_REDUCTION_DEF_GEN(long, long)
+INT_REDUCTION_DEF_GEN(long long, longlong)
+FLOAT_REDUCTION_DEF_GEN(float, float)
+FLOAT_REDUCTION_DEF_GEN(double, double)
+// long double reduction fails. hipcc/device may not support long double.
+// so disable it for now.
+//FLOAT_REDUCTION_DEF_GEN(long double, longdouble)
+
 /******************************************************************************
  * DEVICE TEST KERNEL
  *****************************************************************************/
@@ -41,7 +90,7 @@ void ReductionTest(int loop,
     roc_shmem_wg_init();
     roc_shmem_wg_ctx_create(ctx_type, &ctx);
 
-    int n_pes = roc_shmem_n_pes(ctx);
+    int n_pes = roc_shmem_ctx_n_pes(ctx);
 
     __syncthreads();
 
@@ -50,16 +99,16 @@ void ReductionTest(int loop,
         if (i == skip && hipThreadIdx_x == 0) {
             start = roc_shmem_timer();
         }
-        roc_shmem_wg_to_all<T1, T2>(ctx,
-                                    r_buf,
-                                    s_buf,
-                                    size,
-                                    0,
-                                    0,
-                                    n_pes,
-                                    pWrk,
-                                    pSync);
-        roc_shmem_wg_barrier_all(ctx);
+        wg_to_all<T1, T2>(ctx,
+                          r_buf,
+                          s_buf,
+                          size,
+                          0,
+                          0,
+                          n_pes,
+                          pWrk,
+                          pSync);
+        roc_shmem_ctx_wg_barrier_all(ctx);
     }
 
     __syncthreads();
@@ -85,14 +134,14 @@ ReductionTester<T1, T2>::ReductionTester(TesterArguments args,
     r_buf = (T1 *)roc_shmem_malloc(args.max_msg_size * sizeof(T1));
 
     size_t p_wrk_size =
-        std::max(args.max_msg_size / 2 + 1, SHMEM_REDUCE_MIN_WRKDATA_SIZE);
+        std::max(args.max_msg_size / 2 + 1, ROC_SHMEM_REDUCE_MIN_WRKDATA_SIZE);
     pWrk = (T1 *)roc_shmem_malloc(p_wrk_size * sizeof(T1));
 
-    size_t p_sync_size = SHMEM_REDUCE_SYNC_SIZE;
+    size_t p_sync_size = ROC_SHMEM_REDUCE_SYNC_SIZE;
     pSync = (long *)roc_shmem_malloc(p_sync_size * sizeof(long));
 
     for (int i = 0; i < p_sync_size; i++) {
-        pSync[i] = SHMEM_SYNC_VALUE;
+        pSync[i] = ROC_SHMEM_SYNC_VALUE;
     }
 }
 
@@ -115,7 +164,7 @@ ReductionTester<T1, T2>::launchKernel(dim3 gridSize,
     size_t shared_bytes;
     roc_shmem_dynamic_shared(&shared_bytes);
 
-    hipLaunchKernelGGL(ReductionTest<T1, T2>,
+    hipLaunchKernelGGL(HIP_KERNEL_NAME(ReductionTest<T1, T2>),
                        gridSize,
                        blockSize,
                        shared_bytes,

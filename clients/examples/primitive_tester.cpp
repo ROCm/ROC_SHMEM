@@ -50,23 +50,23 @@ PrimitiveTest(int loop,
 
             switch (type) {
                 case GetTestType:
-                    roc_shmem_getmem(ctx, r_buf, s_buf, size, 1);
+                    roc_shmem_ctx_getmem(ctx, r_buf, s_buf, size, 1);
                     break;
                 case GetNBITestType:
-                    roc_shmem_getmem_nbi(ctx, r_buf, s_buf, size, 1);
+                    roc_shmem_ctx_getmem_nbi(ctx, r_buf, s_buf, size, 1);
                     break;
                 case PutTestType:
-                    roc_shmem_putmem(ctx, r_buf, s_buf, size, 1);
+                    roc_shmem_ctx_putmem(ctx, r_buf, s_buf, size, 1);
                     break;
                 case PutNBITestType:
-                    roc_shmem_putmem_nbi(ctx, r_buf, s_buf, size, 1);
+                    roc_shmem_ctx_putmem_nbi(ctx, r_buf, s_buf, size, 1);
                     break;
                 default:
                     break;
             }
         }
 
-        roc_shmem_quiet(ctx);
+        roc_shmem_ctx_quiet(ctx);
 
         timer[hipBlockIdx_x] =  roc_shmem_timer() - start;
     }

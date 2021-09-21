@@ -20,15 +20,15 @@
 # IN THE SOFTWARE.
 ###############################################################################
 
-cmake_minimum_required(VERSION 3.17.2 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.16.3 FATAL_ERROR)
 
 ###############################################################################
 # GLOBAL COMPILE FLAGS
 ###############################################################################
-set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_COMPILER /opt/rocm/bin/hipcc)
+set(CMAKE_CXX_FLAGS_DEBUG "-O0 -ggdb")
 
 ###############################################################################
 # DEFAULT BUILD TYPE
@@ -80,6 +80,7 @@ target_sources(
 ###############################################################################
 # ROCSHMEM
 ###############################################################################
+find_package(hip REQUIRED)
 find_package(rocshmem CONFIG REQUIRED)
 
 target_include_directories(
@@ -92,4 +93,6 @@ target_link_libraries(
   ${PROJECT_NAME}
   PRIVATE
     rocshmem::rocshmem
+    hip::host
+    -fgpu-rdc
 )

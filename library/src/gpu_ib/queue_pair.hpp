@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2020 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2021 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -19,19 +19,28 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  *****************************************************************************/
-#ifndef QUEUE_PAIR_HPP
-#define QUEUE_PAIR_HPP
 
-#include "config.h"
+#ifndef LIBRARY_SRC_GPU_IB_QUEUE_PAIR_HPP_
+#define LIBRARY_SRC_GPU_IB_QUEUE_PAIR_HPP_
 
-#include "thread_policy.hpp"
-#include "hdp_policy.hpp"
-#include "connection_policy.hpp"
-#include "stats.hpp"
+/**
+ * @file queue_pair.hpp
+ *
+ * @section DESCRIPTION
+ * An IB QueuePair (SQ and CQ) that the device can use to perform network
+ * operations. Most important ROC_SHMEM operations are performed by this
+ * class.
+ */
 
 #include <infiniband/mlx5dv.h>
 
-class RTNGlobalHandle;
+#include "atomic_return.hpp"
+#include "config.h"  // NOLINT(build/include_subdir)
+#include "connection_policy.hpp"
+#include "hdp_policy.hpp"
+#include "stats.hpp"
+#include "thread_policy.hpp"
+
 class GPUIBBackend;
 
 enum gpu_ib_stats {
@@ -48,65 +57,188 @@ enum gpu_ib_stats {
     GPU_IB_NUM_STATS
 };
 
-const int max_nb_atomic = 4096;
+typedef union db_reg {
+    uint64_t *ptr;
+    uintptr_t uint;
+} db_reg_t;
 
-struct rtn_atomic_ret_t {
-    uint64_t *atomic_base_ptr;
-    uint32_t atomic_lkey;
-    uint64_t atomic_counter;
-};
-
-const int RTN_INLINE_THRESHOLD = 8;
-
-/*
- * A single IB QueuePair (SQ and CQ) that the GPU can use to perform network
- * operations.  The majority of the important ROC_SHMEM operations are
- * performed by this class.
- */
 class QueuePair {
+ public:
+    /**
+     * TODO(bpotter): document
+     */
+    explicit QueuePair(GPUIBBackend* backend);
 
-    class SegmentBuilder
-    {
-        const int SEGMENTS_PER_WQE = 4;
+    /**
+     * TODO(bpotter): document
+     */
+    __device__ ~QueuePair();
 
-        union mlx5_segment {
-            mlx5_wqe_ctrl_seg ctrl_seg;
-            mlx5_wqe_raddr_seg raddr_seg;
-            mlx5_wqe_atomic_seg atomic_seg;
-            mlx5_wqe_data_seg data_seg;
-            mlx5_wqe_inl_data_seg inl_data_seg;
-            mlx5_base_av base_av;
-        };
+    /**
+     * TODO(bpotter): document
+     */
+    __device__ void
+    waitCQSpace(int num_msgs);
 
-        mlx5_segment *seg_ptr;
+    /**
+     * TODO(bpotter): document
+     */
+    template <class level>
+    __device__ void
+    put_nbi(void *dest,
+            const void *source,
+            size_t nelems,
+            int pe,
+            bool db_ring);
 
-      public:
-        __device__
-        SegmentBuilder(uint64_t wqe_idx, void * base)
-          : seg_ptr(&(static_cast<mlx5_segment*>(base))[SEGMENTS_PER_WQE * wqe_idx])
-        { }
+    /**
+     * TODO(bpotter): document
+     */
+    template <class level>
+    __device__ void
+    put_nbi_cqe(void *dest,
+            const void *source,
+            size_t nelems,
+            int pe,
+            bool db_ring);
 
-        __device__ void
-        update_cntrl_seg(uint8_t opcode, uint16_t wqe_idx, uint32_t ctrl_qp_sq,
-                         uint64_t ctrl_sig, ConnectionImpl &connection_policy);
+    /**
+     * TODO(bpotter): document
+     */
+    template <class level>
+    __device__ void
+    quiet_single();
 
-        __device__ void
-        update_connection_seg(int pe, ConnectionImpl &connection_policy);
+    /**
+     * TODO(bpotter): document
+     */
+    template <class level>
+    __device__ void
+    quiet_single_heavy(int pe);
 
-        __device__ void
-        update_atomic_data_seg(uint64_t atomic_data, uint64_t atomic_cmp);
+    /**
+     * TODO(bpotter): document
+     */
+    __device__ void
+    fence(int pe);
 
-        __device__ void update_rdma_seg(uintptr_t *raddr, uint32_t rkey);
+    /**
+     * TODO(bpotter): document
+     */
+    template <class level>
+    __device__ void
+    get_nbi(void *dest,
+            const void *source,
+            size_t nelems,
+            int pe,
+            bool db_ring);
 
-        __device__ void update_inl_data_seg(uintptr_t * laddr, int32_t size);
+    /**
+     * TODO(bpotter): document
+     */
+    template <class level>
+    __device__ void
+    get_nbi_cqe(void *dest,
+            const void *source,
+            size_t nelems,
+            int pe,
+            bool db_ring);
 
-        __device__ void
-        update_data_seg(uintptr_t * laddr, int32_t size, uint32_t lkey);
-    };
+    /**
+     * TODO(bpotter): document
+     */
+    template <class level>
+    __device__ void
+    zero_b_rd(int pe);
 
-    /* TODO: Most of these should be private/protected */
-  public:
+    /**
+     * TODO(bpotter): document
+     */
+    __device__ int64_t
+    atomic_fetch(void *dest,
+                 int64_t value,
+                 int64_t cond,
+                 int pe,
+                 bool db_ring,
+                 uint8_t atomic_op);
 
+    /**
+     * TODO(bpotter): document
+     */
+    __device__ void
+    atomic_nofetch(void *dest,
+                   int64_t value,
+                   int64_t cond,
+                   int pe,
+                   bool db_ring,
+                   uint8_t atomic_op);
+
+    /**
+     * TODO(bpotter): document
+     */
+    void setDBval(uint64_t val);
+
+ protected:
+    /**
+     * TODO(bpotter): document
+     */
+    template <class level, bool cqe>
+    __device__ void
+    update_posted_wqe_generic(int pe,
+                              int32_t size,
+                              uintptr_t *laddr,
+                              uintptr_t *raddr,
+                              uint8_t opcode,
+                              int64_t atomic_data,
+                              int64_t atomic_cmp,
+                              bool ring_db,
+                              uint64_t atomic_ret_pos,
+                              bool zero_byte_rd = false);
+
+    /**
+     * TODO(bpotter): document
+     */
+    template <class level>
+    __device__ void
+    quiet_internal();
+
+    /**
+     * TODO(bpotter): document
+     */
+    __device__ void
+    compute_db_val_opcode(uint64_t *db_val,
+                          uint16_t dbrec_val,
+                          uint8_t opcode);
+
+    /**
+     * TODO(bpotter): document
+     */
+    template<bool cqe>
+    __device__ void update_wqe_ce(int num_wqes);
+
+    /**
+     * TODO(bpotter): document
+     */
+    __device__ void
+    ring_doorbell(uint64_t db_val);
+
+    /**
+     * TODO(bpotter): document
+     */
+    __device__ bool
+    is_cq_owner_sw(mlx5_cqe64 *cq_entry);
+
+    /**
+     * TODO(bpotter): document
+     */
+    __device__ uint8_t
+    get_cq_error_syndrome(mlx5_cqe64 *cq_entry);
+
+ private:
+    const int inline_threshold = 8;
+
+    /* TODO(bpotter): Most of these should be private/protected */
+ public:
     #ifdef PROFILE
     typedef Stats<GPU_IB_NUM_STATS> GPUIBStats;
     #else
@@ -116,18 +248,20 @@ class QueuePair {
     /*
      * Pointer to the hardware doorbell register for the QP.
      */
-    uint64_t *db = nullptr;
+    db_reg_t db;
 
     /*
      * Base pointer of this QP's SQ
-     * TODO: Use the correct struct type for this.
+     * TODO(bpotter): Use the correct struct type for this.
      */
     uint64_t *current_sq = nullptr;
+    uint64_t *current_sq_H = nullptr;
 
     /*
      * Base pointer of this QP's CQ
      */
     mlx5_cqe64 *current_cq_q = nullptr;
+    mlx5_cqe64 *current_cq_q_H = nullptr;
 
     /*
      * Pointer to the doorbell record for this SQ.
@@ -145,12 +279,13 @@ class QueuePair {
 
     HdpPolicy hdp_policy;
 
-    rtn_atomic_ret_t atomic_ret;
+    atomic_ret_t atomic_ret;
 
     ThreadImpl threadImpl;
 
     ConnectionImpl connection_policy;
 
+    char **base_heap = nullptr;
     /*
      * Current index into the SQ (non-modulo size).
      */
@@ -187,6 +322,7 @@ class QueuePair {
 
     bool sq_overflow = 0;
 
+    uint64_t db_val;
     /*
      * Pointer to the QP in global memory that this QP is copied from.  When
      * this QP is destroyed, the dynamic (indicies, stats, etc) in the
@@ -194,53 +330,13 @@ class QueuePair {
      */
     QueuePair *global_qp = nullptr;
 
-    explicit QueuePair(GPUIBBackend* backend);
-
-    __device__ ~QueuePair();
-
-    __device__ void waitCQSpace(int num_msgs);
-
-    __device__ void put_nbi(void *dest, const void *source, size_t nelems,
-                            int pe, bool db_ring);
-
-    __device__ void quiet_single();
-
-    __device__ void fence(int pe);
-
-    __device__ void get_nbi(void *dest, const void *source, size_t nelems,
-                            int pe,bool db_ring);
-
-    __device__ int64_t atomic_fetch(void *dest, int64_t value, int64_t cond,
-                                    int pe, bool db_ring, uint8_t atomic_op);
-
-    __device__ void atomic_nofetch(void *dest, int64_t value, int64_t cond,
-                                   int pe, bool db_ring, uint8_t atomic_op);
-
-  protected:
-    __device__ void
-    update_posted_wqe_generic(int pe, int32_t size, uintptr_t* laddr,
-                              uintptr_t* raddr, uint8_t opcode,
-                              int64_t atomic_data, int64_t atomic_cmp,
-                              bool ring_db, uint64_t atomic_ret_pos);
-
-    __device__ void quiet_internal();
-
-    __device__ void compute_db_val_opcode(uint64_t *db_val, uint16_t dbrec_val,
-                                          uint8_t opcode);
-
-    __device__ void ring_doorbell(uint64_t db_val);
-
-    __device__ bool is_cq_owner_sw(mlx5_cqe64 *cq_entry);
-
-    __device__ uint8_t get_cq_error_syndrome(mlx5_cqe64 *cq_entry);
-
-    template <typename T>
-    __device__ static void swap_endian_store(T *dst, const T val);
-
     friend SingleThreadImpl;
     friend MultiThreadImpl;
+    friend THREAD;
+    friend WG;
+    friend WAVE;
     friend RCConnectionImpl;
     friend DCConnectionImpl;
 };
 
-#endif //QUEUE_PAIR_HPP
+#endif  // LIBRARY_SRC_GPU_IB_QUEUE_PAIR_HPP_

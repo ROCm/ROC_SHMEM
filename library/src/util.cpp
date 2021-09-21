@@ -23,11 +23,11 @@
 #include "config.h"
 #include "util.hpp"
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <hsa.h>
+#include <cstdio>
+#include <cstdlib>
 #include <vector>
 
+const int gpu_clock_freq_mhz = wallClk_freq_mhz();
 __constant__ int *print_lock;
 
 typedef struct device_agent {
@@ -90,6 +90,51 @@ __device__ void memcpy(void* dst, void* src, size_t size)
     }
 }
 
+__device__ void memcpy_wg (void *dst, void* src, size_t size)
+{
+    uint8_t *dst_bytes = (uint8_t *) dst;
+    uint8_t *src_bytes = (uint8_t *) src;
+
+    int cpy_size;
+    int thread_id = get_flat_block_id();
+    int block_size = get_flat_block_size();
+    for(int j=8; j>1; j >>=1){
+        cpy_size = (size/j);
+        for(int i =thread_id; i<cpy_size; i=+block_size){
+            __store_asm(src_bytes, dst_bytes, j);
+            src_bytes +=i*j;
+            dst_bytes +=i*j;
+            size -=cpy_size *j;
+        }
+    }
+    __syncthreads();
+    if(size ==1)
+        if(is_thread_zero_in_block())
+            *dst_bytes = *src_bytes;
+}
+
+__device__ void memcpy_wave (void *dst, void* src, size_t size)
+{
+    uint8_t *dst_bytes = (uint8_t *) dst;
+    uint8_t *src_bytes = (uint8_t *) src;
+
+    int cpy_size;
+    int thread_id = get_flat_block_id();
+    for(int j=8; j>1; j >>=1){
+        cpy_size = (size/j);
+        for(int i =thread_id; i<cpy_size; i=+WF_SIZE){
+            __store_asm(src_bytes, dst_bytes, j);
+            src_bytes +=i*j;
+            dst_bytes +=i*j;
+            size -=cpy_size *j;
+        }
+    }
+    if(size ==1)
+        if(is_thread_zero_in_wave())
+            *dst_bytes = *src_bytes;
+}
+
+
 __device__ uint32_t lowerID ()
 {
     return __ffsll(__ballot(1)) - 1;
@@ -101,7 +146,7 @@ __device__ int wave_SZ()
 }
 
 /* Device-side internal functions */
-__device__ void __roc_inv() { asm volatile ("buffer_wbinvl1_vol;"); }
+__device__ void __roc_inv() { asm volatile ("buffer_wbinvl1;"); }
 __device__ uint64_t __read_clock() {
     uint64_t clock;
     asm volatile ("s_memrealtime %0\n\t"
@@ -168,6 +213,12 @@ get_flat_grid_id()
         hipGridDim_x * hipGridDim_y;
 }
 
+__device__ bool
+is_thread_zero_in_wave()
+{
+    return (get_flat_block_id()% WF_SIZE) ? true:false;
+}
+
 hsa_status_t
 rocm_hsa_amd_memory_pool_callback(hsa_amd_memory_pool_t memory_pool,
                                   void* data)
@@ -227,29 +278,6 @@ rocm_hsa_agent_callback(hsa_agent_t agent, void* data)
     return status;
 }
 
-hsa_amd_hdp_flush_t *
-rocm_hdp(void)
-{
-   hsa_amd_hdp_flush_t * hdp;
-   hipHostMalloc((void**) &hdp,
-                 sizeof(hsa_amd_hdp_flush_t) * gpu_agents.size());
-
-   for (int i = 0; i < gpu_agents.size(); i++) {
-        hdp[i].HDP_REG_FLUSH_CNTL = 0;
-        hdp[i].HDP_MEM_FLUSH_CNTL = 0;
-        hsa_agent_get_info(gpu_agents[i].agent,
-            static_cast<hsa_agent_info_t>(HSA_AMD_AGENT_INFO_HDP_FLUSH),
-            &hdp[i]);
-   }
-
-   return hdp;
-}
-
-void free_rocm_hdp(hsa_amd_hdp_flush_t* hdp)
-{
-    hipHostFree(hdp);
-}
-
 int
 rocm_init()
 {
@@ -282,5 +310,17 @@ rocm_memory_lock_to_fine_grain(void *ptr, size_t size, void **gpu_ptr,
     if (status != HSA_STATUS_SUCCESS) {
         printf("Failed to lock memory pool (%p): 0x%x\n", ptr, status);
         exit(-1);
+    }
+}
+
+// TODO: Cannot currently be extracted correctly from ROCm, so hardcoded
+int wallClk_freq_mhz() {
+    hipDeviceProp_t deviceProp;
+    CHECK_HIP(hipGetDeviceProperties(&deviceProp, 0));
+    switch(deviceProp.gcnArch) {
+        case 900: return 27; //MI25
+        case 906: return 25; //MI50,MI60
+        case 908: return 25; //MI100
+        default: assert(0 && "clk data not available");
     }
 }

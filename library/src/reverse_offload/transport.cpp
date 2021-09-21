@@ -42,13 +42,17 @@ MPITransport::MPITransport()
         fprintf(stderr, "Warning requested multi-thread level is not "
                         "supported \n");
     }
-    NET_CHECK(MPI_Comm_size(MPI_COMM_WORLD, &num_pes));
-    NET_CHECK(MPI_Comm_rank(MPI_COMM_WORLD, &my_pe));
+
+    NET_CHECK(MPI_Comm_dup(MPI_COMM_WORLD, &ro_net_comm_world));
+
+    NET_CHECK(MPI_Comm_size(ro_net_comm_world, &num_pes));
+    NET_CHECK(MPI_Comm_rank(ro_net_comm_world, &my_pe));
 }
 
 MPITransport::~MPITransport()
 {
     delete [] indices;
+
     MPI_Finalize();
 }
 
@@ -223,6 +227,7 @@ MPITransport::initTransport(int num_queues,
     outstanding.resize(num_queues, 0);
     transport_up = false;
     handle = ro_net_gpu_handle;
+    host_interface = new HostInterface(handle->hdp_policy, ro_net_comm_world);
     progress_thread =
         new std::thread(&MPITransport::threadProgressEngine, this);
     while (!transport_up);
@@ -234,6 +239,33 @@ MPITransport::finalizeTransport()
 {
     progress_thread->join();
     delete progress_thread;
+    delete host_interface;
+
+    /* Free all of the allocated memory */
+    auto iter = window_vec.begin();
+    while (iter != window_vec.end()) {
+        MPI_Win window = window_vec[0].getWindow();
+        void *ptr = (void*) window_vec[0].getStart();
+        NET_CHECK(MPI_Win_unlock_all(window));
+        NET_CHECK(MPI_Win_free(&window));
+
+        /**
+         * Invoking this here instead of in
+         * a batch in ROHostContext because
+         * the memory is being freed here too
+         */
+        default_host_ctx->deregister_memory(ptr);
+
+        if (gpu_heap) {
+            CHECK_HIP(hipFree(ptr));
+        } else {
+            CHECK_HIP(hipHostFree(ptr));
+        }
+        window_vec.erase(window_vec.begin());
+
+        iter = window_vec.begin();
+    }
+
     return Status::ROC_SHMEM_SUCCESS;
 }
 
@@ -248,7 +280,7 @@ MPITransport::allocateMemory(void **ptr, size_t size)
     }
 
     MPI_Win window;
-    NET_CHECK(MPI_Win_create(*ptr, size, 1, MPI_INFO_NULL, MPI_COMM_WORLD,
+    NET_CHECK(MPI_Win_create(*ptr, size, 1, MPI_INFO_NULL, ro_net_comm_world,
                              &window));
 
     NET_CHECK(MPI_Win_lock_all(0, window));
@@ -257,6 +289,12 @@ MPITransport::allocateMemory(void **ptr, size_t size)
     window_vec.emplace_back(window, *ptr, size);
     DPRINTF(("Creating MPI Window ptr %p size %zu num_windows %zu\n", *ptr,
             size, window_vec.size()));
+
+    /**
+     * Register this new memory with the host-facing context.
+     */
+    default_host_ctx->register_memory(*ptr, size);
+
     return Status::ROC_SHMEM_SUCCESS;
 }
 
@@ -268,12 +306,16 @@ MPITransport::deallocateMemory(void *ptr)
         MPI_Win window = window_vec[idx].getWindow();
         NET_CHECK(MPI_Win_unlock_all(window));
         NET_CHECK(MPI_Win_free(&window));
+
+        default_host_ctx->deregister_memory(ptr);
+
         if (gpu_heap) {
             CHECK_HIP(hipFree(ptr));
         } else {
             CHECK_HIP(hipHostFree(ptr));
         }
         window_vec.erase(window_vec.begin() + idx);
+
     }
     return Status::ROC_SHMEM_SUCCESS;
 }
@@ -291,14 +333,14 @@ MPITransport::createComm(int start, int logPstride, int size)
     }
 
     int world_size;
-    NET_CHECK(MPI_Comm_size(MPI_COMM_WORLD, &world_size));
+    NET_CHECK(MPI_Comm_size(ro_net_comm_world, &world_size));
 
     if (start == 0 && logPstride == 0 && size == world_size) {
-        NET_CHECK(MPI_Comm_dup(MPI_COMM_WORLD, &comm));
+        NET_CHECK(MPI_Comm_dup(ro_net_comm_world, &comm));
     } else {
 
         MPI_Group world_group;
-        NET_CHECK(MPI_Comm_group(MPI_COMM_WORLD, &world_group));
+        NET_CHECK(MPI_Comm_group(ro_net_comm_world, &world_group));
 
         int group_ranks[size];
         int stride = 2^(logPstride);
@@ -308,13 +350,19 @@ MPITransport::createComm(int start, int logPstride, int size)
 
         MPI_Group new_group;
         NET_CHECK(MPI_Group_incl(world_group, size, group_ranks, &new_group));
-        NET_CHECK(MPI_Comm_create_group(MPI_COMM_WORLD, new_group, 0, &comm));
+        NET_CHECK(MPI_Comm_create_group(ro_net_comm_world, new_group, 0, &comm));
     }
 
     comm_map.insert(std::pair<CommKey, MPI_Comm>(key, comm));
     DPRINTF(("Creating new communicator\n"));
 
     return comm;
+}
+
+void
+MPITransport::global_exit(int status)
+{
+    MPI_Abort(ro_net_comm_world, status);
 }
 
 int
@@ -332,7 +380,7 @@ Status
 MPITransport::barrier(int wg_id, int threadId, bool blocking)
 {
     MPI_Request request;
-    NET_CHECK(MPI_Ibarrier(MPI_COMM_WORLD, &request));
+    NET_CHECK(MPI_Ibarrier(ro_net_comm_world, &request));
 
     req_prop_vec.emplace_back(threadId, wg_id, blocking);
     req_vec.push_back(request);
@@ -506,7 +554,7 @@ MPITransport::progress()
         DPRINTF(("Probing MPI\n"));
 
         NET_CHECK(MPI_Iprobe(num_pes - 1, 1000,
-                            MPI_COMM_WORLD, &flag, &status));
+                            ro_net_comm_world, &flag, &status));
 
     } else {
         DPRINTF(("Testing all outstanding requests (%zu)\n",

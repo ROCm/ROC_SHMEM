@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2021 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -20,14 +20,20 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef CONTEXT_H
-#define CONTEXT_H
+#ifndef LIBRARY_SRC_CONTEXT_HPP_
+#define LIBRARY_SRC_CONTEXT_HPP_
 
-#include "util.hpp"
-#include "stats.hpp"
-#include "wf_coal_policy.hpp"
+#include <mpi.h>
+
+#include <vector>
 
 #include "gpu_ib/ipc_policy.hpp"
+#include "gpu_ib/network_policy.hpp"
+#include "hdp_policy.hpp"
+#include "stats.hpp"
+#include "util.hpp"
+#include "wf_coal_policy.hpp"
+#include "host.hpp"
 
 class Backend;
 
@@ -45,27 +51,27 @@ class Backend;
  * It uses 'type' to dispatch to a derived class for most of the interesting
  * behavior.
  */
-class Context
-{
-  public:
+class Context {
+ public:
     int num_pes = 0;
 
     int my_pe = -1;
 
-    /**
+    /*
      * Used only to dispatch to the correct derived type. This is used to
      * get around the fact that there are no virtual functions for device code.
      * See the 'DISPATCH' macro and usage for more details.
      */
     BackendType type = BackendType::GPU_IB_BACKEND;
 
-    /**
+    /*
      * Stats common to all types of Contexts.
      */
     ROCStats ctxStats;
+    ROCHostStats ctxHostStats;
 
-  protected:
-    /**
+ protected:
+    /*
      * Context can be shared between different workgroups.
      *
      * TODO: Might consider refactor into its own class so we don't have to
@@ -75,120 +81,209 @@ class Context
      */
     bool shareable = false;
 
-    /**
+    /*
      * Shareable context lock.
      */
     int ctx_lock = 0;
 
-    /**
+    /*
      * Shareable context owner.
      */
     volatile int wg_owner = -1;
 
-    /**
+    /*
      * Num threads in the owning workgroup inside of locked OpenSHMEM calls.
      */
     volatile int num_threads_in_lock = 0;
 
-    __device__ void lock();
-    __device__ void unlock();
+    __device__ void
+    lock();
 
-    /**
+    __device__ void
+    unlock();
+
+    /*
      * Coalesce policy for 'multi' configuration builds
      */
     WavefrontCoalescer wf_coal;
 
-  public:
-     /*
-     * if the context is created with option SHMEM_CTX_NOSTORE means do not flush
-     * LD/ST operations (ie do not do __threadfence()), by default it is OFF
+ public:
+    /*
+     * If the context is created with option ROC_SHMEM_CTX_NOSTORE, do not
+     * flush LD/ST operations. (i.e. Do not do __threadfence().)
+     *
+     * By default, it is OFF.
     */
     bool flush_stores = true;
 
-    __device__ void flushStores(){if (flush_stores) __threadfence();}
+    __device__ void
+    flushStores() {
+        if (flush_stores) {
+            __threadfence();
+        }
+    }
 
-    __host__ Context(const Backend &handle, bool shareable);
+    __host__
+    Context(const Backend &handle,
+            bool shareable);
 
-    __device__ Context(const Backend &handle, bool shareable);
+    __device__
+    Context(const Backend &handle,
+            bool shareable);
 
-    /**
+    /*
      * Dispatch functions to get runtime polymorphism without 'virtual' or
-     * function pointers. Each one of these guys will use 'type' to static_cast
-     * themselves and dispatch to the appropriate derived class. It's
-     * basically doing part of what the 'virtual' keyword does, so when we get
-     * that working in ROCm it will be super easy to adapt to it by just
-     * removing the dispatch implementations.
+     * function pointers. Each one of these guys will use 'type' to
+     * static_cast themselves and dispatch to the appropriate derived class.
+     * It's basically doing part of what the 'virtual' keyword does, so when
+     * we get that working in ROCm it will be super easy to adapt to it by
+     * just removing the dispatch implementations.
      *
      * No comments for these guys since its basically the same as in the
      * roc_shmem.hpp public header.
      */
+
+    /**************************************************************************
+     ***************************** DEVICE METHODS *****************************
+     *************************************************************************/
     template <typename T>
-    __device__ void wait_until(T *ptr, roc_shmem_cmps cmp, T val);
+    __device__ void
+    wait_until(T *ptr,
+              roc_shmem_cmps cmp,
+              T val);
 
     template <typename T>
-    __device__ int test(T *ptr, roc_shmem_cmps cmp, T val);
-
-    __device__ void threadfence_system();
-
-    __device__ void ctx_destroy();
-
-    __device__ void
-    putmem(void *dest, const void *source, size_t nelems, int pe);
+    __device__ int
+    test(T *ptr,
+         roc_shmem_cmps cmp,
+         T val);
 
     __device__ void
-    getmem(void *dest, const void *source, size_t nelems, int pe);
+    threadfence_system();
 
     __device__ void
-    putmem_nbi(void *dest, const void *source, size_t nelems, int pe);
+    ctx_destroy();
 
     __device__ void
-    getmem_nbi(void *dest, const void *source, size_t size, int pe);
+    putmem(void *dest,
+           const void *source,
+           size_t nelems,
+           int pe);
 
-    __device__ void fence();
+    __device__ void
+    getmem(void *dest,
+           const void *source,
+           size_t nelems,
+           int pe);
 
-    __device__ void quiet();
+    __device__ void
+    putmem_nbi(void *dest,
+               const void *source,
+               size_t nelems,
+               int pe);
 
-    __device__ void* shmem_ptr(const void* dest, int pe);
+    __device__ void
+    getmem_nbi(void *dest,
+               const void *source,
+               size_t size,
+               int pe);
 
-    __device__ void barrier_all();
+    __device__ void
+    fence();
+
+    __device__ void
+    quiet();
+
+    __device__ void*
+    shmem_ptr(const void* dest,
+              int pe);
+
+    __device__ void
+    barrier_all();
 
     __device__ int64_t
-    amo_fetch(void *dst, int64_t value, int64_t cond, int pe,
+    amo_fetch(void *dst,
+              int64_t value,
+              int64_t cond,
+              int pe,
               uint8_t atomic_op);
 
-    __device__ void sync_all();
+    __device__ void
+    sync_all();
 
     __device__ void
-    amo_add(void *dst, int64_t value, int64_t cond, int pe);
+    amo_add(void *dst,
+            int64_t value,
+            int64_t cond,
+            int pe);
 
     __device__ void
-    amo_cas(void *dst, int64_t value, int64_t cond, int pe);
+    amo_cas(void *dst,
+            int64_t value,
+            int64_t cond,
+            int pe);
 
     __device__ int64_t
-    amo_fetch_add(void *dst, int64_t value, int64_t cond, int pe);
+    amo_fetch_add(void *dst,
+                  int64_t value,
+                  int64_t cond,
+                  int pe);
 
     __device__ int64_t
-    amo_fetch_cas(void *dst, int64_t value, int64_t cond, int pe);
+    amo_fetch_cas(void *dst,
+                  int64_t value,
+                  int64_t cond,
+                  int pe);
 
-    template <typename T> __device__ void p(T *dest, T value, int pe);
+    template <typename T>
+    __device__ void
+    p(T *dest,
+      T value,
+      int pe);
 
-    template <typename T> __device__ T g(T *source, int pe);
+    template <typename T>
+    __device__ T
+    g(T *source,
+      int pe);
 
-    template <typename T, ROC_SHMEM_OP Op> __device__ void
-    to_all(T *dest, const T *source, int nreduce, int PE_start,
-           int logPE_stride, int PE_size, T *pWrk, long *pSync);
+    template <typename T, ROC_SHMEM_OP Op>
+    __device__ void
+    to_all(T *dest,
+           const T *source,
+           int nreduce,
+           int PE_start,
+           int logPE_stride,
+           int PE_size,
+           T *pWrk,
+           long *pSync);  // NOLINT(runtime/int)
 
-    template <typename T> __device__ void
-    put(T *dest, const T *source, size_t nelems, int pe);
+    template <typename T>
+    __device__ void
+    put(T *dest,
+        const T *source,
+        size_t nelems,
+        int pe);
 
-    template <typename T> __device__ void
-    put_nbi(T *dest, const T *source, size_t nelems, int pe);
+    template <typename T>
+    __device__ void
+    put_nbi(T *dest,
+            const T *source,
+            size_t nelems,
+            int pe);
 
-    template <typename T> __device__ void
-    get(T *dest, const T *source, size_t nelems, int pe);
+    template <typename T>
+    __device__ void
+    get(T *dest,
+        const T *source,
+        size_t nelems,
+        int pe);
 
-    template <typename T> __device__ void
-    get_nbi(T *dest, const T *source, size_t nelems, int pe);
+    template <typename T>
+    __device__ void
+    get_nbi(T *dest,
+            const T *source,
+            size_t nelems,
+            int pe);
 
     template <typename T>
     __device__ void
@@ -199,81 +294,389 @@ class Context
               int pe_start,
               int log_pe_stride,
               int pe_size,
-              long *p_sync);
+              long *p_sync);  // NOLINT(runtime/int)
+
+    __device__ void
+    putmem_wg(void *dest,
+              const void *source,
+              size_t nelems,
+              int pe);
+
+    __device__ void
+    getmem_wg(void *dest,
+              const void *source,
+              size_t nelems,
+              int pe);
+
+    __device__ void
+    putmem_nbi_wg(void *dest,
+                  const void *source,
+                  size_t nelems,
+                  int pe);
+
+    __device__ void
+    getmem_nbi_wg(void *dest,
+                  const void *source,
+                  size_t size,
+                  int pe);
+
+    __device__ void
+    putmem_wave(void *dest,
+                const void *source,
+                size_t nelems,
+                int pe);
+
+    __device__ void
+    getmem_wave(void *dest,
+                const void *source,
+                size_t nelems,
+                int pe);
+
+    __device__ void
+    putmem_nbi_wave(void *dest,
+                    const void *source,
+                    size_t nelems,
+                    int pe);
+
+    __device__ void
+    getmem_nbi_wave(void *dest,
+                    const void *source,
+                    size_t size,
+                    int pe);
+
+    template <typename T>
+    __device__ void
+    put_wg(T *dest,
+           const T *source,
+           size_t nelems,
+           int pe);
+
+    template <typename T>
+    __device__ void
+    put_nbi_wg(T *dest,
+               const T *source,
+               size_t nelems,
+               int pe);
+
+    template <typename T>
+    __device__ void
+    get_wg(T *dest,
+           const T *source,
+           size_t nelems,
+           int pe);
+
+    template <typename T>
+    __device__ void
+    get_nbi_wg(T *dest,
+               const T *source,
+               size_t nelems,
+               int pe);
+
+    template <typename T>
+    __device__ void
+    put_wave(T *dest,
+             const T *source,
+             size_t nelems,
+             int pe);
+
+    template <typename T>
+    __device__ void
+    put_nbi_wave(T *dest,
+                 const T *source,
+                 size_t nelems,
+                 int pe);
+
+    template <typename T>
+    __device__ void
+    get_wave(T *dest,
+             const T *source,
+             size_t nelems,
+             int pe);
+
+    template <typename T>
+    __device__ void
+    get_nbi_wave(T *dest,
+                 const T *source,
+                 size_t nelems,
+                 int pe);
+
+    /**************************************************************************
+     ****************************** HOST METHODS ******************************
+     *************************************************************************/
+    template <typename T>
+    __host__ void
+    p(T *dest,
+      T value,
+      int pe);
+
+    template <typename T>
+    __host__ T
+    g(const T *source,
+      int pe);
+
+    template <typename T>
+    __host__ void
+    put(T *dest,
+        const T *source,
+        size_t nelems,
+        int pe);
+
+    template <typename T>
+    __host__ void
+    get(T *dest,
+        const T *source,
+        size_t nelems,
+        int pe);
+
+    template <typename T>
+    __host__ void
+    put_nbi(T *dest,
+            const T *source,
+            size_t nelems,
+            int pe);
+
+    template <typename T>
+    __host__ void
+    get_nbi(T *dest,
+            const T *source,
+            size_t nelems,
+            int pe);
+
+    __host__ void
+    putmem(void *dest,
+           const void *source,
+           size_t nelems,
+           int pe);
+
+    __host__ void
+    getmem(void *dest,
+           const void *source,
+           size_t nelems,
+           int pe);
+
+    __host__ void
+    putmem_nbi(void *dest,
+               const void *source,
+               size_t nelems,
+               int pe);
+
+    __host__ void
+    getmem_nbi(void *dest,
+               const void *source,
+               size_t size,
+               int pe);
+
+    __host__ void
+    amo_add(void *dst,
+            int64_t value,
+            int64_t cond,
+            int pe);
+
+    __host__ void
+    amo_cas(void *dst,
+            int64_t value,
+            int64_t cond,
+            int pe);
+
+    __host__ int64_t
+    amo_fetch_add(void *dst,
+                  int64_t value,
+                  int64_t cond,
+                  int pe);
+
+    __host__ int64_t
+    amo_fetch_cas(void *dst,
+                  int64_t value,
+                  int64_t cond,
+                  int pe);
+
+    __host__ void
+    fence();
+
+    __host__ void
+    quiet();
+
+    __host__ void
+    barrier_all();
+
+    __host__ void
+    sync_all();
+
+    template <typename T>
+    __host__ void
+    broadcast(T *dest,
+              const T *source,
+              int nelems,
+              int pe_root,
+              int pe_start,
+              int log_pe_stride,
+              int pe_size,
+              long *p_sync);  // NOLINT(runtime/int)
+
+    template <typename T, ROC_SHMEM_OP Op>
+    __host__ void
+    to_all(T *dest,
+           const T *source,
+           int nreduce,
+           int PE_start,
+           int logPE_stride,
+           int PE_size,
+           T *pWrk,
+           long *pSync);  // NOLINT(runtime/int)
+
+    template <typename T>
+    __host__ void
+    wait_until(T *ptr,
+               roc_shmem_cmps cmp,
+               T val);
+
+    template <typename T>
+    __host__ int
+    test(T *ptr,
+         roc_shmem_cmps cmp,
+         T val);
 };
 
 struct ro_net_wg_handle;
 
-class ROContext : public Context
-{
+class ROContext : public Context {
     ro_net_wg_handle *backend_ctx = nullptr;
 
-  public:
+ public:
+    __host__
+    ROContext(const Backend &b,
+              int64_t options);
 
-    __host__ ROContext(const Backend &b, long options);
+    __device__
+    ROContext(const Backend &b,
+              int64_t options);
 
-    __device__ ROContext(const Backend &b, long options);
+    /**************************************************************************
+     ************************ CONTEXT DISPATCH METHODS ************************
+     *************************************************************************/
 
-    /**
-     * Implementations of Context dispatch functions.
-     */
-    __device__ void threadfence_system();
-
-    __device__ void ctx_destroy();
+    /**************************************************************************
+     ***************************** DEVICE METHODS *****************************
+     *************************************************************************/
+    __device__ void
+    threadfence_system();
 
     __device__ void
-    putmem(void *dest, const void *source, size_t nelems, int pe);
+    ctx_destroy();
 
     __device__ void
-    getmem(void *dest, const void *source, size_t nelems, int pe);
+    putmem(void *dest,
+           const void *source,
+           size_t nelems,
+           int pe);
 
     __device__ void
-    putmem_nbi(void *dest, const void *source, size_t nelems, int pe);
+    getmem(void *dest,
+           const void *source,
+           size_t nelems,
+           int pe);
 
     __device__ void
-    getmem_nbi(void *dest, const void *source, size_t size, int pe);
-
-    __device__ void fence();
-
-    __device__ void quiet();
-
-    __device__ void* shmem_ptr(const void* dest, int pe);
-
-    __device__ void barrier_all();
-
-    __device__ void sync_all();
+    putmem_nbi(void *dest,
+               const void *source,
+               size_t nelems,
+               int pe);
 
     __device__ void
-    amo_add(void *dst, int64_t value, int64_t cond, int pe);
+    getmem_nbi(void *dest,
+               const void *source,
+               size_t size,
+               int pe);
 
     __device__ void
-    amo_cas(void *dst, int64_t value, int64_t cond, int pe);
+    fence();
+
+    __device__ void
+    quiet();
+
+    __device__ void*
+    shmem_ptr(const void* dest,
+              int pe);
+
+    __device__ void
+    barrier_all();
+
+    __device__ void
+    sync_all();
+
+    __device__ void
+    amo_add(void *dst,
+            int64_t value,
+            int64_t cond,
+            int pe);
+
+    __device__ void
+    amo_cas(void *dst,
+            int64_t value,
+            int64_t cond,
+            int pe);
 
     __device__ int64_t
-    amo_fetch_add(void *dst, int64_t value, int64_t cond, int pe);
+    amo_fetch_add(void *dst,
+                  int64_t value,
+                  int64_t cond,
+                  int pe);
 
     __device__ int64_t
-    amo_fetch_cas(void *dst, int64_t value, int64_t cond, int pe);
+    amo_fetch_cas(void *dst,
+                  int64_t value,
+                  int64_t cond,
+                  int pe);
 
-    template <typename T> __device__ void p(T *dest, T value, int pe);
+    template <typename T>
+    __device__ void
+    p(T *dest,
+      T value,
+      int pe);
 
-    template <typename T> __device__ T g(T *source, int pe);
+    template <typename T>
+    __device__ T
+    g(const T *source,
+      int pe);
 
-    template <typename T, ROC_SHMEM_OP Op> __device__ void
-    to_all(T *dest, const T *source, int nreduce, int PE_start,
-           int logPE_stride, int PE_size, T *pWrk, long *pSync);
+    template <typename T, ROC_SHMEM_OP Op>
+    __device__ void
+    to_all(T *dest,
+           const T *source,
+           int nreduce,
+           int PE_start,
+           int logPE_stride,
+           int PE_size,
+           T *pWrk,
+           long *pSync);  // NOLINT(runtime/int)
 
-    template <typename T> __device__ void
-    put(T *dest, const T *source, size_t nelems, int pe);
+    template <typename T>
+    __device__ void
+    put(T *dest,
+        const T *source,
+        size_t nelems,
+        int pe);
 
-    template <typename T> __device__ void
-    put_nbi(T *dest, const T *source, size_t nelems, int pe);
+    template <typename T>
+    __device__ void
+    put_nbi(T *dest,
+            const T *source,
+            size_t nelems,
+            int pe);
 
-    template <typename T> __device__ void
-    get(T *dest, const T *source, size_t nelems, int pe);
+    template <typename T>
+    __device__ void
+    get(T *dest,
+        const T *source,
+        size_t nelems,
+        int pe);
 
-    template <typename T> __device__ void
-    get_nbi(T *dest, const T *source, size_t nelems, int pe);
+    template <typename T>
+    __device__ void
+    get_nbi(T *dest,
+            const T *source,
+            size_t nelems,
+            int pe);
 
     template <typename T>
     __device__ void
@@ -284,142 +687,354 @@ class ROContext : public Context
               int pe_start,
               int log_pe_stride,
               int pe_size,
-              long *p_sync);
+              long *p_sync);  // NOLINT(runtime/int)
+
+    __device__ void
+    putmem_wg(void *dest,
+              const void *source,
+              size_t nelems,
+              int pe);
+
+    __device__ void
+    getmem_wg(void *dest,
+              const void *source,
+              size_t nelems,
+              int pe);
+
+    __device__ void
+    putmem_nbi_wg(void *dest,
+                  const void *source,
+                  size_t nelems,
+                  int pe);
+
+    __device__ void
+    getmem_nbi_wg(void *dest,
+                  const void *source,
+                  size_t size,
+                  int pe);
+
+    __device__ void
+    putmem_wave(void *dest,
+                const void *source,
+                size_t nelems,
+                int pe);
+
+    __device__ void
+    getmem_wave(void *dest,
+                const void *source,
+                size_t nelems,
+                int pe);
+
+    __device__ void
+    putmem_nbi_wave(void *dest,
+                    const void *source,
+                    size_t nelems,
+                    int pe);
+
+    __device__ void
+    getmem_nbi_wave(void *dest,
+                    const void *source,
+                    size_t size,
+                    int pe);
+
+    template <typename T>
+    __device__ void
+    put_wg(T *dest,
+           const T *source,
+           size_t nelems,
+           int pe);
+
+    template <typename T>
+    __device__ void
+    put_nbi_wg(T *dest,
+               const T *source,
+               size_t nelems,
+               int pe);
+
+    template <typename T>
+    __device__ void
+    get_wg(T *dest,
+           const T *source,
+           size_t nelems,
+           int pe);
+
+    template <typename T>
+    __device__ void
+    get_nbi_wg(T *dest,
+               const T *source,
+               size_t nelems,
+               int pe);
+
+    template <typename T>
+    __device__ void
+    put_wave(T *dest,
+             const T *source,
+             size_t nelems,
+             int pe);
+
+    template <typename T>
+    __device__ void
+    put_nbi_wave(T *dest,
+                 const T *source,
+                 size_t nelems,
+                 int pe);
+
+    template <typename T>
+    __device__ void
+    get_wave(T *dest,
+             const T *source,
+             size_t nelems,
+             int pe);
+
+    template <typename T>
+    __device__ void
+    get_nbi_wave(T *dest,
+                 const T *source,
+                 size_t nelems,
+                 int pe);
 };
 
 class QueuePair;
 class GPUIBBackend;
 
-class GPUIBContext : public Context
-{
-public:
-    /**
+class GPUIBContext : public Context {
+ public:
+    /*
      * Collection of queue pairs that are currently checked out by this
      * context from GPUIBBackend.
      */
-    //TODO: keep it private and destroy in destructor for better encapsulation.
+    // FIXME: keep it private and destroy in destructor for better
+    // encapsulation.
     QueuePair *rtn_gpu_handle = nullptr;
-private:
-    /**
+
+    /*
      * Array of char * pointers corresponding to the heap base pointers VA for
      * each PE that we can communicate with.
      */
     char **base_heap = nullptr;
 
-    /**
+ private:
+    /*
      * Temporary scratchpad memory used by internal barrier algorithms.
      */
     int64_t *barrier_sync = nullptr;
 
     size_t current_heap_offset = 0;
 
-    /**
+    template <typename T, ROC_SHMEM_OP Op>
+    __device__ void
+    internal_direct_allreduce(T *dst,
+                              const T *src,
+                              int nelems,
+                              int PE_start,
+                              int logPE_stride,
+                              int PE_size,
+                              T *pWrk,
+                              long *pSync);  // NOLINT(runtime/int)
+
+    template <typename T, ROC_SHMEM_OP Op>
+    __device__ void
+    internal_ring_allreduce(T *dst,
+                            const T *src,
+                            int nelems,
+                            int PE_start,
+                            int logPE_stride,
+                            int PE_size,
+                            T *pWrk,
+                            long *pSync,  // NOLINT(runtime/int)
+                            int n_seg,
+                            int seg_size,
+                            int chunk_size);
+
+    template <typename T>
+    __device__ void
+    internal_put_broadcast(T *dst,
+                           const T *src,
+                           int nelems,
+                           int pe_root,
+                           int PE_start,
+                           int logPE_stride,
+                           int PE_size,
+                           long *pSync);  // NOLINT(runtime/int)
+
+    template <typename T>
+    __device__ void
+    internal_get_broadcast(T *dst,
+                           const T *src,
+                           int nelems,
+                           int pe_root,
+                           long *pSync);  // NOLINT(runtime/int)
+
+    __device__ void
+    internal_direct_barrier(int pe,
+                            int n_pes,
+                            int64_t *pSync);
+
+    __device__ void
+    internal_atomic_barrier(int pe,
+                            int n_pes,
+                            int64_t *pSync);
+
+    __device__ void
+    quiet_single(int cq_num);
+
+ public:
+    /*
      * Buffer used to store the results of a *_g operation. These ops do not
      * provide a destination buffer, so the runtime must manage one.
      */
     char *g_ret = nullptr;
 
-    template <typename T, ROC_SHMEM_OP Op> __device__ void
-    internal_direct_allreduce(T *dst, const T *src, int nelems, int PE_start,
-                              int logPE_stride, int PE_size, T *pWrk,
-                              long *pSync);
-
-    template <typename T, ROC_SHMEM_OP Op> __device__ void
-    internal_ring_allreduce(T *dst, const T *src, int nelems,
-                            int PE_start, int logPE_stride,
-                            int PE_size, T *pWrk, long *pSync,
-                            int n_seg, int seg_size, int chunk_size);
-
-    template <typename T> __device__ void
-    internal_put_broadcast(T *dst, const T *src, int nelems, int pe_root,
-                           int PE_start, int logPE_stride, int PE_size,
-                           long *pSync);
-
-    template <typename T> __device__ void
-    internal_get_broadcast(T *dst, const T *src, int nelems, int pe_root,
-                           long *pSync);
-
-
-    __device__ void
-    internal_direct_barrier(int pe, int n_pes, int64_t *pSync);
-
-    __device__ void
-    internal_atomic_barrier(int pe, int n_pes, int64_t *pSync);
-
-    __device__ void quiet_single(int cq_num);
-
-    __device__ __host__ QueuePair* getQueuePair(int pe);
-
-    __device__ __host__ int getNumQueuePairs();
-
-  public:
-
     IpcImpl ipcImpl;
 
-    __device__ GPUIBContext(const Backend &b, long options);
+    NetworkImpl networkImpl;
 
-    __host__ GPUIBContext(const Backend &b, long options);
+    __device__ __host__ QueuePair*
+    getQueuePair(int pe);
 
-    /**
-     * Implementations of Context dispatch functions.
-     */
-    __device__ void threadfence_system();
+    __device__ __host__ int
+    getNumQueuePairs();
 
-    __device__ void ctx_destroy();
+    __device__ __host__ int
+    getNumDest();
+
+    __device__
+    GPUIBContext(const Backend &b,
+                 int64_t options);
+
+    __host__
+    GPUIBContext(const Backend &b,
+                 int64_t options);
+
+    __device__
+    ~GPUIBContext();
+
+    /**************************************************************************
+     ************************ CONTEXT DISPATCH METHODS ************************
+     *************************************************************************/
+
+    /**************************************************************************
+     ***************************** DEVICE METHODS *****************************
+     *************************************************************************/
+    __device__ void
+    threadfence_system();
 
     __device__ void
-    putmem(void *dest, const void *source, size_t nelems, int pe);
+    ctx_destroy();
 
     __device__ void
-    getmem(void *dest, const void *source, size_t nelems, int pe);
+    putmem(void *dest,
+           const void *source,
+           size_t nelems,
+           int pe);
 
     __device__ void
-    putmem_nbi(void *dest, const void *source, size_t nelems, int pe);
+    getmem(void *dest,
+           const void *source,
+           size_t nelems,
+           int pe);
 
     __device__ void
-    getmem_nbi(void *dest, const void *source, size_t size, int pe);
-
-    __device__ void fence();
-
-    __device__ void quiet();
-
-    __device__ void* shmem_ptr(const void* dest, int pe);
-
-    __device__ void barrier_all();
-
-    __device__ void sync_all();
+    putmem_nbi(void *dest,
+               const void *source,
+               size_t nelems,
+               int pe);
 
     __device__ void
-    amo_add(void *dst, int64_t value, int64_t cond, int pe);
+    getmem_nbi(void *dest,
+               const void *source,
+               size_t size,
+               int pe);
 
     __device__ void
-    amo_cas(void *dst, int64_t value, int64_t cond, int pe);
+    fence();
+
+    __device__ void
+    quiet();
+
+    __device__ void*
+    shmem_ptr(const void *dest,
+              int pe);
+
+    __device__ void
+    barrier_all();
+
+    __device__ void
+    sync_all();
+
+    __device__ void
+    amo_add(void *dst,
+            int64_t value,
+            int64_t cond,
+            int pe);
+
+    __device__ void
+    amo_cas(void *dst,
+            int64_t value,
+            int64_t cond,
+            int pe);
 
     __device__ int64_t
-    amo_fetch_add(void *dst, int64_t value, int64_t cond, int pe);
+    amo_fetch_add(void *dst,
+                  int64_t value,
+                  int64_t cond,
+                  int pe);
 
     __device__ int64_t
-    amo_fetch_cas(void *dst, int64_t value, int64_t cond, int pe);
+    amo_fetch_cas(void *dst,
+                  int64_t value,
+                  int64_t cond,
+                  int pe);
 
-    template <typename T> __device__ void p(T *dest, T value, int pe);
+    template <typename T>
+    __device__ void
+    p(T *dest,
+      T value,
+      int pe);
 
-    template <typename T> __device__ T g(T *source, int pe);
+    template <typename T>
+    __device__ T
+    g(const T *source,
+      int pe);
 
-    template <typename T, ROC_SHMEM_OP Op> __device__ void
-    to_all(T *dest, const T *source, int nreduce, int PE_start,
-           int logPE_stride, int PE_size, T *pWrk, long *pSync);
+    template <typename T, ROC_SHMEM_OP Op>
+    __device__ void
+    to_all(T *dest,
+           const T *source,
+           int nreduce,
+           int PE_start,
+           int logPE_stride,
+           int PE_size,
+           T *pWrk,
+           long *pSync);  // NOLINT(runtime/int)
 
-    template <typename T> __device__ void
-    put(T *dest, const T *source, size_t nelems, int pe);
+    template <typename T>
+    __device__ void
+    put(T *dest,
+        const T *source,
+        size_t nelems,
+        int pe);
 
-    template <typename T> __device__ void
-    put_nbi(T *dest, const T *source, size_t nelems, int pe);
+    template <typename T>
+    __device__ void
+    put_nbi(T *dest,
+            const T *source,
+            size_t nelems,
+            int pe);
 
-    template <typename T> __device__ void
-    get(T *dest, const T *source, size_t nelems, int pe);
+    template <typename T>
+    __device__ void
+    get(T *dest,
+        const T *source,
+        size_t nelems,
+        int pe);
 
-    template <typename T> __device__ void
-    get_nbi(T *dest, const T *source, size_t nelems, int pe);
+    template <typename T>
+    __device__ void
+    get_nbi(T *dest,
+            const T *source,
+            size_t nelems,
+            int pe);
 
     template <typename T>
     __device__ void
@@ -430,15 +1045,500 @@ private:
               int pe_start,
               int log_pe_stride,
               int pe_size,
-              long *p_sync);
+              long *p_sync);  // NOLINT(runtime/int)
+
+    __device__ void
+    putmem_wg(void *dest,
+              const void *source,
+              size_t nelems,
+              int pe);
+
+    __device__ void
+    getmem_wg(void *dest,
+              const void *source,
+              size_t nelems,
+              int pe);
+
+    __device__ void
+    putmem_nbi_wg(void *dest,
+                  const void *source,
+                  size_t nelems,
+                  int pe);
+
+    __device__ void
+    getmem_nbi_wg(void *dest,
+                  const void *source,
+                  size_t size,
+                  int pe);
+
+    __device__ void
+    putmem_wave(void *dest,
+                const void *source,
+                size_t nelems,
+                int pe);
+
+    __device__ void
+    getmem_wave(void *dest,
+                const void *source,
+                size_t nelems,
+                int pe);
+
+    __device__ void
+    putmem_nbi_wave(void *dest,
+                    const void *source,
+                    size_t nelems,
+                    int pe);
+
+    __device__ void
+    getmem_nbi_wave(void *dest,
+                    const void *source,
+                    size_t size,
+                    int pe);
+
+    template <typename T>
+    __device__ void
+    put_wg(T *dest,
+           const T *source,
+           size_t nelems,
+           int pe);
+
+    template <typename T>
+    __device__ void
+    put_nbi_wg(T *dest,
+               const T *source,
+               size_t nelems,
+               int pe);
+
+    template <typename T>
+    __device__ void
+    get_wg(T *dest,
+           const T *source,
+           size_t nelems,
+           int pe);
+
+    template <typename T>
+    __device__ void
+    get_nbi_wg(T *dest,
+               const T *source,
+               size_t nelems,
+               int pe);
+
+    template <typename T>
+    __device__ void
+    put_wave(T *dest,
+             const T *source,
+             size_t nelems,
+             int pe);
+
+    template <typename T>
+    __device__ void
+    put_nbi_wave(T *dest,
+                 const T *source,
+                 size_t nelems,
+                 int pe);
+
+    template <typename T>
+    __device__ void
+    get_wave(T *dest,
+             const T *source,
+             size_t nelems,
+             int pe);
+
+    template <typename T>
+    __device__ void
+    get_nbi_wave(T *dest,
+                 const T *source,
+                 size_t nelems,
+                 int pe);
+};
+
+class GPUIBHostContext : public Context {
+ public:
+    /* Pointer to the backend's host interface */
+    HostInterface *host_interface = nullptr;
+
+    /* An MPI Window implements a context */
+    WindowInfo *context_window_info;
+
+    __host__
+    GPUIBHostContext(const Backend &b,
+                     int64_t options);
+
+    __host__
+    ~GPUIBHostContext();
+
+    /* Host functions */
+    template <typename T>
+    __host__ void
+    p(T *dest,
+      T value,
+      int pe);
+
+    template <typename T>
+    __host__ T
+    g(const T *source,
+      int pe);
+
+    template <typename T>
+    __host__ void
+    put(T *dest,
+        const T *source,
+        size_t nelems,
+        int pe);
+
+    template <typename T>
+    __host__ void
+    get(T *dest,
+        const T *source,
+        size_t nelems,
+        int pe);
+
+    template <typename T>
+    __host__ void
+    put_nbi(T *dest,
+            const T *source,
+            size_t nelems,
+            int pe);
+
+    template <typename T>
+    __host__ void
+    get_nbi(T *dest,
+            const T *source,
+            size_t nelems,
+            int pe);
+
+    __host__ void
+    putmem(void *dest,
+           const void *source,
+           size_t nelems,
+           int pe);
+
+    __host__ void
+    getmem(void *dest,
+           const void *source,
+           size_t nelems,
+           int pe);
+
+    __host__ void
+    putmem_nbi(void *dest,
+               const void *source,
+               size_t nelems,
+               int pe);
+
+    __host__ void
+    getmem_nbi(void *dest,
+               const void *source,
+               size_t size,
+               int pe);
+
+    __host__ void
+    amo_add(void *dst,
+            int64_t value,
+            int64_t cond,
+            int pe);
+
+    __host__ void
+    amo_cas(void *dst,
+            int64_t value,
+            int64_t cond,
+            int pe);
+
+    __host__ int64_t
+    amo_fetch_add(void *dst,
+                  int64_t value,
+                  int64_t cond,
+                  int pe);
+
+    __host__ int64_t
+    amo_fetch_cas(void *dst,
+                  int64_t value,
+                  int64_t cond,
+                  int pe);
+
+    __host__ void
+    fence();
+
+    __host__ void
+    quiet();
+
+    __host__ void
+    barrier_all();
+
+    __host__ void
+    sync_all();
+
+    template <typename T>
+    __host__ void
+    broadcast(T *dest,
+              const T *source,
+              int nelems,
+              int pe_root,
+              int pe_start,
+              int log_pe_stride,
+              int pe_size,
+              long *p_sync);  // NOLINT(runtime/int)
+
+    template <typename T, ROC_SHMEM_OP Op>
+    __host__ void
+    to_all(T *dest,
+           const T *source,
+           int nreduce,
+           int pe_start,
+           int log_pe_stride,
+           int pe_size,
+           T *p_wrk,
+           long *p_sync);  // NOLINT(runtime/int)
+
+    template <typename T>
+    __host__ void
+    wait_until(T *ptr,
+               roc_shmem_cmps cmp,
+               T val);
+
+    template <typename T>
+    __host__ int
+    test(T *ptr,
+         roc_shmem_cmps cmp,
+         T val);
+};
+
+class ROHostContext : public Context {
+ public:
+    /* Handle to the backend */
+    Backend *backend_handle = nullptr;
+
+    class WindowList {
+        std::vector<WindowInfo> list;
+
+     public:
+        WindowInfo*
+        add(MPI_Win win,
+            void *ptr,
+            size_t size) {
+            list.emplace_back(win,
+                              ptr,
+                              size);
+            return &(list.back());
+        }
+
+        void
+        delete_window_at(int idx) {
+            list.erase(list.begin() + idx);
+        }
+
+        int
+        size() {
+            return list.size();
+        }
+
+        std::vector<WindowInfo>::iterator
+        begin() {
+            return list.begin();
+        }
+
+        std::vector<WindowInfo>::iterator
+        end() {
+            return list.end();
+        }
+
+        WindowInfo*
+        get_window_at(int idx) {
+            return &(list[idx]);
+        }
+
+        int
+        get_window_idx(void *dst) {
+            for (int i = 0; i < list.size(); i++) {
+                if ((dst >= static_cast<char*>(list[i].get_start())) &&
+                    (dst < static_cast<char*>(list[i].get_end()))) {
+                    return i;
+                }
+            }
+
+            fprintf(stderr, "error: Unknown window for %p\n", dst);
+
+            return -1;
+        }
+
+        WindowInfo*
+        get_window_info(void *dst) {
+            int idx = get_window_idx(dst);
+            return get_window_at(idx);
+        }
+    };
+
+    WindowList list_of_windows;
+
+    __host__ void
+    register_memory(void *ptr,
+                    size_t size);
+
+    __host__ void
+    deregister_memory(void *ptr);
+
+ private:
+    __host__ int
+    get_window_info(void *dst);
+
+ public:
+    __host__
+    ROHostContext(const Backend &b,
+                  int64_t options);
+
+    __host__
+    ~ROHostContext();
+
+    /* Pointer to the backend's host interface */
+    HostInterface *host_interface = nullptr;
+
+    /**************************************************************************
+     ****************************** HOST METHODS ******************************
+     *************************************************************************/
+    template <typename T>
+    __host__ void
+    p(T *dest,
+      T value,
+      int pe);
+
+    template <typename T>
+    __host__ T
+    g(const T *source,
+      int pe);
+
+    template <typename T>
+    __host__ void
+    put(T *dest,
+        const T *source,
+        size_t nelems,
+        int pe);
+
+    template <typename T>
+    __host__ void
+    get(T *dest,
+        const T *source,
+        size_t nelems,
+        int pe);
+
+    template <typename T>
+    __host__ void
+    put_nbi(T *dest,
+            const T *source,
+            size_t nelems,
+            int pe);
+
+    template <typename T>
+    __host__ void
+    get_nbi(T *dest,
+            const T *source,
+            size_t nelems,
+            int pe);
+
+    __host__ void
+    putmem(void *dest,
+           const void *source,
+           size_t nelems,
+           int pe);
+
+    __host__ void
+    getmem(void *dest,
+           const void *source,
+           size_t nelems,
+           int pe);
+
+    __host__ void
+    putmem_nbi(void *dest,
+               const void *source,
+               size_t nelems,
+               int pe);
+
+    __host__ void
+    getmem_nbi(void *dest,
+               const void *source,
+               size_t size,
+               int pe);
+
+    __host__ void
+    amo_add(void *dst,
+            int64_t value,
+            int64_t cond,
+            int pe);
+
+    __host__ void
+    amo_cas(void *dst,
+            int64_t value,
+            int64_t cond,
+            int pe);
+
+    __host__ int64_t
+    amo_fetch_add(void *dst,
+                  int64_t value,
+                  int64_t cond,
+                  int pe);
+
+    __host__ int64_t
+    amo_fetch_cas(void *dst,
+                  int64_t value,
+                  int64_t cond,
+                  int pe);
+
+    __host__ void
+    fence();
+
+    __host__ void
+    quiet();
+
+    __host__ void
+    barrier_all();
+
+    __host__ void
+    sync_all();
+
+    template <typename T>
+    __host__ void
+    broadcast(T *dest,
+              const T *source,
+              int nelems,
+              int pe_root,
+              int pe_start,
+              int log_pe_stride,
+              int pe_size,
+              long *p_sync);  // NOLINT(runtime/int)
+
+    template <typename T, ROC_SHMEM_OP Op>
+    __host__ void
+    to_all(T *dest,
+           const T *source,
+           int nreduce,
+           int pe_start,
+           int log_pe_stride,
+           int pe_size,
+           T *p_wrk,
+           long *p_sync);  // NOLINT(runtime/int)
+
+    template <typename T>
+    __host__ void
+    wait_until(T *ptr,
+               roc_shmem_cmps cmp,
+               T val);
+
+    template <typename T>
+    __host__ int
+    test(T *ptr,
+         roc_shmem_cmps cmp,
+         T val);
 };
 
 #define DISPATCH(Func) \
     lock(); \
     switch (type) { \
-        case BackendType::RO_BACKEND: static_cast<ROContext*>(this)->Func; break; \
-        case BackendType::GPU_IB_BACKEND: static_cast<GPUIBContext*>(this)->Func; break; \
-        default: break; \
+        case BackendType::RO_BACKEND: \
+            static_cast<ROContext*>(this)->Func; \
+            break; \
+        case BackendType::GPU_IB_BACKEND: \
+            static_cast<GPUIBContext*>(this)->Func; \
+            break; \
+        default: \
+            break; \
     } \
     unlock();
 
@@ -457,9 +1557,40 @@ private:
     unlock(); \
     return ret_val;
 
+/*
+ * No lock-unlock on host since we are using MPI_THREAD_MULTIPLE
+ * (for RMA and AMO operations) and the ordering and threading
+ * semantics of collectives in OpenSHMEM match those of MPI.
+ */
+#define HOST_DISPATCH(Func) \
+    switch (type) { \
+        case BackendType::RO_BACKEND: \
+            static_cast<ROHostContext*>(this)->Func; \
+            break; \
+        case BackendType::GPU_IB_BACKEND: \
+            static_cast<GPUIBHostContext*>(this)->Func; \
+            break; \
+        default: \
+            break; \
+    }
+
+#define HOST_DISPATCH_RET(Func) \
+    auto ret_val = 0; \
+    switch (type) { \
+        case BackendType::RO_BACKEND: \
+            ret_val = static_cast<ROHostContext*>(this)->Func; \
+            break; \
+        case BackendType::GPU_IB_BACKEND: \
+            ret_val = static_cast<GPUIBHostContext*>(this)->Func; \
+            break; \
+        default: \
+            break; \
+    } \
+    return ret_val;
+
 #define DISPATCH_RET_PTR(Func) \
     lock(); \
-    void *ret_val = NULL; \
+    void *ret_val = nullptr; \
     switch (type) { \
         case BackendType::RO_BACKEND: \
             ret_val = static_cast<ROContext*>(this)->Func; \
@@ -467,33 +1598,37 @@ private:
         case BackendType::GPU_IB_BACKEND: \
             ret_val = static_cast<GPUIBContext*>(this)->Func; \
             break; \
-        default: break; \
+        default: \
+            break; \
     } \
     unlock(); \
     return ret_val;
 
-/**
+/*
  * Context dispatch implementations for the template functions. Needs to
  * be in a header and not cpp because it is a template.
  */
-template <typename T> __device__ void
-Context::p(T *dest, T value, int pe)
-{
+template <typename T>
+__device__ void
+Context::p(T *dest,
+           T value,
+           int pe) {
     ctxStats.incStat(NUM_P);
 
-    /**
+    /*
      * TODO: Need to handle _p a bit differently for coalescing, since the
      * owner of a coalesced message needs val from all absorbed messages.
      */
      DISPATCH(p(dest, value, pe));
 }
 
-template <typename T> __device__ T
-Context::g(T *source, int pe)
-{
+template <typename T>
+__device__ T
+Context::g(T *source,
+           int pe) {
     ctxStats.incStat(NUM_G);
 
-    /**
+    /*
      * TODO: Need to handle _g a bit differently for coalescing, since the
      * owner of a coalesced message needs val from all absorbed messages.
      */
@@ -502,58 +1637,88 @@ Context::g(T *source, int pe)
 
 // The only way to get multi-arg templates to feed into a macro
 #define PAIR(A, B) A, B
-template <typename T, ROC_SHMEM_OP Op> __device__ void
-Context::to_all(T *dest, const T *source, int nreduce, int PE_start,
-                      int logPE_stride, int PE_size, T *pWrk, long *pSync)
-{
-    if (nreduce == 0)
+template <typename T, ROC_SHMEM_OP Op>
+__device__ void
+Context::to_all(T *dest,
+                const T *source,
+                int nreduce,
+                int PE_start,
+                int logPE_stride,
+                int PE_size,
+                T *pWrk,
+                long *pSync) {  // NOLINT(runtime/int)
+    if (nreduce == 0) {
         return;
+    }
 
-    if (is_thread_zero_in_block())
+    if (is_thread_zero_in_block()) {
         ctxStats.incStat(NUM_TO_ALL);
+    }
 
-    DISPATCH(to_all<PAIR(T, Op)>(dest, source, nreduce, PE_start, logPE_stride,
-                                PE_size, pWrk, pSync));
+    DISPATCH(to_all<PAIR(T, Op)>(dest,
+                                 source,
+                                 nreduce,
+                                 PE_start,
+                                 logPE_stride,
+                                 PE_size,
+                                 pWrk,
+                                 pSync));
 }
 
-template <typename T> __device__ void
-Context::put(T *dest, const T *source, size_t nelems, int pe)
-{
-    if (nelems == 0)
+template <typename T>
+__device__ void
+Context::put(T *dest,
+             const T *source,
+             size_t nelems,
+             int pe) {
+    if (nelems == 0) {
         return;
+    }
 
     ctxStats.incStat(NUM_PUT);
 
     DISPATCH(put(dest, source, nelems, pe));
 }
 
-template <typename T> __device__ void
-Context::put_nbi(T *dest, const T *source, size_t nelems, int pe)
-{
-    if (nelems == 0)
+template <typename T>
+__device__ void
+Context::put_nbi(T *dest,
+                 const T *source,
+                 size_t nelems,
+                 int pe) {
+    if (nelems == 0) {
         return;
+    }
 
     ctxStats.incStat(NUM_PUT_NBI);
 
     DISPATCH(put_nbi(dest, source, nelems, pe));
 }
 
-template <typename T> __device__ void
-Context::get(T *dest, const T *source, size_t nelems, int pe)
-{
-    if (nelems == 0)
+template <typename T>
+__device__ void
+Context::get(T *dest,
+             const T *source,
+             size_t nelems,
+             int pe) {
+    if (nelems == 0) {
         return;
+    }
 
     ctxStats.incStat(NUM_GET);
 
     DISPATCH(get(dest, source, nelems, pe));
 }
 
-template <typename T> __device__ void
-Context::get_nbi(T *dest, const T *source, size_t nelems, int pe)
-{
-    if (nelems == 0)
+template <typename T>
+__device__ void
+Context::get_nbi(T *dest,
+                 const T *source,
+                 size_t nelems,
+                 int pe) {
+    if (nelems == 0) {
         return;
+    }
 
     ctxStats.incStat(NUM_GET_NBI);
 
@@ -569,8 +1734,7 @@ Context::broadcast(T *dest,
                    int pe_start,
                    int log_pe_stride,
                    int pe_size,
-                   long *p_sync)
-{
+                   long *p_sync) {  // NOLINT(runtime/int)
     if (nelems == 0) {
         return;
     }
@@ -589,36 +1753,52 @@ Context::broadcast(T *dest,
                           p_sync));
 }
 
-template <typename T> __device__ void
-Context::wait_until(T *ptr, roc_shmem_cmps cmp, T val)
-{
-    while (!test(ptr, cmp, val)) __roc_inv();
+template <typename T>
+__device__ void
+Context::wait_until(T *ptr,
+                    roc_shmem_cmps cmp,
+                    T val) {
+    while (!test(ptr, cmp, val)) {
+    }
 }
 
-template <typename T> __device__ int
-Context::test(T *ptr, roc_shmem_cmps cmp, T val)
-{
+template <typename T>
+__device__ int
+Context::test(T *ptr,
+              roc_shmem_cmps cmp,
+              T val) {
     int ret = 0;
-    volatile T * vol_ptr = (T*) ptr;
-    __roc_inv();
+    volatile T * vol_ptr = reinterpret_cast<T*>(ptr);
     switch (cmp) {
         case ROC_SHMEM_CMP_EQ:
-            if (*vol_ptr == val) ret = 1;
+            if (_uncached_load_(vol_ptr) == val) {
+                ret = 1;
+            }
             break;
         case ROC_SHMEM_CMP_NE:
-            if (*vol_ptr != val) ret = 1;
+            if (_uncached_load_(vol_ptr) != val) {
+                ret = 1;
+            }
             break;
         case ROC_SHMEM_CMP_GT:
-            if (*vol_ptr > val) ret = 1;
+            if (_uncached_load_(vol_ptr) > val) {
+                ret = 1;
+            }
             break;
         case ROC_SHMEM_CMP_GE:
-            if (*vol_ptr >= val) ret = 1;
+            if (_uncached_load_(vol_ptr) >= val) {
+                ret = 1;
+            }
             break;
         case ROC_SHMEM_CMP_LT:
-            if (*vol_ptr < val) ret = 1;
+            if (_uncached_load_(vol_ptr) < val) {
+                ret = 1;
+            }
             break;
         case ROC_SHMEM_CMP_LE:
-            if (*vol_ptr <= val) ret = 1;
+            if (_uncached_load_(vol_ptr) <= val) {
+                ret = 1;
+            }
             break;
         default:
             break;
@@ -626,4 +1806,280 @@ Context::test(T *ptr, roc_shmem_cmps cmp, T val)
     return ret;
 }
 
-#endif // CONTEXT_H
+template <typename T>
+__device__ void
+Context::put_wg(T *dest,
+                const T *source,
+                size_t nelems,
+                int pe) {
+    if (nelems == 0) {
+        return;
+    }
+
+    ctxStats.incStat(NUM_PUT_WG);
+
+    DISPATCH(put_wg(dest, source, nelems, pe));
+}
+
+template <typename T>
+__device__ void
+Context::put_nbi_wg(T *dest,
+                    const T *source,
+                    size_t nelems,
+                    int pe) {
+    if (nelems == 0) {
+        return;
+    }
+
+    ctxStats.incStat(NUM_PUT_NBI_WG);
+
+    DISPATCH(put_nbi_wg(dest, source, nelems, pe));
+}
+
+template <typename T>
+__device__ void
+Context::get_wg(T *dest,
+                const T *source,
+                size_t nelems,
+                int pe) {
+    if (nelems == 0) {
+        return;
+    }
+
+    ctxStats.incStat(NUM_GET_WG);
+
+    DISPATCH(get_wg(dest, source, nelems, pe));
+}
+
+template <typename T>
+__device__ void
+Context::get_nbi_wg(T *dest,
+                    const T *source,
+                    size_t nelems,
+                    int pe) {
+    if (nelems == 0) {
+        return;
+    }
+
+    ctxStats.incStat(NUM_GET_NBI_WG);
+
+    DISPATCH(get_nbi_wg(dest, source, nelems, pe));
+}
+
+
+template <typename T>
+__device__ void
+Context::put_wave(T *dest,
+                  const T *source,
+                  size_t nelems,
+                  int pe) {
+    if (nelems == 0) {
+        return;
+    }
+
+    ctxStats.incStat(NUM_PUT_WAVE);
+
+    DISPATCH(put_wave(dest, source, nelems, pe));
+}
+
+template <typename T>
+__device__ void
+Context::put_nbi_wave(T *dest,
+                      const T *source,
+                      size_t nelems,
+                      int pe) {
+    if (nelems == 0) {
+        return;
+    }
+
+    ctxStats.incStat(NUM_PUT_NBI_WAVE);
+
+    DISPATCH(put_nbi_wave(dest, source, nelems, pe));
+}
+
+template <typename T>
+__device__ void
+Context::get_wave(T *dest,
+                  const T *source,
+                  size_t nelems,
+                  int pe) {
+    if (nelems == 0) {
+        return;
+    }
+
+    ctxStats.incStat(NUM_GET_WAVE);
+
+    DISPATCH(get_wave(dest, source, nelems, pe));
+}
+
+template <typename T>
+__device__ void
+Context::get_nbi_wave(T *dest,
+                      const T *source,
+                      size_t nelems,
+                      int pe) {
+    if (nelems == 0) {
+        return;
+    }
+
+    ctxStats.incStat(NUM_GET_NBI_WAVE);
+
+    DISPATCH(get_nbi_wave(dest, source, nelems, pe));
+}
+
+/*
+ * Host functions
+ */
+
+template <typename T>
+__host__ void
+Context::p(T *dest,
+           T value,
+           int pe) {
+    ctxHostStats.incStat(NUM_HOST_P);
+
+    HOST_DISPATCH(p(dest, value, pe));
+}
+
+template <typename T>
+__host__ T
+Context::g(const T *source,
+           int pe) {
+    ctxHostStats.incStat(NUM_HOST_G);
+
+    HOST_DISPATCH_RET(g(source, pe));
+}
+
+template <typename T>
+__host__ void
+Context::put(T *dest,
+             const T *source,
+             size_t nelems,
+             int pe) {
+    if (nelems == 0) {
+        return;
+    }
+
+    ctxHostStats.incStat(NUM_HOST_PUT);
+
+    HOST_DISPATCH(put(dest, source, nelems, pe));
+}
+
+template <typename T>
+__host__ void
+Context::get(T *dest,
+             const T *source,
+             size_t nelems,
+             int pe) {
+    if (nelems == 0) {
+        return;
+    }
+
+    ctxHostStats.incStat(NUM_HOST_GET);
+
+    HOST_DISPATCH(get(dest, source, nelems, pe));
+}
+
+template <typename T>
+__host__ void
+Context::put_nbi(T *dest,
+                 const T *source,
+                 size_t nelems,
+                 int pe) {
+    if (nelems == 0) {
+        return;
+    }
+
+    ctxHostStats.incStat(NUM_HOST_PUT_NBI);
+
+    HOST_DISPATCH(put_nbi(dest, source, nelems, pe));
+}
+
+template <typename T>
+__host__ void
+Context::get_nbi(T *dest,
+                 const T *source,
+                 size_t nelems,
+                 int pe) {
+    if (nelems == 0) {
+        return;
+    }
+
+    ctxHostStats.incStat(NUM_HOST_GET_NBI);
+
+    HOST_DISPATCH(get_nbi(dest, source, nelems, pe));
+}
+
+template <typename T>
+__host__ void
+Context::broadcast(T *dest,
+                   const T *source,
+                   int nelems,
+                   int pe_root,
+                   int pe_start,
+                   int log_pe_stride,
+                   int pe_size,
+                   long *p_sync) {  // NOLINT(runtime/int)
+    if (nelems == 0) {
+        return;
+    }
+
+    ctxHostStats.incStat(NUM_HOST_BROADCAST);
+
+    HOST_DISPATCH(broadcast<T>(dest,
+                          source,
+                          nelems,
+                          pe_root,
+                          pe_start,
+                          log_pe_stride,
+                          pe_size,
+                          p_sync));
+}
+
+template <typename T, ROC_SHMEM_OP Op>
+__host__ void
+Context::to_all(T *dest,
+                const T *source,
+                int nreduce,
+                int PE_start,
+                int logPE_stride,
+                int PE_size,
+                T *pWrk,
+                long *pSync) {  // NOLINT(runtime/int)
+    if (nreduce == 0) {
+        return;
+    }
+
+    ctxHostStats.incStat(NUM_HOST_TO_ALL);
+
+    HOST_DISPATCH(to_all<PAIR(T, Op)>(dest,
+                                      source,
+                                      nreduce,
+                                      PE_start,
+                                      logPE_stride,
+                                      PE_size,
+                                      pWrk,
+                                      pSync));
+}
+
+template <typename T>
+__host__ void
+Context::wait_until(T *ptr,
+                    roc_shmem_cmps cmp,
+                    T val) {
+    ctxHostStats.incStat(NUM_HOST_WAIT_UNTIL);
+
+    HOST_DISPATCH(wait_until<T>(ptr, cmp, val));
+}
+
+template <typename T>
+__host__ int
+Context::test(T *ptr,
+              roc_shmem_cmps cmp,
+              T val) {
+    ctxHostStats.incStat(NUM_HOST_TEST);
+
+    HOST_DISPATCH_RET(test<T>(ptr, cmp, val));
+}
+
+#endif  // LIBRARY_SRC_CONTEXT_HPP_

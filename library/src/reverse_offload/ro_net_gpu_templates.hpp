@@ -107,10 +107,13 @@ template <typename T>
 __device__ void
 ROContext::put(T *dest, const T *source, size_t nelems, int pe)
 {
+
     size_t size = sizeof(T) * nelems;
-    build_queue_element(RO_NET_PUT, dest, (void *) source, size, pe, 0, 0, 0,
-                        nullptr, nullptr,
-                        (struct ro_net_wg_handle *) backend_ctx, true);
+    putmem((void*) dest, (void*) source, size, pe);
+    //build_queue_element(RO_NET_PUT, dest, (void *) source, size, pe, 0, 0, 0,
+    //                    nullptr, nullptr,
+    //                    (struct ro_net_wg_handle *) backend_ctx, true);
+
 }
 
 template <typename T>
@@ -118,9 +121,11 @@ __device__ void
 ROContext::put_nbi(T *dest, const T *source, size_t nelems, int pe)
 {
     size_t size = sizeof(T) * nelems;
-    build_queue_element(RO_NET_PUT_NBI, dest, (void *) source, size, pe, 0,
-                        0, 0, nullptr, nullptr,
-                        (struct ro_net_wg_handle *) backend_ctx, true);
+    putmem_nbi((void*) dest, (void*) source, size, pe);
+
+    //build_queue_element(RO_NET_PUT_NBI, dest, (void *) source, size, pe, 0,
+    //                    0, 0, nullptr, nullptr,
+    //                    (struct ro_net_wg_handle *) backend_ctx, true);
 }
 
 template <typename T>
@@ -134,7 +139,7 @@ ROContext::p(T *dest, T value, int pe)
 
 template <typename T>
 __device__ T
-ROContext::g(T *source, int pe)
+ROContext::g(const T *source, int pe)
 {
     assert("RO _g unimplemented\n");
 }
@@ -144,19 +149,23 @@ __device__ void
 ROContext::get(T *dest, const T *source, size_t nelems, int pe)
 {
     size_t size = sizeof(T) * nelems;
-    build_queue_element(RO_NET_GET, dest, (void *) source, size, pe, 0, 0, 0,
-                        nullptr, nullptr,
-                        (struct ro_net_wg_handle *) backend_ctx, true);
+    getmem((void*)dest, (void*) source, size, pe);
+    //build_queue_element(RO_NET_GET, dest, (void *) source, size, pe, 0, 0, 0,
+    //                    nullptr, nullptr,
+    //                    (struct ro_net_wg_handle *) backend_ctx, true);
 }
 
 template <typename T>
 __device__ void
 ROContext::get_nbi(T *dest, const T *source, size_t nelems, int pe)
 {
+
     size_t size = sizeof(T) * nelems;
-    build_queue_element(RO_NET_GET_NBI, dest, (void *) source, size, pe, 0,
-                        0, 0, nullptr, nullptr,
-                        (struct ro_net_wg_handle *) backend_ctx, true);
+    getmem_nbi((void*)dest, (void*) source, size, pe);
+
+    //build_queue_element(RO_NET_GET_NBI, dest, (void *) source, size, pe, 0,
+    //                    0, 0, nullptr, nullptr,
+    //                    (struct ro_net_wg_handle *) backend_ctx, true);
 }
 
 template <typename T>
@@ -188,5 +197,77 @@ ROContext::broadcast(T *dest,
     __syncthreads();
 
 }
+
+/**
+ * WG and WAVE level API
+ */
+
+template <typename T>
+__device__ void
+ROContext::put_wg(T *dest, const T *source, size_t nelems, int pe)
+{
+
+    size_t size = sizeof(T) * nelems;
+    putmem_wg((void*) dest, (void*) source, size, pe);
+
+}
+
+template <typename T>
+__device__ void
+ROContext::put_nbi_wg(T *dest, const T *source, size_t nelems, int pe)
+{
+    size_t size = sizeof(T) * nelems;
+    putmem_nbi_wg((void*) dest, (void*) source, size, pe);
+}
+
+template <typename T>
+__device__ void
+ROContext::put_wave(T *dest, const T *source, size_t nelems, int pe)
+{
+    size_t size = sizeof(T) * nelems;
+    putmem_wave((void*) dest, (void*) source, size, pe);
+}
+
+template <typename T>
+__device__ void
+ROContext::put_nbi_wave(T *dest, const T *source, size_t nelems, int pe)
+{
+    size_t size = sizeof(T) * nelems;
+    putmem_nbi_wave((void*) dest, (void*) source, size, pe);
+}
+
+
+template <typename T>
+__device__ void
+ROContext::get_wg(T *dest, const T *source, size_t nelems, int pe)
+{
+    size_t size = sizeof(T) * nelems;
+    getmem_wg((void*)dest, (void*) source, size, pe);
+}
+
+template <typename T>
+__device__ void
+ROContext::get_nbi_wg(T *dest, const T *source, size_t nelems, int pe)
+{
+    size_t size = sizeof(T) * nelems;
+    getmem_nbi_wg((void*)dest, (void*) source, size, pe);
+}
+
+template <typename T>
+__device__ void
+ROContext::get_wave(T *dest, const T *source, size_t nelems, int pe)
+{
+    size_t size = sizeof(T) * nelems;
+    getmem_wave((void*)dest, (void*) source, size, pe);
+}
+
+template <typename T>
+__device__ void
+ROContext::get_nbi_wave(T *dest, const T *source, size_t nelems, int pe)
+{
+    size_t size = sizeof(T) * nelems;
+    getmem_nbi_wave((void*)dest, (void*) source, size, pe);
+}
+
 
 #endif // RO_NET_GPU_TEMPLATES_H

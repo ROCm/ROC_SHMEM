@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2020 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2021 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -19,50 +19,63 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  *****************************************************************************/
-#ifndef CONNECTIONPOLICY_H
-#define CONNECTIONPOLICY_H
 
-#include "config.h"
+#ifndef LIBRARY_SRC_GPU_IB_CONNECTION_POLICY_HPP_
+#define LIBRARY_SRC_GPU_IB_CONNECTION_POLICY_HPP_
 
-struct mlx5_base_av;
+#include "config.h"  // NOLINT(build/include_subdir)
+
+#include "infiniband_structs.hpp"  // NOLINT(build/include_subdir)
+
 /*
  * CRTP base class for connection type
  */
 template <typename Derived>
-class ConnectionBase
-{
-  public:
-   /*
-    * Control segment WQE offset imposed by this connection type.
-    */
-    __device__ int wqeCntrlOffset()
-        { return static_cast<Derived *>(this)->wqeCntrlOffsetImpl(); }
+class ConnectionBase {
+ public:
+    /*
+     * Control segment WQE offset imposed by this connection type.
+     */
+    __device__ int
+    wqeCntrlOffset() {
+        return static_cast<Derived*>(this)->wqeCntrlOffsetImpl();
+    }
 
-   /*
-    * Whether or not we need to force PE-level divergence when posting for
-    * this connection type.
-    */
-    __device__ bool forcePostDivergence()
-        { return static_cast<Derived *>(this)->forcePostDivergenceImpl(); }
+    /*
+     * Whether or not we need to force PE-level divergence when posting for
+     * this connection type.
+     */
+    __device__ bool
+    forcePostDivergence() {
+        return static_cast<Derived*>(this)->forcePostDivergenceImpl();
+    }
 
-   /*
-    * Number of WQEs produced by this connection type for the given opcode.
-    */
-    __device__ uint32_t getNumWqes(uint8_t opcode)
-        { return static_cast<Derived *>(this)->getNumWqesImpl(opcode); }
+    /*
+     * Number of WQEs produced by this connection type for the given opcode.
+     */
+    __device__ uint32_t
+    getNumWqes(uint8_t opcode) {
+        return static_cast<Derived*>(this)->getNumWqesImpl(opcode);
+    }
 
-   /*
-    * Updates the connection-specific segment in the SQ.
-    */
-    __device__ bool updateConnectionSegment(mlx5_base_av *wqe, int pe)
-        { return static_cast<Derived *>(this)->
-            updateConnectionSegmentImpl(wqe, pe); }
+    /*
+     * Updates the connection-specific segment in the SQ.
+     */
+    __device__ bool
+    updateConnectionSegment(ib_mlx5_base_av_t *wqe,
+                            int pe) {
+        return static_cast<Derived*>(this)->
+            updateConnectionSegmentImpl(wqe, pe);
+    }
 
-   /*
-    * Set the rkey based on this connection type.
-    */
-    __device__ void setRkey(uint32_t &rkey, int pe)
-        { return static_cast<Derived *>(this)->setRkeyImpl(rkey, pe); }
+    /*
+     * Set the rkey based on this connection type.
+     */
+    __device__ void
+    setRkey(uint32_t *rkey,
+            int pe) {
+        static_cast<Derived*>(this)->setRkeyImpl(rkey, pe);
+    }
 };
 
 class Connection;
@@ -70,45 +83,68 @@ class Connection;
 /*
  * Connection policy corresponding to an RC connection type.
  */
-class RCConnectionImpl : public ConnectionBase<RCConnectionImpl>
-{
-  public:
-    RCConnectionImpl(Connection *conn, uint32_t *_vec_rkey);
+class RCConnectionImpl : public ConnectionBase<RCConnectionImpl> {
+ public:
+    RCConnectionImpl(Connection *conn,
+                     uint32_t *_vec_rkey);
 
-    __device__ int wqeCntrlOffsetImpl() { return 0; }
+    __device__ int
+    wqeCntrlOffsetImpl() {
+        return 0;
+    }
 
-    __device__ bool forcePostDivergenceImpl() { return true; }
+    __device__ bool
+    forcePostDivergenceImpl() {
+        return true;
+    }
 
-    __device__ uint32_t getNumWqesImpl(uint8_t opcode);
+    __device__ uint32_t
+    getNumWqesImpl(uint8_t opcode);
 
-    __device__ bool updateConnectionSegmentImpl(mlx5_base_av *wqe, int pe);
+    __device__ bool
+    updateConnectionSegmentImpl(ib_mlx5_base_av_t *wqe,
+                                int pe);
 
-    __device__ void setRkeyImpl(uint32_t &rkey, int pe);
+    __device__ void
+    setRkeyImpl(uint32_t *rkey,
+                int pe);
 };
 
 /*
  * Connection policy corresponding to a DC connection type.
  */
-class DCConnectionImpl : public ConnectionBase<DCConnectionImpl>
-{
+class DCConnectionImpl : public ConnectionBase<DCConnectionImpl> {
+ public:
+    DCConnectionImpl(Connection *conn,
+                     uint32_t *_vec_rkey);
+
+    __device__ int
+    wqeCntrlOffsetImpl() {
+        return 1;
+    }
+
+    __device__ bool
+    forcePostDivergenceImpl() {
+        return false;
+    }
+
+    __device__ uint32_t
+    getNumWqesImpl(uint8_t opcode);
+
+    __device__ bool
+    updateConnectionSegmentImpl(ib_mlx5_base_av_t *wqe,
+                                int pe);
+
+    __device__ void
+    setRkeyImpl(uint32_t *rkey,
+                int pe);
+
+ private:
     uint32_t *vec_dct_num = nullptr;
 
     uint32_t *vec_rkey = nullptr;
 
     uint16_t *vec_lids = nullptr;
-
-  public:
-    DCConnectionImpl(Connection *conn, uint32_t *_vec_rkey);
-
-    __device__ int wqeCntrlOffsetImpl() { return 1; }
-
-    __device__ bool forcePostDivergenceImpl() { return false; }
-
-    __device__ uint32_t getNumWqesImpl(uint8_t opcode);
-
-    __device__ bool updateConnectionSegmentImpl(mlx5_base_av *wqe, int pe);
-
-    __device__ void setRkeyImpl(uint32_t &rkey, int pe);
 };
 
 /*
@@ -120,4 +156,4 @@ typedef DCConnectionImpl ConnectionImpl;
 typedef RCConnectionImpl ConnectionImpl;
 #endif
 
-#endif //CONNECTIONPOLICY_H
+#endif  // LIBRARY_SRC_GPU_IB_CONNECTION_POLICY_HPP_

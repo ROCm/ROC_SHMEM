@@ -28,6 +28,7 @@ target_sources(
   PRIVATE
     ro_net.cpp
     ro_net_gpu.cpp
+    ro_net_host.cpp
     transport.cpp
 )
 

@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2020 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2021 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -20,10 +20,9 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef ROC_SHMEM_H
-#define ROC_SHMEM_H
+#ifndef LIBRARY_INCLUDE_ROC_SHMEM_HPP_
+#define LIBRARY_INCLUDE_ROC_SHMEM_HPP_
 
-#define  __HIP_PLATFORM_HCC__
 #include <hip/hip_runtime.h>
 
 /**
@@ -39,6 +38,16 @@
  *
  * http://openshmem.org/site/sites/default/site_files/OpenSHMEM-1.4.pdf
  */
+
+enum ROC_SHMEM_OP {
+    ROC_SHMEM_SUM,
+    ROC_SHMEM_MAX,
+    ROC_SHMEM_MIN,
+    ROC_SHMEM_PROD,
+    ROC_SHMEM_AND,
+    ROC_SHMEM_OR,
+    ROC_SHMEM_XOR
+};
 
 /**
  * @brief Status codes for user-facing ROC_SHMEM calls.
@@ -62,35 +71,25 @@ enum roc_shmem_cmps {
     ROC_SHMEM_CMP_LE,
 };
 
-enum ROC_SHMEM_OP {
-    ROC_SHMEM_SUM,
-    ROC_SHMEM_MAX,
-    ROC_SHMEM_MIN,
-    ROC_SHMEM_PROD,
-    ROC_SHMEM_AND,
-    ROC_SHMEM_OR,
-    ROC_SHMEM_XOR
-};
-
 enum roc_shmem_thread_ops {
-    SHMEM_THREAD_SINGLE,
-    SHMEM_THREAD_FUNNELED,
-    SHMEM_THREAD_WG_FUNNELED,
-    SHMEM_THREAD_SERIALIZED,
-    SHMEM_THREAD_MULTIPLE
+    ROC_SHMEM_THREAD_SINGLE,
+    ROC_SHMEM_THREAD_FUNNELED,
+    ROC_SHMEM_THREAD_WG_FUNNELED,
+    ROC_SHMEM_THREAD_SERIALIZED,
+    ROC_SHMEM_THREAD_MULTIPLE
 };
 
-constexpr size_t SHMEM_REDUCE_MIN_WRKDATA_SIZE = 1024;
-constexpr size_t SHMEM_BARRIER_SYNC_SIZE = 256;
-constexpr size_t SHMEM_REDUCE_SYNC_SIZE = 256;
-constexpr size_t SHMEM_BCAST_SYNC_SIZE = 256;
-constexpr size_t SHMEM_SYNC_VALUE = 0;
+constexpr size_t ROC_SHMEM_REDUCE_MIN_WRKDATA_SIZE = 1024;
+constexpr size_t ROC_SHMEM_BARRIER_SYNC_SIZE = 256;
+constexpr size_t ROC_SHMEM_REDUCE_SYNC_SIZE = 256;
+constexpr size_t ROC_SHMEM_BCAST_SYNC_SIZE = 256;
+constexpr size_t ROC_SHMEM_SYNC_VALUE = 0;
 
-const int SHMEM_CTX_ZERO = 0;
-const int SHMEM_CTX_SERIALIZED = 1;
-const int SHMEM_CTX_PRIVATE = 2;
-const int SHMEM_CTX_NOSTORE = 4;
-const int SHMEM_CTX_WG_PRIVATE = 8;
+const int ROC_SHMEM_CTX_ZERO = 0;
+const int ROC_SHMEM_CTX_SERIALIZED = 1;
+const int ROC_SHMEM_CTX_PRIVATE = 2;
+const int ROC_SHMEM_CTX_NOSTORE = 4;
+const int ROC_SHMEM_CTX_WG_PRIVATE = 8;
 
 /**
  * @brief GPU side OpenSHMEM context created from each work-groups'
@@ -101,93 +100,124 @@ typedef uint64_t* roc_shmem_ctx_t;
 /**
  * Shmem default context.
  */
-extern __constant__ roc_shmem_ctx_t SHMEM_CTX_DEFAULT;
-
+extern __constant__ roc_shmem_ctx_t ROC_SHMEM_CTX_DEFAULT;
 
 
 /******************************************************************************
  **************************** HOST INTERFACE **********************************
  *****************************************************************************/
-
 /**
  * @brief Initialize the ROC_SHMEM runtime and underlying transport layer.
  *        Allocate GPU/CPU queues and optionally spawn progress threads.
  *
- * @param[in] num_wgs (Optional) Communicate to ROC_SHMEM that launched kernels
- *                     will never exceed num_wgs number of work-groups in
- *                     a single grid launch. ROC_SHMEM can use this to reduce
- *                     memory utilization in some cases. If no argument is
- *                     provided, ROC_SHMEM will size resources based on worst-
- *                     case analysis of the target hardware.
+ * @param[in] num_wgs   (Optional) Communicate to ROC_SHMEM that launched
+ *                      kernels will never exceed num_wgs number of work-groups
+ *                      in a single grid launch. ROC_SHMEM can use this to
+ *                      reduce memory utilization in some cases. If no argument
+ *                      is provided, ROC_SHMEM will size resources based on
+ *                      worst-case analysis of the target hardware.
  *
  * @return Status of the initialization.
- *
  */
-Status roc_shmem_init(unsigned num_wgs = 0);
+__host__ Status
+roc_shmem_init(unsigned num_wgs = 0);
+
+/**
+ * @brief Initialize the ROC_SHMEM runtime and underlying transport layer
+ *        with an attempt to enable the requested thread support.
+ *        Allocate GPU/CPU queues and optionally spawn progress threads.
+ *
+ * @param[in] requested Requested thread mode (from roc_shmem_thread_ops)
+ *                      for host-facing functions.
+ * @param[out] provided Thread mode selected by the runtime. May not be equal
+ *                      to requested thread mode.
+ * @param[in] num_wgs   (Optional) Communicate to ROC_SHMEM that launched
+ *                      kernels will never exceed num_wgs number of work-groups
+ *                      in a single grid launch. ROC_SHMEM can use this to
+ *                      reduce memory utilization in some cases. If no argument
+ *                      is provided, ROC_SHMEM will size resources based on
+ *                      worst-case analysis of the target hardware.
+ *
+ * @return Status of the operation -- 0 upon success, non-zero otherwise
+ */
+__host__ int
+roc_shmem_init_thread(int requested,
+                      int *provided,
+                      unsigned num_wgs = 0);
+
+/**
+ * @brief Query the thread mode used by the runtime.
+ *
+ * @param[out] provided Thread mode the runtime is operating in.
+ *
+ * @return void.
+ */
+__host__ void
+roc_shmem_query_thread(int *provided);
 
 /**
  * @brief Function that dumps internal stats to stdout.
  *
  * @return Status of operation.
- *
  */
-Status roc_shmem_dump_stats();
+__host__ Status
+roc_shmem_dump_stats();
 
 /**
  * @brief Reset all internal stats.
  *
  * @return Status of operation.
- *
  */
-Status roc_shmem_reset_stats();
+__host__ Status
+roc_shmem_reset_stats();
 
 /**
  * @brief Finalize the ROC_SHMEM runtime.
  *
  * @return Status of finalization.
- *
  */
-Status roc_shmem_finalize();
+__host__ Status
+roc_shmem_finalize();
 
 /**
- * @brief Allocate memory of \p size bytes from the symmetric heap. This is a
- * collective operation and must be called by all PEs.
+ * @brief Allocate memory of \p size bytes from the symmetric heap.
+ * This is a collective operation and must be called by all PEs.
  *
  * @param[in] size Memory allocation size in bytes.
  *
  * @return A pointer to the allocated memory on the symmetric heap.
  *
  * @todo Return error code instead of ptr.
- *
  */
-void* roc_shmem_malloc(size_t size);
+__host__ void*
+roc_shmem_malloc(size_t size);
 
 /**
- * @brief Free a memory allocation from the symmetric heap. This is a
- * collective operation and must be called by all PEs.
+ * @brief Free a memory allocation from the symmetric heap.
+ * This is a collective operation and must be called by all PEs.
  *
  * @param[in] ptr Pointer to previously allocated memory on the symmetric heap.
  *
  * @return Status of the operation.
- *
  */
-Status roc_shmem_free(void* ptr);
+__host__ Status
+roc_shmem_free(void* ptr);
 
 /**
  * @brief Query for the number of PEs.
  *
  * @return Number of PEs.
- *
  */
-int roc_shmem_n_pes();
+__host__ int
+roc_shmem_n_pes();
 
 /**
  * @brief Query the PE ID of the caller.
  *
  * @return PE ID of the caller.
- *
  */
-int roc_shmem_my_pe();
+__host__ int
+roc_shmem_my_pe();
 
 /**
  * @brief ROC_SHMEM makes extensive use of dynamic shared memory inside of
@@ -200,10 +230,190 @@ int roc_shmem_my_pe();
  * require in bytes.
  *
  * @return Status of the operation.
- *
  */
-Status roc_shmem_dynamic_shared(size_t *shared_bytes);
+__host__ Status
+roc_shmem_dynamic_shared(size_t *shared_bytes);
 
+/**
+ * @brief Writes contiguous data of \p nelems bytes from \p source on the
+ * calling PE to \p dest at \p pe. The caller will block until the operation
+ * completes locally (it is safe to reuse \p source). The caller must
+ * call into __host__ roc_shmem_quiet() if remote completion is required.
+ *
+ * @param[in] ctx    Context with which to perform this operation.
+ * @param[in] dest   Destination address. Must be an address on the symmetric
+ *                   heap.
+ * @param[in] source Source address. Must be an address on the symmetric heap.
+ * @param[in] nelems Size of the transfer in number of elements.
+ * @param[in] pe     PE of the remote process.
+ *
+ * @return void.
+ */
+__host__ void
+roc_shmem_ctx_putmem(roc_shmem_ctx_t ctx,
+                     void *dest,
+                     const void *source,
+                     size_t nelems,
+                     int pe);
+
+__host__ void
+roc_shmem_putmem(void *dest,
+                 const void *source,
+                 size_t nelems,
+                 int pe);
+
+/**
+ * @brief Writes contiguous data of \p nelems bytes from \p source on the
+ * calling PE to \p dest on \p pe. The operation is not blocking. The caller
+ * will return as soon as the request is posted. The caller must call
+ * _host__ roc_shmem_quiet() if completion notification is required.
+ *
+ * @param[in] ctx     Context with which to perform this operation.
+ * @param[in] dest    Destination address. Must be an address on the symmetric
+                      heap.
+ * @param[in] source  Source address. Must be an address on the symmetric heap.
+ * @param[in] nelems  Size of the transfer in bytes.
+ * @param[in] pe      PE of the remote process.
+ *
+ * @return void.
+ */
+__host__ void
+roc_shmem_ctx_putmem_nbi(roc_shmem_ctx_t ctx,
+                         void *dest,
+                         const void *source,
+                         size_t nelems,
+                         int pe);
+
+__host__ void
+roc_shmem_putmem_nbi(void *dest,
+                     const void *source,
+                     size_t nelems,
+                     int pe);
+
+/**
+ * @brief Reads contiguous data of \p nelems bytes from \p source on \p pe
+ * to \p dest on the calling PE. The calling work-group will block until the
+ * operation completes (data has been placed in \p dest).
+ *
+ * This function can be called from divergent control paths at per-thread
+ * granularity. However, performance may be improved if the caller can
+ * coalesce contiguous messages and elect a leader thread to call into the
+ * ROC_SHMEM function.
+ *
+ * @param[in] ctx     Context with which to perform this operation.
+ * @param[in] dest    Destination address. Must be an address on the symmetric
+ *                    heap.
+ * @param[in] source  Source address. Must be an address on the symmetric heap.
+ * @param[in] nelems  Size of the transfer in bytes.
+ * @param[in] pe      PE of the remote process.
+ *
+ * @return void.
+ */
+__host__ void
+roc_shmem_ctx_getmem(roc_shmem_ctx_t ctx,
+                     void *dest,
+                     const void *source,
+                     size_t nelems,
+                     int pe);
+
+__host__ void
+roc_shmem_getmem(void *dest,
+                 const void *source,
+                 size_t nelems,
+                 int pe);
+
+/**
+ * @brief Reads contiguous data of \p nelems bytes from \p source on \p pe
+ * to \p dest on the calling PE. The operation is not blocking. The caller will
+ * return as soon as the request is posted. The caller must call
+ * __host__ roc_shmem_quiet() on the same context if completion notification is
+ * required.
+ *
+ * This function can be called from divergent control paths at per-thread
+ * granularity. However, performance may be improved if the caller can
+ * coalesce contiguous messages and elect a leader thread to call into the
+ * ROC_SHMEM function.
+ *
+ * @param[in] ctx     Context with which to perform this operation.
+ * @param[in] dest    Destination address. Must be an address on the symmetric
+ *                    heap.
+ * @param[in] source  Source address. Must be an address on the symmetric heap.
+ * @param[in] nelems  Size of the transfer in bytes.
+ * @param[in] pe      PE of the remote process.
+ *
+ * @return void.
+ */
+__host__ void
+roc_shmem_ctx_getmem_nbi(roc_shmem_ctx_t ctx,
+                         void *dest,
+                         const void *source,
+                         size_t nelems,
+                         int pe);
+
+__host__ void
+roc_shmem_getmem_nbi(void *dest,
+                     const void *source,
+                     size_t nelems,
+                     int pe);
+
+/**
+ * @brief Guarantees order between messages in this context in accordance with
+ * OpenSHMEM semantics.
+ *
+ * @param[in] ctx     Context with which to perform this operation.
+ *
+ * @return void.
+ */
+__host__ void
+roc_shmem_ctx_fence(roc_shmem_ctx_t ctx);
+
+__host__ void
+roc_shmem_fence();
+
+/**
+ * @brief Completes all previous operations posted on the host.
+ *
+ * @param[in] ctx     Context with which to perform this operation.
+ *
+ * @return void.
+ */
+__host__ void
+roc_shmem_ctx_quiet(roc_shmem_ctx_t ctx);
+
+__host__ void
+roc_shmem_quiet();
+
+/**
+ * @brief perform a collective barrier between all PEs in the system.
+ * The caller is blocked until the barrier is resolved.
+ *
+ * @return void
+ */
+__host__ void
+roc_shmem_barrier_all();
+
+/**
+ * @brief registers the arrival of a PE at a barrier.
+ * The caller is blocked until the synchronization is resolved.
+ *
+ * In contrast with the shmem_barrier_all routine, shmem_sync_all only ensures
+ * completion and visibility of previously issued memory stores and does not
+ * ensure completion of remote memory updates issued via OpenSHMEM routines.
+ *
+ * @return void
+ */
+__host__ void
+roc_shmem_sync_all();
+
+/**
+ * @brief allows any PE to force the termination of an entire program.
+ *
+ * @param[in] status    The exit status from the main program.
+ *
+ * @return void
+ */
+__host__ void
+roc_shmem_global_exit(int status);
 
 
 /******************************************************************************
@@ -217,9 +427,9 @@ Status roc_shmem_dynamic_shared(size_t *shared_bytes);
  * Must be called collectively by all threads in the work-group.
  *
  * @return void.
- *
  */
-__device__ void roc_shmem_wg_init();
+__device__ void
+roc_shmem_wg_init();
 
 /**
  * @brief Finalizes device-side ROC_SHMEM resources. Must be called before
@@ -228,9 +438,9 @@ __device__ void roc_shmem_wg_init();
  * Must be called collectively by all threads in the work-group.
  *
  * @return void.
- *
  */
-__device__ void roc_shmem_wg_finalize();
+__device__ void
+roc_shmem_wg_finalize();
 
 /**
  * @brief Initializes device-side ROC_SHMEM resources. Must be called before
@@ -245,9 +455,10 @@ __device__ void roc_shmem_wg_finalize();
  * Must be called collectively by all threads in the work-group.
  *
  * @return void.
- *
  */
-__device__ void roc_shmem_wg_init_thread(int requested, int *provided);
+__device__ void
+roc_shmem_wg_init_thread(int requested,
+                         int *provided);
 
 /**
  * @brief Query the thread mode used by the runtime.
@@ -255,9 +466,9 @@ __device__ void roc_shmem_wg_init_thread(int requested, int *provided);
  * @param[out] provided Thread mode the runtime is operating in.
  *
  * @return void.
- *
  */
-__device__ void roc_shmem_query_thread(int *provided);
+__device__ void
+roc_shmem_query_thread(int *provided);
 
 /**
  * @brief Creates an OpenSHMEM context. By design, the context is private
@@ -269,9 +480,10 @@ __device__ void roc_shmem_query_thread(int *provided);
  * @param[out] ctx    Context handle.
  *
  * @return void.
- *
  */
-__device__ void roc_shmem_wg_ctx_create(long options, roc_shmem_ctx_t *ctx);
+__device__ void
+roc_shmem_wg_ctx_create(int64_t options,
+                        roc_shmem_ctx_t *ctx);
 
 /**
  * @brief Destroys an OpenSHMEM context.
@@ -281,9 +493,9 @@ __device__ void roc_shmem_wg_ctx_create(long options, roc_shmem_ctx_t *ctx);
  * @param[in] The context to destroy.
  *
  * @return void.
- *
  */
-__device__ void roc_shmem_wg_ctx_destroy(roc_shmem_ctx_t ctx);
+__device__ void
+roc_shmem_wg_ctx_destroy(roc_shmem_ctx_t ctx);
 
 /**
  * @brief Writes contiguous data of \p nelems bytes from \p source on the
@@ -304,15 +516,710 @@ __device__ void roc_shmem_wg_ctx_destroy(roc_shmem_ctx_t ctx);
  * @param[in] pe     PE of the remote process.
  *
  * @return void.
- *
  */
-__device__ void roc_shmem_putmem(roc_shmem_ctx_t ctx, void *dest,
-                                 const void *source, size_t nelems, int pe);
+__device__ void
+roc_shmem_ctx_putmem(roc_shmem_ctx_t ctx,
+                     void *dest,
+                     const void *source,
+                     size_t nelems,
+                     int pe);
 
-__device__ void roc_shmem_putmem(void *dest,
-                                 const void *source, size_t nelems, int pe);
+__device__ void
+roc_shmem_putmem(void *dest,
+                 const void *source,
+                 size_t nelems,
+                 int pe);
 
 /**
+ * @brief Reads contiguous data of \p nelems bytes from \p source on \p pe
+ * to \p dest on the calling PE. The calling work-group will block until the
+ * operation completes (data has been placed in \p dest).
+ *
+ * This function can be called from divergent control paths at per-thread
+ * granularity. However, performance may be improved if the caller can
+ * coalesce contiguous messages and elect a leader thread to call into the
+ * ROC_SHMEM function.
+ *
+ * @param[in] ctx     Context with which to perform this operation.
+ * @param[in] dest    Destination address. Must be an address on the symmetric
+ *                    heap.
+ * @param[in] source  Source address. Must be an address on the symmetric heap.
+ * @param[in] nelems  Size of the transfer in bytes.
+ * @param[in] pe      PE of the remote process.
+ *
+ * @return void.
+ */
+__device__ void
+roc_shmem_ctx_getmem(roc_shmem_ctx_t ctx,
+                     void *dest,
+                     const void *source,
+                     size_t nelems,
+                     int pe);
+
+__device__ void
+roc_shmem_getmem(void *dest,
+                 const void *source,
+                 size_t nelems,
+                 int pe);
+
+/**
+ * @brief Writes contiguous data of \p nelems bytes from \p source on the
+ * calling PE to \p dest on \p pe. The operation is not blocking. The caller
+ * will return as soon as the request is posted. The caller must call
+ * roc_shmem_quiet() on the same context if completion notification is
+ * required.
+ *
+ * This function can be called from divergent control paths at per-thread
+ * granularity. However, performance may be improved if the caller can
+ * coalesce contiguous messages and elect a leader thread to call into the
+ * ROC_SHMEM function.
+ *
+ * @param[in] ctx     Context with which to perform this operation.
+ * @param[in] dest    Destination address. Must be an address on the symmetric
+                      heap.
+ * @param[in] source  Source address. Must be an address on the symmetric heap.
+ * @param[in] nelems  Size of the transfer in bytes.
+ * @param[in] pe      PE of the remote process.
+ *
+ * @return void.
+ */
+__device__ void
+roc_shmem_ctx_putmem_nbi(roc_shmem_ctx_t ctx,
+                         void *dest,
+                         const void *source,
+                         size_t nelems,
+                         int pe);
+
+__device__ void
+roc_shmem_putmem_nbi(void *dest,
+                     const void *source,
+                     size_t nelems,
+                     int pe);
+
+/**
+ * @brief Reads contiguous data of \p nelems bytes from \p source on \p pe
+ * to \p dest on the calling PE. The operation is not blocking. The caller will
+ * return as soon as the request is posted. The caller must call
+ * roc_shmem_quiet() on the same context if completion notification is
+ * required.
+ *
+ * This function can be called from divergent control paths at per-thread
+ * granularity. However, performance may be improved if the caller can
+ * coalesce contiguous messages and elect a leader thread to call into the
+ * ROC_SHMEM function.
+ *
+ * @param[in] ctx     Context with which to perform this operation.
+ * @param[in] dest    Destination address. Must be an address on the symmetric
+ *                    heap.
+ * @param[in] source  Source address. Must be an address on the symmetric heap.
+ * @param[in] nelems  Size of the transfer in bytes.
+ * @param[in] pe      PE of the remote process.
+ *
+ * @return void.
+ */
+__device__ void
+roc_shmem_ctx_getmem_nbi(roc_shmem_ctx_t ctx,
+                         void *dest,
+                         const void *source,
+                         size_t nelems,
+                         int pe);
+
+__device__ void
+roc_shmem_getmem_nbi(void *dest,
+                     const void *source,
+                     size_t nelems,
+                     int pe);
+
+/**
+ * @brief Guarantees order between messages in this context in accordance with
+ * OpenSHMEM semantics.
+ *
+ * This function can be called from divergent control paths at per-thread
+ * granularity. However, performance may be improved if the caller can
+ * coalesce contiguous messages and elect a leader thread to call into the
+ * ROC_SHMEM function.
+ *
+ * @param[in] ctx Context with which to perform this operation.
+ *
+ * @return void.
+ */
+__device__ void
+roc_shmem_ctx_fence(roc_shmem_ctx_t ctx);
+
+__device__ void
+roc_shmem_fence();
+
+/**
+ * @brief Completes all previous operations posted to this context.
+ *
+ * This function can be called from divergent control paths at per-thread
+ * granularity. However, performance may be improved if the caller can
+ * coalesce contiguous messages and elect a leader thread to call into the
+ * ROC_SHMEM function.
+ *
+ * @param[in] ctx Context with which to perform this operation.
+ *
+ * @return void.
+ */
+__device__ void
+roc_shmem_ctx_quiet(roc_shmem_ctx_t ctx);
+
+__device__ void
+roc_shmem_quiet();
+
+/**
+ * @brief Query the total number of PEs.
+ *
+ * Can be called per thread with no performance penalty.
+ *
+ * @param[in] ctx GPU side handle.
+ *
+ * @return Total number of PEs.
+ */
+__device__ int
+roc_shmem_ctx_n_pes(roc_shmem_ctx_t ctx);
+
+__device__ int
+roc_shmem_n_pes();
+
+/**
+ * @brief Query the PE ID of the caller.
+ *
+ * Can be called per thread with no performance penalty.
+ *
+ * @param[in] ctx GPU side handle
+ *
+ * @return PE ID of the caller.
+ */
+__device__ int
+roc_shmem_ctx_my_pe(roc_shmem_ctx_t ctx);
+
+__device__ int
+roc_shmem_my_pe();
+
+/**
+ * @brief perform a collective barrier between all PEs in the system.
+ * The caller is blocked until the barrier is resolved.
+ *
+ * This function must be called as a work-group collective.
+ *
+ * @param[in] handle GPU side handle.
+ *
+ * @return void
+ */
+__device__ void
+roc_shmem_ctx_wg_barrier_all(roc_shmem_ctx_t ctx);
+
+__device__ void
+roc_shmem_wg_barrier_all();
+
+/**
+ * @brief registers the arrival of a PE at a barrier.
+ * The caller is blocked until the synchronization is resolved.
+ *
+ * In contrast with the shmem_barrier_all routine, shmem_sync_all only ensures
+ * completion and visibility of previously issued memory stores and does not
+ * ensure completion of remote memory updates issued via OpenSHMEM routines.
+ *
+ * This function must be called as a work-group collective.
+ *
+ * @param[in] handle GPU side handle.
+ *
+ * @return void
+ */
+__device__ void
+roc_shmem_ctx_wg_sync_all(roc_shmem_ctx_t ctx);
+
+__device__ void
+roc_shmem_wg_sync_all();
+
+/**
+ * @brief Query a local pointer to a symmetric data object on the
+ * specified \pe . Returns an address that may be used to directly reference
+ * dest on the specified \pe. This address can be accesses with LD/ST ops.
+ *
+ * Can be called per thread with no performance penalty.
+ */
+__device__ void*
+roc_shmem_ptr(const void * dest, int pe);
+
+/**
+ * @brief Query the current time. Similar to gettimeofday() on the CPU. To use
+ * this function, ROC_SHMEM must be configured with profiling support
+ * (--enable-profile).
+ *
+ * Can be called per thread with no performance penalty.
+ *
+ * @return Time in micro-seconds.
+ */
+__device__ uint64_t
+roc_shmem_timer();
+
+/**
+ * @brief Make all uncacheable GPU data visible to other agents in the sytem.
+ *
+ * This only works for data that was explicitly allocated uncacheable on the
+ * GPU!
+ *
+ * Can be called per thread with no performance penalty.
+ *
+ * @param[in] GPU-side handle.
+ *
+ * @return void
+ */
+__device__ void
+roc_shmem_ctx_threadfence_system(roc_shmem_ctx_t ctx);
+
+/*
+ * MACRO DECLARE SHMEM_REDUCTION APIs
+ */
+#define REDUCTION_API_GEN(T, TNAME, Op_API) \
+    __device__ void \
+    roc_shmem_ctx_##TNAME##_##Op_API##_wg_to_all(roc_shmem_ctx_t ctx, \
+                                                 T *dest, \
+                                                 const T *source, \
+                                                 int nreduce, \
+                                                 int PE_start, \
+                                                 int logPE_stride, \
+                                                 int PE_size, \
+                                                 T *pWrk, \
+                                                 long *pSync);  /* NOLINT */ \
+    __host__ void \
+    roc_shmem_ctx_##TNAME##_##Op_API##_to_all(roc_shmem_ctx_t ctx, \
+                                              T *dest, \
+                                              const T *source, \
+                                              int nreduce, \
+                                              int PE_start, \
+                                              int logPE_stride, \
+                                              int PE_size, \
+                                              T *pWrk, \
+                                              long *pSync);     /* NOLINT */
+
+#define ARITH_REDUCTION_API_GEN(T, TNAME) \
+    REDUCTION_API_GEN(T, TNAME, sum) \
+    REDUCTION_API_GEN(T, TNAME, min) \
+    REDUCTION_API_GEN(T, TNAME, max) \
+    REDUCTION_API_GEN(T, TNAME, prod)
+
+#define BITWISE_REDUCTION_API_GEN(T, TNAME) \
+    REDUCTION_API_GEN(T, TNAME, or) \
+    REDUCTION_API_GEN(T, TNAME, and) \
+    REDUCTION_API_GEN(T, TNAME, xor)
+
+#define INT_REDUCTION_API_GEN(T, TNAME) \
+    ARITH_REDUCTION_API_GEN(T, TNAME) \
+    BITWISE_REDUCTION_API_GEN(T, TNAME)
+
+#define FLOAT_REDUCTION_API_GEN(T, TNAME) \
+    ARITH_REDUCTION_API_GEN(T, TNAME)
+
+/*
+ * MACRO DECLARE SHMEM_BROADCAST APIs
+ */
+#define BROADCAST_API_GEN(T, TNAME) \
+    __device__ void \
+    roc_shmem_ctx_##TNAME##_wg_broadcast(roc_shmem_ctx_t ctx, \
+                                         T *dest, \
+                                         const T *source, \
+                                         int nelem, \
+                                         int pe_root, \
+                                         int pe_start, \
+                                         int log_pe_stride, \
+                                         int pe_size, \
+                                         long *p_sync);         /* NOLINT */ \
+    __host__ void \
+    roc_shmem_ctx_##TNAME##_broadcast(roc_shmem_ctx_t ctx, \
+                                      T *dest, \
+                                      const T *source, \
+                                      int nelem, \
+                                      int pe_root, \
+                                      int pe_start, \
+                                      int log_pe_stride, \
+                                      int pe_size, \
+                                      long *p_sync);            /* NOLINT */
+
+/*
+ * MACRO DECLARE SHMEM_PUT APIs
+ */
+#define PUT_API_GEN(T, TNAME) \
+    __device__ void \
+    roc_shmem_ctx_##TNAME##_put(roc_shmem_ctx_t ctx, \
+                                T *dest, \
+                                const T *source, \
+                                size_t nelems, \
+                                int pe); \
+    __device__ void \
+    roc_shmem_##TNAME##_put(T *dest, \
+                            const T *source, \
+                            size_t nelems, \
+                            int pe); \
+    __host__ void \
+    roc_shmem_ctx_##TNAME##_put(roc_shmem_ctx_t ctx, \
+                                T *dest, \
+                                const T *source, \
+                                size_t nelems, \
+                                int pe); \
+    __host__ void \
+    roc_shmem_##TNAME##_put(T *dest, \
+                            const T *source, \
+                            size_t nelems, \
+                            int pe);
+
+/*
+ * MACRO DECLARE SHMEM_P APIs
+ */
+#define P_API_GEN(T, TNAME) \
+    __device__ void \
+    roc_shmem_ctx_##TNAME##_p(roc_shmem_ctx_t ctx, \
+                              T *dest, \
+                              T value, \
+                              int pe); \
+    __device__ void \
+    roc_shmem_##TNAME##_p(T *dest, \
+                          T value, \
+                          int pe); \
+    __host__ void \
+    roc_shmem_ctx_##TNAME##_p(roc_shmem_ctx_t ctx, \
+                              T *dest, \
+                              T value, \
+                              int pe); \
+    __host__ void \
+    roc_shmem_##TNAME##_p(T *dest, \
+                          T value, \
+                          int pe);
+
+/*
+ * MACRO DECLARE SHMEM_GET APIs
+ */
+#define GET_API_GEN(T, TNAME) \
+    __device__ void \
+    roc_shmem_ctx_##TNAME##_get(roc_shmem_ctx_t ctx, \
+                                T *dest, \
+                                const T *source, \
+                                size_t nelems, int pe); \
+    __device__ void \
+    roc_shmem_##TNAME##_get(T *dest, \
+                            const T *source, \
+                            size_t nelems, \
+                            int pe); \
+    __host__ void \
+    roc_shmem_ctx_##TNAME##_get(roc_shmem_ctx_t ctx, \
+                                T *dest, \
+                                const T *source, \
+                                size_t nelems, \
+                                int pe); \
+    __host__ void \
+    roc_shmem_##TNAME##_get(T *dest, \
+                            const T *source, \
+                            size_t nelems, \
+                            int pe);
+
+/*
+ * MACRO DECLARE SHMEM_G APIs
+ */
+#define G_API_GEN(T, TNAME) \
+    __device__ T \
+    roc_shmem_ctx_##TNAME##_g(roc_shmem_ctx_t ctx, \
+                              const T *source, \
+                              int pe); \
+    __device__ T \
+    roc_shmem_##TNAME##_g(const T *source, \
+                          int pe); \
+    __host__ T \
+    roc_shmem_ctx_##TNAME##_g(roc_shmem_ctx_t ctx, \
+                              const T *source, \
+                              int pe); \
+    __host__ T \
+    roc_shmem_##TNAME##_g(const T *source, \
+                          int pe);
+
+/*
+ * MACRO DECLARE SHMEM_PUT_NBI APIs
+ */
+#define PUT_NBI_API_GEN(T, TNAME) \
+    __device__ void \
+    roc_shmem_ctx_##TNAME##_put_nbi(roc_shmem_ctx_t ctx, \
+                                    T *dest, \
+                                    const T *source, \
+                                    size_t nelems, \
+                                    int pe); \
+    __device__ void \
+    roc_shmem_##TNAME##_put_nbi(T *dest, \
+                                const T *source, \
+                                size_t nelems, \
+                                int pe); \
+    __host__ void \
+    roc_shmem_ctx_##TNAME##_put_nbi(roc_shmem_ctx_t ctx, \
+                                    T *dest, \
+                                    const T *source, \
+                                    size_t nelems, \
+                                    int pe); \
+    __host__ void \
+    roc_shmem_##TNAME##_put_nbi(T *dest, \
+                                const T *source, \
+                                size_t nelems, \
+                                int pe);
+
+/*
+ * MACRO DECLARE SHMEM_GET_NBI APIs
+ */
+#define GET_NBI_API_GEN(T, TNAME) \
+    __device__ void \
+    roc_shmem_ctx_##TNAME##_get_nbi(roc_shmem_ctx_t ctx, \
+                                    T *dest, \
+                                    const T *source, \
+                                    size_t nelems, \
+                                    int pe); \
+    __device__ void \
+    roc_shmem_##TNAME##_get_nbi(T *dest, \
+                                const T *source, \
+                                size_t nelems, \
+                                int pe); \
+    __host__ void \
+    roc_shmem_ctx_##TNAME##_get_nbi(roc_shmem_ctx_t ctx, \
+                                    T *dest, \
+                                    const T *source, \
+                                    size_t nelems, \
+                                    int pe); \
+    __host__ void \
+    roc_shmem_##TNAME##_get_nbi(T *dest, \
+                                const T *source, \
+                                size_t nelems, \
+                                int pe);
+
+/*
+ * MACRO DECLARE SHMEM_ATOMIC_FETCH_ADD APIs
+ */
+#define ATOMIC_FETCH_ADD_API_GEN(T, TNAME) \
+    __device__ T \
+    roc_shmem_ctx_##TNAME##_atomic_fetch_add(roc_shmem_ctx_t ctx, \
+                                             T *dest, \
+                                             T value, \
+                                             int pe); \
+    __device__ T \
+    roc_shmem_##TNAME##_atomic_fetch_add(T *dest, \
+                                         T value, \
+                                         int pe); \
+    __host__ T \
+    roc_shmem_ctx_##TNAME##_atomic_fetch_add(roc_shmem_ctx_t ctx, \
+                                             T *dest, \
+                                             T value, \
+                                             int pe); \
+    __host__ T \
+    roc_shmem_##TNAME##_atomic_fetch_add(T *dest, \
+                                         T value, \
+                                         int pe);
+
+/*
+ * MACRO DECLARE SHMEM_ATOMIC_COMPARE_SWAP APIs
+ */
+#define ATOMIC_COMPARE_SWAP_API_GEN(T, TNAME) \
+    __device__ T \
+    roc_shmem_ctx_##TNAME##_atomic_compare_swap(roc_shmem_ctx_t ctx, \
+                                                T *dest, \
+                                                T cond, \
+                                                T value, \
+                                                int pe); \
+    __device__ T \
+    roc_shmem_##TNAME##_atomic_compare_swap(T *dest, \
+                                            T cond, \
+                                            T value, \
+                                            int pe); \
+    __host__ T \
+    roc_shmem_ctx_##TNAME##_atomic_compare_swap(roc_shmem_ctx_t ctx, \
+                                                T *dest, \
+                                                T cond, \
+                                                T value, \
+                                                int pe); \
+    __host__ T \
+    roc_shmem_##TNAME##_atomic_compare_swap(T *dest, \
+                                            T cond, \
+                                            T value, \
+                                            int pe);
+
+/*
+ * MACRO DECLARE SHMEM_ATOMIC_FETCH_INC APIs
+ */
+#define ATOMIC_FETCH_INC_API_GEN(T, TNAME) \
+    __device__ T \
+    roc_shmem_ctx_##TNAME##_atomic_fetch_inc(roc_shmem_ctx_t ctx, \
+                                             T *dest, \
+                                             int pe); \
+    __device__ T \
+    roc_shmem_##TNAME##_atomic_fetch_inc(T *dest, \
+                                         int pe); \
+    __host__ T \
+    roc_shmem_ctx_##TNAME##_atomic_fetch_inc(roc_shmem_ctx_t ctx, \
+                                             T *dest, \
+                                             int pe); \
+    __host__ T \
+    roc_shmem_##TNAME##_atomic_fetch_inc(T *dest, \
+                                         int pe);
+
+/*
+ * MACRO DECLARE SHMEM_ATOMIC_FETCH APIs
+ */
+#define ATOMIC_FETCH_API_GEN(T, TNAME) \
+    __device__ T \
+    roc_shmem_ctx_##TNAME##_atomic_fetch(roc_shmem_ctx_t ctx, \
+                                         T *dest, \
+                                         int pe); \
+    __device__ T \
+    roc_shmem_##TNAME##_atomic_fetch(T *dest, \
+                                     int pe); \
+    __host__ T \
+    roc_shmem_ctx_##TNAME##_atomic_fetch(roc_shmem_ctx_t ctx, \
+                                         T *dest, \
+                                         int pe); \
+    __host__ T \
+    roc_shmem_##TNAME##_atomic_fetch(T *dest, \
+                                     int pe);
+
+/*
+ * MACRO DECLARE SHMEM_ATOMIC_ADD APIs
+ */
+#define ATOMIC_ADD_API_GEN(T, TNAME) \
+    __device__ void \
+    roc_shmem_ctx_##TNAME##_atomic_add(roc_shmem_ctx_t ctx, \
+                                       T *dest, \
+                                       T value, \
+                                       int pe); \
+    __device__ void \
+    roc_shmem_##TNAME##_atomic_add(T *dest, \
+                                   T value, \
+                                   int pe); \
+    __host__ void \
+    roc_shmem_ctx_##TNAME##_atomic_add(roc_shmem_ctx_t ctx, \
+                                       T *dest, \
+                                       T value, \
+                                       int pe); \
+    __host__ void \
+    roc_shmem_##TNAME##_atomic_add(T *dest, \
+                                   T value, \
+                                   int pe);
+
+/*
+ * MACRO DECLARE SHMEM_ATOMIC_INC APIs
+ */
+#define ATOMIC_INC_API_GEN(T, TNAME) \
+    __device__ void \
+    roc_shmem_ctx_##TNAME##_atomic_inc(roc_shmem_ctx_t ctx, \
+                                       T *dest, \
+                                       int pe); \
+    __device__ void \
+    roc_shmem_##TNAME##_atomic_inc(T *dest, \
+                                   int pe); \
+    __host__ void \
+    roc_shmem_ctx_##TNAME##_atomic_inc(roc_shmem_ctx_t ctx, \
+                                       T *dest, \
+                                       int pe); \
+    __host__ void \
+    roc_shmem_##TNAME##_atomic_inc(T *dest, \
+                                   int pe);
+
+/*
+ * MACRO DECLARE SHMEM_WAIT_UNTIL APIs
+ */
+#define WAIT_UNTIL_API_GEN(T, TNAME) \
+    __device__ void \
+    roc_shmem_##TNAME##_wait_until(T *ptr, \
+                                   roc_shmem_cmps cmp, \
+                                   T val); \
+    __host__ void \
+    roc_shmem_##TNAME##_wait_until(T *ptr, \
+                                   roc_shmem_cmps cmp, \
+                                   T val);
+
+/*
+ * MACRO DECLARE SHMEM_TEST APIs
+ */
+#define TEST_API_GEN(T, TNAME) \
+    __device__ int \
+    roc_shmem_##TNAME##_test(T *ptr, \
+                             roc_shmem_cmps cmp, \
+                             T val); \
+    __host__ int \
+    roc_shmem_##TNAME##_test(T *ptr, \
+                             roc_shmem_cmps cmp, \
+                             T val);
+
+/**
+ * @name SHMEM_REDUCTIONS
+ * @brief Perform an allreduce between PEs in the active set. The caller
+ * is blocked until the reduction completes.
+ *
+ * This function must be called as a work-group collective.
+ *
+ * @param[in] dest         Destination address. Must be an address on the
+ *                         symmetric heap.
+ * @param[in] source       Source address. Must be an address on the symmetric
+                           heap.
+ * @param[in] nreduce      Size of the buffer to participate in the reduction.
+ * @param[in] PE_start     PE to start the reduction.
+ * @param[in] logPE_stride Stride of PEs participating in the reduction.
+ * @param[in] PE_size      Number PEs participating in the reduction.
+ * @param[in] pWrk         Temporary work buffer provided to ROC_SHMEM. Must
+ *                         be of size at least max(size/2 + 1,
+                           ROC_SHMEM_REDUCE_MIN_WRKDATA_SIZE).
+ * @param[in] pSync        Temporary sync buffer provided to ROC_SHMEM. Must
+                           be of size at least ROC_SHMEM_REDUCE_SYNC_SIZE.
+ * @param[in] handle       GPU side handle.
+ *
+ * @return void
+ */
+///@{
+INT_REDUCTION_API_GEN(int, int)
+INT_REDUCTION_API_GEN(short, short)                     // NOLINT(runtime/int)
+INT_REDUCTION_API_GEN(long, long)                       // NOLINT(runtime/int)
+INT_REDUCTION_API_GEN(long long, longlong)              // NOLINT(runtime/int)
+FLOAT_REDUCTION_API_GEN(float, float)
+FLOAT_REDUCTION_API_GEN(double, double)
+// long double reduction fails. hipcc/device may not support long double.
+// so disable it for now.
+// FLOAT_REDUCTION_API_GEN(long double, longdouble)
+///@}
+
+/**
+ * @name SHMEM_BROADCAST
+ * @brief Perform a broadcast between PEs in the active set. The caller
+ * is blocked until the broadcase completes.
+ *
+ * This function must be called as a work-group collective.
+ *
+ * @param[in] dest         Destination address. Must be an address on the
+ *                         symmetric heap.
+ * @param[in] source       Source address. Must be an address on the symmetric
+                           heap.
+ * @param[in] nelement     Size of the buffer to participate in the broadcast.
+ * @param[in] PE_root      Zero-based ordinal of the PE, with respect to the
+                           active set, from which the data is copied
+ * @param[in] PE_start     PE to start the reduction.
+ * @param[in] logPE_stride Stride of PEs participating in the reduction.
+ * @param[in] PE_size      Number PEs participating in the reduction.
+ * @param[in] pSync        Temporary sync buffer provided to ROC_SHMEM. Must
+                           be of size at least ROC_SHMEM_REDUCE_SYNC_SIZE.
+ *
+ * @return void
+ */
+///@{
+BROADCAST_API_GEN(float, float)
+BROADCAST_API_GEN(double, double)
+BROADCAST_API_GEN(char, char)
+// BROADCAST_API_GEN(long double, longdouble)
+BROADCAST_API_GEN(signed char, schar)
+BROADCAST_API_GEN(short, short)                         // NOLINT(runtime/int)
+BROADCAST_API_GEN(int, int)
+BROADCAST_API_GEN(long, long)                           // NOLINT(runtime/int)
+BROADCAST_API_GEN(long long, longlong)                  // NOLINT(runtime/int)
+BROADCAST_API_GEN(unsigned char, uchar)
+BROADCAST_API_GEN(unsigned short, ushort)               // NOLINT(runtime/int)
+BROADCAST_API_GEN(unsigned int, uint)
+BROADCAST_API_GEN(unsigned long, ulong)                 // NOLINT(runtime/int)
+BROADCAST_API_GEN(unsigned long long, ulonglong)        // NOLINT(runtime/int)
+///@}
+
+/**
+ * @name SHMEM_PUT
  * @brief Writes contiguous data of \p nelems elements from \p source on the
  * calling PE to \p dest at \p pe. The caller will block until the operation
  * completes locally (it is safe to reuse \p source). The caller must
@@ -331,16 +1238,26 @@ __device__ void roc_shmem_putmem(void *dest,
  * @param[in] pe     PE of the remote process.
  *
  * @return void.
- *
  */
-template <typename T>
-__device__ void roc_shmem_put(roc_shmem_ctx_t ctx, T *dest, const T *source,
-                              size_t nelems, int pe);
-
-template <typename T>
-__device__ void roc_shmem_put(T *dest, const T *source, size_t nelems, int pe);
+///@{
+PUT_API_GEN(float, float)
+PUT_API_GEN(double, double)
+PUT_API_GEN(char, char)
+// PUT_API_GEN(long double, longdouble)
+PUT_API_GEN(signed char, schar)
+PUT_API_GEN(short, short)                               // NOLINT(runtime/int)
+PUT_API_GEN(int, int)
+PUT_API_GEN(long, long)                                 // NOLINT(runtime/int)
+PUT_API_GEN(long long, longlong)                        // NOLINT(runtime/int)
+PUT_API_GEN(unsigned char, uchar)
+PUT_API_GEN(unsigned short, ushort)                     // NOLINT(runtime/int)
+PUT_API_GEN(unsigned int, uint)
+PUT_API_GEN(unsigned long, ulong)                       // NOLINT(runtime/int)
+PUT_API_GEN(unsigned long long, ulonglong)              // NOLINT(runtime/int)
+///@}
 
 /**
+ * @name SHMEM_P
  * @brief Writes a single value to \p dest at \p pe PE to \p dst at \p pe.
  * The caller must call into roc_shmem_quiet() if remote completion is
  * required.
@@ -357,41 +1274,26 @@ __device__ void roc_shmem_put(T *dest, const T *source, size_t nelems, int pe);
  * @param[in] pe     PE of the remote process.
  *
  * @return void.
- *
  */
-template <typename T>
-__device__ void roc_shmem_p(roc_shmem_ctx_t ctx, T *dest, T value, int pe);
-
-template <typename T>
-__device__ void roc_shmem_p(T *dest, T value, int pe);
+///@{
+P_API_GEN(float, float)
+P_API_GEN(double, double)
+P_API_GEN(char, char)
+// P_API_GEN(long double, longdouble)
+P_API_GEN(signed char, schar)
+P_API_GEN(short, short)                                 // NOLINT(runtime/int)
+P_API_GEN(int, int)
+P_API_GEN(long, long)                                   // NOLINT(runtime/int)
+P_API_GEN(long long, longlong)                          // NOLINT(runtime/int)
+P_API_GEN(unsigned char, uchar)
+P_API_GEN(unsigned short, ushort)                       // NOLINT(runtime/int)
+P_API_GEN(unsigned int, uint)
+P_API_GEN(unsigned long, ulong)                         // NOLINT(runtime/int)
+P_API_GEN(unsigned long long, ulonglong)                // NOLINT(runtime/int)
+///@}
 
 /**
- * @brief Reads contiguous data of \p nelems bytes from \p source on \p pe
- * to \p dest on the calling PE. The calling work-group will block until the
- * operation completes (data has been placed in \p dest).
- *
- * This function can be called from divergent control paths at per-thread
- * granularity. However, performance may be improved if the caller can
- * coalesce contiguous messages and elect a leader thread to call into the
- * ROC_SHMEM function.
- *
- * @param[in] ctx     Context with which to perform this operation.
- * @param[in] dest    Destination address. Must be an address on the symmetric
- *                    heap.
- * @param[in] source  Source address. Must be an address on the symmetric heap.
- * @param[in] nelems  Size of the transfer in bytes.
- * @param[in] pe      PE of the remote process.
- *
- * @return void.
- *
- */
-__device__ void roc_shmem_getmem(roc_shmem_ctx_t ctx, void *dest,
-                                 const void *source, size_t nelems, int pe);
-
-__device__ void roc_shmem_getmem(void *dest,
-                                 const void *source, size_t nelems, int pe);
-
-/**
+ * @name SHMEM_GET
  * @brief Reads contiguous data of \p nelems elements from \p source on \p pe
  * to \p dest on the calling PE. The calling work-group will block until the
  * operation completes (data has been placed in \p dest).
@@ -409,16 +1311,26 @@ __device__ void roc_shmem_getmem(void *dest,
  * @param[in] pe      PE of the remote process.
  *
  * @return void.
- *
  */
-template <typename T>
-__device__ void roc_shmem_get(roc_shmem_ctx_t ctx, T *dest, const T *source,
-                              size_t nelems, int pe);
-
-template <typename T>
-__device__ void roc_shmem_get(T *dest, const T *source, size_t nelems, int pe);
+///@{
+GET_API_GEN(float, float)
+GET_API_GEN(double, double)
+GET_API_GEN(char, char)
+// GET_API_GEN(long double, longdouble)
+GET_API_GEN(signed char, schar)
+GET_API_GEN(short, short)                               // NOLINT(runtime/int)
+GET_API_GEN(int, int)
+GET_API_GEN(long, long)                                 // NOLINT(runtime/int)
+GET_API_GEN(long long, longlong)                        // NOLINT(runtime/int)
+GET_API_GEN(unsigned char, uchar)
+GET_API_GEN(unsigned short, ushort)                     // NOLINT(runtime/int)
+GET_API_GEN(unsigned int, uint)
+GET_API_GEN(unsigned long, ulong)                       // NOLINT(runtime/int)
+GET_API_GEN(unsigned long long, ulonglong)              // NOLINT(runtime/int)
+///@}
 
 /**
+ * @name SHMEM_G
  * @brief reads and returns single value from \p source at \p pe.
  * The calling work-group/thread will block until the operation completes.
  *
@@ -433,45 +1345,26 @@ __device__ void roc_shmem_get(T *dest, const T *source, size_t nelems, int pe);
  * @param[in] pe     PE of the remote process.
  *
  * @return the value read from remote \p source at \p pe.
- *
  */
-template <typename T>
-__device__ T roc_shmem_g(roc_shmem_ctx_t ctx, T *source, int pe);
-
-template <typename T>
-__device__ T roc_shmem_g(T *source, int pe);
+///@{
+G_API_GEN(float, float)
+G_API_GEN(double, double)
+G_API_GEN(char, char)
+// G_API_GEN(long double, longdouble)
+G_API_GEN(signed char, schar)
+G_API_GEN(short, short)                                 // NOLINT(runtime/int)
+G_API_GEN(int, int)
+G_API_GEN(long, long)                                   // NOLINT(runtime/int)
+G_API_GEN(long long, longlong)                          // NOLINT(runtime/int)
+G_API_GEN(unsigned char, uchar)
+G_API_GEN(unsigned short, ushort)                       // NOLINT(runtime/int)
+G_API_GEN(unsigned int, uint)
+G_API_GEN(unsigned long, ulong)                         // NOLINT(runtime/int)
+G_API_GEN(unsigned long long, ulonglong)                // NOLINT(runtime/int)
+///@}
 
 /**
- * @brief Writes contiguous data of \p nelems bytes from \p source on the
- * calling PE to \p dest on \p pe. The operation is not blocking. The caller
- * will return as soon as the request is posted. The caller must call
- * roc_shmem_quiet() on the same context if completion notification is
- * required.
- *
- * This function can be called from divergent control paths at per-thread
- * granularity. However, performance may be improved if the caller can
- * coalesce contiguous messages and elect a leader thread to call into the
- * ROC_SHMEM function.
- *
- * @param[in] ctx     Context with which to perform this operation.
- * @param[in] dest    Destination address. Must be an address on the symmetric
-                      heap.
- * @param[in] source  Source address. Must be an address on the symmetric heap.
- * @param[in] nelems  Size of the transfer in bytes.
- * @param[in] pe      PE of the remote process.
- *
- * @return void.
- *
- */
-__device__ void roc_shmem_putmem_nbi(roc_shmem_ctx_t ctx, void *dest,
-                                     const void *source, size_t nelems,
-                                     int pe);
-
-__device__ void roc_shmem_putmem_nbi(void *dest,
-                                     const void *source, size_t nelems,
-                                     int pe);
-
-/**
+ * @name SHMEM_PUT_NBI
  * @brief Writes contiguous data of \p nelems elements from \p source on the
  * calling PE to \p dest on \p pe. The operation is not blocking. The caller
  * will return as soon as the request is posted. The caller must call
@@ -491,47 +1384,26 @@ __device__ void roc_shmem_putmem_nbi(void *dest,
  * @param[in] pe      PE of the remote process.
  *
  * @return void.
- *
  */
-template <typename T>
-__device__ void roc_shmem_put_nbi(roc_shmem_ctx_t ctx, T *dest, const T *src,
-                                  size_t nelems, int pe);
-
-template <typename T>
-__device__ void roc_shmem_put_nbi(T *dest, const T *src,
-                                  size_t nelems, int pe);
+///@{
+PUT_NBI_API_GEN(float, float)
+PUT_NBI_API_GEN(double, double)
+PUT_NBI_API_GEN(char, char)
+// PUT_NBI_API_GEN(long double, longdouble)
+PUT_NBI_API_GEN(signed char, schar)
+PUT_NBI_API_GEN(short, short)                           // NOLINT(runtime/int)
+PUT_NBI_API_GEN(int, int)
+PUT_NBI_API_GEN(long, long)                             // NOLINT(runtime/int)
+PUT_NBI_API_GEN(long long, longlong)                    // NOLINT(runtime/int)
+PUT_NBI_API_GEN(unsigned char, uchar)
+PUT_NBI_API_GEN(unsigned short, ushort)                 // NOLINT(runtime/int)
+PUT_NBI_API_GEN(unsigned int, uint)
+PUT_NBI_API_GEN(unsigned long, ulong)                   // NOLINT(runtime/int)
+PUT_NBI_API_GEN(unsigned long long, ulonglong)          // NOLINT(runtime/int)
+///@}
 
 /**
- * @brief Reads contiguous data of \p nelems bytes from \p source on \p pe
- * to \p dest on the calling PE. The operation is not blocking. The caller will
- * return as soon as the request is posted. The caller must call
- * roc_shmem_quiet() on the same context if completion notification is
- * required.
- *
- * This function can be called from divergent control paths at per-thread
- * granularity. However, performance may be improved if the caller can
- * coalesce contiguous messages and elect a leader thread to call into the
- * ROC_SHMEM function.
- *
- * @param[in] ctx     Context with which to perform this operation.
- * @param[in] dest    Destination address. Must be an address on the symmetric
- *                    heap.
- * @param[in] source  Source address. Must be an address on the symmetric heap.
- * @param[in] nelems  Size of the transfer in bytes.
- * @param[in] pe      PE of the remote process.
- *
- * @return void.
- *
- */
-__device__ void roc_shmem_getmem_nbi(roc_shmem_ctx_t ctx, void *dest,
-                                     const void *source, size_t nelems,
-                                     int pe);
-
-__device__ void roc_shmem_getmem_nbi(void *dest,
-                                     const void *source, size_t nelems,
-                                     int pe);
-
-/**
+ * @name SHMEM_GET_NBI
  * @brief Reads contiguous data of \p nelems elements from \p source on \p pe
  * to \p dest on the calling PE. The operation is not blocking. The caller will
  * return as soon as the request is posted. The caller must call
@@ -551,17 +1423,26 @@ __device__ void roc_shmem_getmem_nbi(void *dest,
  * @param[in] pe      PE of the remote process.
  *
  * @return void.
- *
  */
-template <typename T>
-__device__ void roc_shmem_get_nbi(roc_shmem_ctx_t ctx, T *dest,
-                                  const T *source, size_t nelems, int pe);
-
-template <typename T>
-__device__ void roc_shmem_get_nbi(T *dest,
-                                  const T *source, size_t nelems, int pe);
+///@{
+GET_NBI_API_GEN(float, float)
+GET_NBI_API_GEN(double, double)
+GET_NBI_API_GEN(char, char)
+// GET_NBI_API_GEN(long double, longdouble)
+GET_NBI_API_GEN(signed char, schar)
+GET_NBI_API_GEN(short, short)                           // NOLINT(runtime/int)
+GET_NBI_API_GEN(int, int)
+GET_NBI_API_GEN(long, long)                             // NOLINT(runtime/int)
+GET_NBI_API_GEN(long long, longlong)                    // NOLINT(runtime/int)
+GET_NBI_API_GEN(unsigned char, uchar)
+GET_NBI_API_GEN(unsigned short, ushort)                 // NOLINT(runtime/int)
+GET_NBI_API_GEN(unsigned int, uint)
+GET_NBI_API_GEN(unsigned long, ulong)                   // NOLINT(runtime/int)
+GET_NBI_API_GEN(unsigned long long, ulonglong)          // NOLINT(runtime/int)
+///@}
 
 /**
+ * @name SHMEM_ATOMIC_FETCH_ADD
  * @brief Atomically add the value \p val to \p dest on \p pe. The operation
  * returns the older value of \p dest to the calling PE.
  *
@@ -577,16 +1458,18 @@ __device__ void roc_shmem_get_nbi(T *dest,
  * @param[in] pe      PE of the remote process.
  *
  * @return            The old value of \p dest before the \p val was added.
- *
  */
-template <typename T>
-__device__ T roc_shmem_atomic_fetch_add(roc_shmem_ctx_t ctx, T *dest,
-                                        T val, int pe);
-
-template <typename T>
-__device__ T roc_shmem_atomic_fetch_add(T *dest, T val, int pe);
+///@{
+ATOMIC_FETCH_ADD_API_GEN(int64_t, int64)
+ATOMIC_FETCH_ADD_API_GEN(uint64_t, uint64)
+// ATOMIC_FETCH_ADD_API_GEN(long long, longlong)
+// ATOMIC_FETCH_ADD_API_GEN(unsigned long long, ulonglong)
+// ATOMIC_FETCH_ADD_API_GEN(size_t, size)
+// ATOMIC_FETCH_ADD_API_GEN(ptrdiff_t, ptrdiff)
+///@}
 
 /**
+ * @name SHMEM_ATOMIC_COMPARE_SWAP
  * @brief Atomically compares if the value in \p dest with \p cond is equal
  * then put \p val in \p dest. The operation returns the older value of \p dest
  * to the calling PE.
@@ -604,16 +1487,18 @@ __device__ T roc_shmem_atomic_fetch_add(T *dest, T val, int pe);
  * @param[in] pe      PE of the remote process.
  *
  * @return            The old value of \p dest.
- *
  */
-template <typename T>
-__device__ T roc_shmem_atomic_fetch_cswap(roc_shmem_ctx_t ctx, T *dest,
-                                          T cond, T val, int pe);
-
-template <typename T>
-__device__ T roc_shmem_atomic_fetch_cswap(T *dest, T cond, T val, int pe);
+///@{
+ATOMIC_COMPARE_SWAP_API_GEN(int64_t, int64)
+ATOMIC_COMPARE_SWAP_API_GEN(uint64_t, uint64)
+// ATOMIC_COMPARE_SWAP_API_GEN(long long, longlong)
+// ATOMIC_COMPARE_SWAP_API_GEN(unsigned long long, ulonglong)
+// ATOMIC_COMPARE_SWAP_API_GEN(size_t, size)
+// ATOMIC_COMPARE_SWAP_API_GEN(ptrdiff_t, ptrdiff)
+///@}
 
 /**
+ * @name SHMEM_ATOMIC_FETCH_INC
  * @brief Atomically add 1 to \p dest on \p pe. The operation
  * returns the older value of \p dest to the calling PE.
  *
@@ -628,15 +1513,18 @@ __device__ T roc_shmem_atomic_fetch_cswap(T *dest, T cond, T val, int pe);
  * @param[in] pe      PE of the remote process.
  *
  * @return            The old value of \p dest before it was incremented by 1.
- *
  */
-template <typename T>
-__device__ T roc_shmem_atomic_fetch_inc(roc_shmem_ctx_t ctx, T *dest, int pe);
-
-template <typename T>
-__device__ T roc_shmem_atomic_fetch_inc(T *dest, int pe);
+///@{
+ATOMIC_FETCH_INC_API_GEN(int64_t, int64)
+ATOMIC_FETCH_INC_API_GEN(uint64_t, uint64)
+// ATOMIC_FETCH_INC_API_GEN(long long, longlong)
+// ATOMIC_FETCH_INC_API_GEN(unsigned long long, ulonglong)
+// ATOMIC_FETCH_INC_API_GEN(size_t, size)
+// ATOMIC_FETCH_INC_API_GEN(ptrdiff_t, ptrdiff)
+///@}
 
 /**
+ * @name SHMEM_ATOMIC_FETCH
  * @brief Atomically return the value of \p dest to the calling PE.
  *
  * The operation is blocking.
@@ -651,15 +1539,18 @@ __device__ T roc_shmem_atomic_fetch_inc(T *dest, int pe);
  * @param[in] pe      PE of the remote process.
  *
  * @return            The value of \p dest.
- *
  */
-template <typename T>
-__device__ T roc_shmem_atomic_fetch(roc_shmem_ctx_t ctx, T *dest, int pe);
-
-template <typename T>
-__device__ T roc_shmem_atomic_fetch(T *dest, int pe);
+///@{
+ATOMIC_FETCH_API_GEN(int64_t, int64)
+ATOMIC_FETCH_API_GEN(uint64_t, uint64)
+// ATOMIC_FETCH_API_GEN(long long, longlong)
+// ATOMIC_FETCH_API_GEN(unsigned long long, ulonglong)
+// ATOMIC_FETCH_API_GEN(size_t, size)
+// ATOMIC_FETCH_API_GEN(ptrdiff_t, ptrdiff)
+///@}
 
 /**
+ * @name SHMEM_ATOMIC_ADD
  * @brief Atomically add the value \p val to \p dest on \p pe.
  *
  * The operation is blocking.
@@ -674,42 +1565,18 @@ __device__ T roc_shmem_atomic_fetch(T *dest, int pe);
  * @param[in] pe      PE of the remote process.
  *
  * @return void
- *
  */
-template <typename T>
-__device__ void roc_shmem_atomic_add(roc_shmem_ctx_t ctx, T *dest,
-                                     T val, int pe);
-
-template <typename T>
-__device__ void roc_shmem_atomic_add(T *dest, T val, int pe);
+///@{
+ATOMIC_ADD_API_GEN(int64_t, int64)
+ATOMIC_ADD_API_GEN(uint64_t, uint64)
+// ATOMIC_ADD_API_GEN(long long, longlong)
+// ATOMIC_ADD_API_GEN(unsigned long long, ulonglong)
+// ATOMIC_ADD_API_GEN(size_t, size)
+// ATOMIC_ADD_API_GEN(ptrdiff_t, ptrdiff)
+///@}
 
 /**
- * @brief Atomically compares if the value in \p dest with \p cond is equal
- * then put \p val in \p dest.
- *
- * The operation is blocking.
- *
- * This function can be called from divergent control paths at per-thread
- * granularity.
- *
- * @param[in] ctx     Context with which to perform this operation.
- * @param[in] dest    Destination address. Must be an address on the symmetric
-                      heap.
- * @param[in] cond    The value to be compare with.
- * @param[in] val     The value to be atomically swapped.
- * @param[in] pe      PE of the remote process.
- *
- * @return void.
- *
- */
-template <typename T>
-__device__ void  roc_shmem_atomic_cswap(roc_shmem_ctx_t ctx, T *dest,
-                                        T cond, T val, int pe);
-
-template <typename T>
-__device__ void  roc_shmem_atomic_cswap(T *dest, T cond, T val, int pe);
-
-/**
+ * @name SHMEM_ATOMIC_INC
  * @brief Atomically add 1 to \p dest on \p pe.
  *
  * The operation is blocking.
@@ -723,169 +1590,18 @@ __device__ void  roc_shmem_atomic_cswap(T *dest, T cond, T val, int pe);
  * @param[in] pe      PE of the remote process.
  *
  * @return void
- *
  */
-template <typename T>
-__device__ void roc_shmem_atomic_inc(roc_shmem_ctx_t ctx, T *dest, int pe);
-
-template <typename T>
-__device__ void roc_shmem_atomic_inc(T *dest, int pe);
+///@{
+ATOMIC_INC_API_GEN(int64_t, int64)
+ATOMIC_INC_API_GEN(uint64_t, uint64)
+// ATOMIC_INC_API_GEN(long long, longlong)
+// ATOMIC_INC_API_GEN(unsigned long long, ulonglong)
+// ATOMIC_INC_API_GEN(size_t, size)
+// ATOMIC_INC_API_GEN(ptrdiff_t, ptrdiff)
+///@}
 
 /**
- * @brief Guarantees order between messages in this context in accordance with
- * OpenSHMEM semantics.
- *
- * This function can be called from divergent control paths at per-thread
- * granularity. However, performance may be improved if the caller can
- * coalesce contiguous messages and elect a leader thread to call into the
- * ROC_SHMEM function.
- *
- * @param[in] ctx Context with which to perform this operation.
- *
- * @return void.
- *
- */
-__device__ void roc_shmem_fence(roc_shmem_ctx_t ctx);
-
-__device__ void roc_shmem_fence();
-
-/**
- * @brief Completes all previous operations posted to this context.
- *
- * This function can be called from divergent control paths at per-thread
- * granularity. However, performance may be improved if the caller can
- * coalesce contiguous messages and elect a leader thread to call into the
- * ROC_SHMEM function.
- *
- * @param[in] ctx Context with which to perform this operation.
- *
- * @return void.
- *
- */
-__device__ void roc_shmem_quiet(roc_shmem_ctx_t ctx);
-
-__device__ void roc_shmem_quiet();
-
-/**
- * @brief Query the total number of PEs.
- *
- * Can be called per thread with no performance penalty.
- *
- * @param[in] wg_handle GPU side handle.
- *
- * @return Total number of PEs.
- *
- */
-__device__ int roc_shmem_n_pes(roc_shmem_ctx_t ctx);
-
-/**
- * @brief Query the PE ID of the caller.
- *
- * Can be called per thread with no performance penalty.
- *
- * @param[in] wg_handle GPU side handle
- *
- * @return PE ID of the caller.
- *
- */
-__device__ int roc_shmem_my_pe(roc_shmem_ctx_t ctx);
-
-/**
- * @brief Perform an allreduce between PEs in the active set. The caller
- * is blocked until the reduction completes.
- *
- * This function must be called as a work-group collective.
- *
- * @param[in] dest         Destination address. Must be an address on the
- *                         symmetric heap.
- * @param[in] source       Source address. Must be an address on the symmetric
-                           heap.
- * @param[in] nreduce      Size of the buffer to participate in the reduction.
- * @param[in] PE_start     PE to start the reduction.
- * @param[in] logPE_stride Stride of PEs participating in the reduction.
- * @param[in] PE_size      Number PEs participating in the reduction.
- * @param[in] pWrk         Temporary work buffer provided to ROC_SHMEM. Must
- *                         be of size at least max(size/2 + 1,
-                           SHMEM_REDUCE_MIN_WRKDATA_SIZE).
- * @param[in] pSync        Temporary sync buffer provided to ROC_SHMEM. Must
-                           be of size at least SHMEM_REDUCE_SYNC_SIZE.
- * @param[in] handle       GPU side handle.
- *
- * @return void
- *
- */
-template<typename T, ROC_SHMEM_OP Op>
-__device__ void roc_shmem_wg_to_all(roc_shmem_ctx_t ctx, T *dest,
-                                    const T *source, int nreduce, int PE_start,
-                                    int logPE_stride, int PE_size, T *pWrk,
-                                    long *pSync);
-
-
-/**
- * @brief Perform a broadcast between PEs in the active set. The caller
- * is blocked until the broadcase completes.
- *
- * This function must be called as a work-group collective.
- *
- * @param[in] dest         Destination address. Must be an address on the
- *                         symmetric heap.
- * @param[in] source       Source address. Must be an address on the symmetric
-                           heap.
- * @param[in] nelement     Size of the buffer to participate in the broadcast.
- * @param[in] PE_root      Zero-based ordinal of the PE, with respect to the
-                           active set, from which the data is copied
- * @param[in] PE_start     PE to start the reduction.
- * @param[in] logPE_stride Stride of PEs participating in the reduction.
- * @param[in] PE_size      Number PEs participating in the reduction.
- * @param[in] pSync        Temporary sync buffer provided to ROC_SHMEM. Must
-                           be of size at least SHMEM_REDUCE_SYNC_SIZE.
- *
- * @return void
- *
- */
-template <typename T>
-__device__ void
-roc_shmem_wg_broadcast(roc_shmem_ctx_t ctx,
-                       T *dest,
-                       const T *source,
-                       int nelement,
-                       int PE_root,
-                       int PE_start,
-                       int logPE_stride,
-                       int PE_size,
-                       long *pSync);
-
-/**
- * @brief perform a collective barrier between all PEs in the system.
- * The caller is blocked until the barrier is resolved.
- *
- * This function must be called as a work-group collective.
- *
- * @param[in] handle GPU side handle.
- *
- * @return void
- *
- */
-__device__ void roc_shmem_wg_barrier_all(roc_shmem_ctx_t ctx);
-
-/**
- * @brief registers the arrival of a PE at a barrier.
- * The caller is blocked until the synchronization is resolved.
- *
- * In contrast with the shmem_barrier_all routine, shmem_sync_all only ensures
- * completion and visibility of previously issued memory stores and does not
- * ensure completion of remote memory updates issued via OpenSHMEM routines.
- *
- * This function must be called as a work-group collective.
- *
- * @param[in] handle GPU side handle.
- *
- * @return void
- *
- */
-__device__ void roc_shmem_wg_sync_all(roc_shmem_ctx_t ctx);
-
-/**
+ * @name SHMEM_WAIT_UNTIL
  * @brief Block the caller until the condition (* \p ptr \p cmps \p val) is
  * true.
  *
@@ -899,12 +1615,26 @@ __device__ void roc_shmem_wg_sync_all(roc_shmem_ctx_t ctx);
  * @param[in] val Value to compare the memory at \p ptr to.
  *
  * @return void
- *
  */
-template <typename T>
-__device__ void roc_shmem_wait_until(T *ptr, roc_shmem_cmps cmp, T val);
+///@{
+WAIT_UNTIL_API_GEN(float, float)
+WAIT_UNTIL_API_GEN(double, double)
+WAIT_UNTIL_API_GEN(char, char)
+// WAIT_UNTIL_API_GEN(long double, longdouble)
+WAIT_UNTIL_API_GEN(signed char, schar)
+WAIT_UNTIL_API_GEN(short, short)                        // NOLINT(runtime/int)
+WAIT_UNTIL_API_GEN(int, int)
+WAIT_UNTIL_API_GEN(long, long)                          // NOLINT(runtime/int)
+WAIT_UNTIL_API_GEN(long long, longlong)                 // NOLINT(runtime/int)
+WAIT_UNTIL_API_GEN(unsigned char, uchar)
+WAIT_UNTIL_API_GEN(unsigned short, ushort)              // NOLINT(runtime/int)
+WAIT_UNTIL_API_GEN(unsigned int, uint)
+WAIT_UNTIL_API_GEN(unsigned long, ulong)                // NOLINT(runtime/int)
+WAIT_UNTIL_API_GEN(unsigned long long, ulonglong)       // NOLINT(runtime/int)
+///@}
 
 /**
+ * @name SHMEM_TEST
  * @brief test if the condition (* \p ptr \p cmps \p val) is
  * true.
  *
@@ -918,72 +1648,639 @@ __device__ void roc_shmem_wait_until(T *ptr, roc_shmem_cmps cmp, T val);
  * @param[in] val Value to compare the memory at \p ptr to.
  *
  * @return 1 if the evaluation is true else 0
- *
  */
-template <typename T>
-__device__ int roc_shmem_test(T *ptr, roc_shmem_cmps cmp, T val);
+///@{
+TEST_API_GEN(float, float)
+TEST_API_GEN(double, double)
+TEST_API_GEN(char, char)
+// TEST_API_GEN(long double, longdouble)
+TEST_API_GEN(signed char, schar)
+TEST_API_GEN(short, short)                              // NOLINT(runtime/int)
+TEST_API_GEN(int, int)
+TEST_API_GEN(long, long)                                // NOLINT(runtime/int)
+TEST_API_GEN(long long, longlong)                       // NOLINT(runtime/int)
+TEST_API_GEN(unsigned char, uchar)
+TEST_API_GEN(unsigned short, ushort)                    // NOLINT(runtime/int)
+TEST_API_GEN(unsigned int, uint)
+TEST_API_GEN(unsigned long, ulong)                      // NOLINT(runtime/int)
+TEST_API_GEN(unsigned long long, ulonglong)             // NOLINT(runtime/int)
+///@}
 
+
+/******************************************************************************
+ ***************************** API EXTENSIONS *********************************
+ *****************************************************************************/
+
+/*
+ * MACRO DECLARE SHMEMX_PUT APIs
+ */
+#define PUT_API_EXT_GEN(GRAN, T, TNAME) \
+    __device__ void \
+    roc_shmemx_ctx_##TNAME##_put_##GRAN(roc_shmem_ctx_t ctx, \
+                                        T *dest, \
+                                        const T *source, \
+                                        size_t nelems, \
+                                        int pe); \
+    __device__ void \
+    roc_shmemx_##TNAME##_put_##GRAN(T *dest, \
+                                    const T *source, \
+                                    size_t nelems, \
+                                    int pe);
+
+/*
+ * MACRO DECLARE SHMEMX_GET APIs
+ */
+#define GET_API_EXT_GEN(GRAN, T, TNAME) \
+    __device__ void \
+    roc_shmemx_ctx_##TNAME##_get_##GRAN(roc_shmem_ctx_t ctx, \
+                                        T *dest, \
+                                        const T *source, \
+                                        size_t nelems, \
+                                        int pe); \
+    __device__ void \
+    roc_shmemx_##TNAME##_get_##GRAN(T *dest, \
+                                    const T *source, \
+                                    size_t nelems, \
+                                    int pe);
+
+/*
+ * MACRO DECLARE SHMEMX_PUT_NBI APIs
+ */
+#define PUT_NBI_API_EXT_GEN(GRAN, T, TNAME) \
+    __device__ void \
+    roc_shmemx_ctx_##TNAME##_put_nbi_##GRAN(roc_shmem_ctx_t ctx, \
+                                            T *dest, \
+                                            const T *source, \
+                                            size_t nelems, \
+                                            int pe); \
+    __device__ void \
+    roc_shmemx_##TNAME##_put_nbi_##GRAN(T *dest, \
+                                        const T *source, \
+                                        size_t nelems, \
+                                        int pe);
+
+/*
+ * MACRO DECLARE SHMEMX_GET_NBI APIs
+ */
+#define GET_NBI_API_EXT_GEN(GRAN, T, TNAME) \
+    __device__ void \
+    roc_shmemx_ctx_##TNAME##_get_nbi_##GRAN(roc_shmem_ctx_t ctx, \
+                                            T *dest, \
+                                            const T *source, \
+                                            size_t nelems, \
+                                            int pe); \
+    __device__ void \
+    roc_shmemx_##TNAME##_get_nbi_##GRAN(T *dest, \
+                                        const T *source, \
+                                        size_t nelems, \
+                                        int pe);
 
 /**
- * @brief Query a local pointer to a symmetric data object on the
- * specified \pe . Returns an address that may be used to directly reference
- * dest on the specified \pe. This address can be accesses with LD/ST ops.
+ * @brief Writes contiguous data of \p nelems bytes from \p source on the
+ * calling PE to \p dest at \p pe. The caller will block until the operation
+ * completes locally (it is safe to reuse \p source). The caller must
+ * call into roc_shmem_quiet() if remote completion is required.
  *
- * Can be called per thread with no performance penalty.
+ * This function can be called from divergent control paths at per-wave
+ * granularity. However, all threads in a wave must participate in the
+ * call using the same parameters.
  *
+ * @param[in] ctx    Context with which to perform this operation.
+ * @param[in] dest   Destination address. Must be an address on the symmetric
+ *                   heap.
+ * @param[in] source Source address. Must be an address on the symmetric heap.
+ * @param[in] nelems Size of the transfer in number of elements.
+ * @param[in] pe     PE of the remote process.
+ *
+ * @return void.
  */
-__device__ void* roc_shmem_ptr(const void * dest, int pe);
+__device__ void
+roc_shmemx_ctx_putmem_wave(roc_shmem_ctx_t ctx,
+                           void *dest,
+                           const void *source,
+                           size_t nelems,
+                           int pe);
+
+__device__ void
+roc_shmemx_putmem_wave(void *dest,
+                       const void *source,
+                       size_t nelems,
+                       int pe);
 
 /**
- * @brief Query the current time. Similar to gettimeofday() on the CPU. To use
- * this function, ROC_SHMEM must be configured with profiling support
- * (--enable-profile).
+ * @brief Writes contiguous data of \p nelems bytes from \p source on the
+ * calling PE to \p dest at \p pe. The caller will block until the operation
+ * completes locally (it is safe to reuse \p source). The caller must
+ * call into roc_shmem_quiet() if remote completion is required.
  *
- * Can be called per thread with no performance penalty.
+ * This function can be called from divergent control paths at per-workgroup
+ * (WG) granularity. However, all threads in the workgroup must participate in
+ * the call using the same parameters.
  *
- * @return Time in micro-seconds.
+ * @param[in] ctx    Context with which to perform this operation.
+ * @param[in] dest   Destination address. Must be an address on the symmetric
+ *                   heap.
+ * @param[in] source Source address. Must be an address on the symmetric heap.
+ * @param[in] nelems Size of the transfer in number of elements.
+ * @param[in] pe     PE of the remote process.
  *
+ * @return void.
  */
-__device__ uint64_t roc_shmem_timer();
+__device__ void
+roc_shmemx_ctx_putmem_wg(roc_shmem_ctx_t ctx,
+                         void *dest,
+                         const void *source,
+                         size_t nelems,
+                         int pe);
+
+__device__ void
+roc_shmemx_putmem_wg(void *dest,
+                     const void *source,
+                     size_t nelems,
+                     int pe);
 
 /**
- * @brief Enable the timers and profilers at runtime.
+ * @brief Writes contiguous data of \p nelems elements from \p source on the
+ * calling PE to \p dest at \p pe. The caller will block until the operation
+ * completes locally (it is safe to reuse \p source). The caller must
+ * call into roc_shmem_quiet() if remote completion is required.
  *
- * Can be called per thread with no performance penalty.
+ * This function can be called from divergent control paths at per-wave
+ * granularity. However, all threads in a wave must collectively participate
+ * in the call using the same arguments
  *
- * @param[in] wg_handle GPU-side handle.
+ * @param[in] ctx    Context with which to perform this operation.
+ * @param[in] dest   Destination address. Must be an address on the symmetric
+ *                   heap.
+ * @param[in] source Source address. Must be an address on the symmetric heap.
+ * @param[in] nelems Size of the transfer in number of elements.
+ * @param[in] pe     PE of the remote process.
  *
- * @return void
- *
+ * @return void.
  */
-__device__ void profiler_enable(roc_shmem_ctx_t ctx);
+///@{
+PUT_API_EXT_GEN(wave, float, float)
+PUT_API_EXT_GEN(wave, double, double)
+PUT_API_EXT_GEN(wave, char, char)
+// PUT_API_EXT_GEN(wave, long double, longdouble)
+PUT_API_EXT_GEN(wave, signed char, schar)
+PUT_API_EXT_GEN(wave, short, short)                     // NOLINT(runtime/int)
+PUT_API_EXT_GEN(wave, int, int)
+PUT_API_EXT_GEN(wave, long, long)                       // NOLINT(runtime/int)
+PUT_API_EXT_GEN(wave, long long, longlong)              // NOLINT(runtime/int)
+PUT_API_EXT_GEN(wave, unsigned char, uchar)
+PUT_API_EXT_GEN(wave, unsigned short, ushort)           // NOLINT(runtime/int)
+PUT_API_EXT_GEN(wave, unsigned int, uint)
+PUT_API_EXT_GEN(wave, unsigned long, ulong)             // NOLINT(runtime/int)
+PUT_API_EXT_GEN(wave, unsigned long long, ulonglong)    // NOLINT(runtime/int)
+///@}
 
 /**
- * @brief Set SKIP to \p status. This is useful for warmup iterations.
+ * @brief Writes contiguous data of \p nelems elements from \p source on the
+ * calling PE to \p dest at \p pe. The caller will block until the operation
+ * completes locally (it is safe to reuse \p source). The caller must
+ * call into roc_shmem_quiet() if remote completion is required.
  *
- * Can be called per thread with no performance penalty.
+ * This function can be called from divergent control paths at per-workgroub (WG)
+ * granularity. However, All threads in a WG must collectively participate in
+ * the call using the same arguments.
  *
- * @param[in] wg_handle GPU-side handle.
- * @param[in] status    Status of skip.
+ * @param[in] ctx    Context with which to perform this operation.
+ * @param[in] dest   Destination address. Must be an address on the symmetric
+ *                   heap.
+ * @param[in] source Source address. Must be an address on the symmetric heap.
+ * @param[in] nelems Size of the transfer in number of elements.
+ * @param[in] pe     PE of the remote process.
  *
- * @return void
- *
+ * @return void.
  */
-__device__ void profiler_skip(roc_shmem_ctx_t ctx, bool status);
+///@{
+PUT_API_EXT_GEN(wg, float, float)
+PUT_API_EXT_GEN(wg, double, double)
+PUT_API_EXT_GEN(wg, char, char)
+// PUT_API_EXT_GEN(wg, long double, longdouble)
+PUT_API_EXT_GEN(wg, signed char, schar)
+PUT_API_EXT_GEN(wg, short, short)                       // NOLINT(runtime/int)
+PUT_API_EXT_GEN(wg, int, int)
+PUT_API_EXT_GEN(wg, long, long)                         // NOLINT(runtime/int)
+PUT_API_EXT_GEN(wg, long long, longlong)                // NOLINT(runtime/int)
+PUT_API_EXT_GEN(wg, unsigned char, uchar)
+PUT_API_EXT_GEN(wg, unsigned short, ushort)             // NOLINT(runtime/int)
+PUT_API_EXT_GEN(wg, unsigned int, uint)
+PUT_API_EXT_GEN(wg, unsigned long, ulong)               // NOLINT(runtime/int)
+PUT_API_EXT_GEN(wg, unsigned long long, ulonglong)      // NOLINT(runtime/int)
+///@}
 
 /**
- * @brief Make all uncacheable GPU data visible to other agents in the sytem.
+ * @brief Reads contiguous data of \p nelems bytes from \p source on \p pe
+ * to \p dest on the calling PE. The calling work-group will block until the
+ * operation completes (data has been placed in \p dest).
  *
- * This only works for data that was explicitly allocated uncacheable on the
- * GPU!
+ * This function can be called from divergent control paths at per-wave
+ * granularity. However, all threads in a the wave must participate in the
+ * call using the same parameters
  *
- * Can be called per thread with no performance penalty.
+ * @param[in] ctx     Context with which to perform this operation.
+ * @param[in] dest    Destination address. Must be an address on the symmetric
+ *                    heap.
+ * @param[in] source  Source address. Must be an address on the symmetric heap.
+ * @param[in] nelems  Size of the transfer in bytes.
+ * @param[in] pe      PE of the remote process.
  *
- * @param[in] GPU-side handle.
- *
- * @return void
- *
+ * @return void.
  */
-__device__ void roc_shmem_threadfence_system(roc_shmem_ctx_t ctx);
+__device__ void
+roc_shmemx_ctx_getmem_wave(roc_shmem_ctx_t ctx,
+                           void *dest,
+                           const void *source,
+                           size_t nelems,
+                           int pe);
 
-#endif
+__device__ void
+roc_shmemx_getmem_wave(void *dest,
+                       const void *source,
+                       size_t nelems,
+                       int pe);
+
+/**
+ * @brief Reads contiguous data of \p nelems bytes from \p source on \p pe
+ * to \p dest on the calling PE. The calling work-group will block until the
+ * operation completes (data has been placed in \p dest).
+ *
+ * This function can be called from divergent control paths at per-workgroup
+ * (WG) granularity. However, all threads in the workgroup must participate
+ * in the call using the same parameters
+ *
+ * @param[in] ctx     Context with which to perform this operation.
+ * @param[in] dest    Destination address. Must be an address on the symmetric
+ *                    heap.
+ * @param[in] source  Source address. Must be an address on the symmetric heap.
+ * @param[in] nelems  Size of the transfer in bytes.
+ * @param[in] pe      PE of the remote process.
+ *
+ * @return void.
+ */
+__device__ void
+roc_shmemx_ctx_getmem_wg(roc_shmem_ctx_t ctx,
+                         void *dest,
+                         const void *source,
+                         size_t nelems,
+                         int pe);
+
+__device__ void
+roc_shmemx_getmem_wg(void *dest,
+                     const void *source,
+                     size_t nelems,
+                     int pe);
+
+/**
+ * @brief Reads contiguous data of \p nelems elements from \p source on \p pe
+ * to \p dest on the calling PE. The calling work-group will block until the
+ * operation completes (data has been placed in \p dest).
+ *
+ * This function can be called from divergent control paths at per-wave
+ * granularity. However,  all threads in the wave must participate in the
+ * call using the same parameters
+ *
+ * @param[in] ctx     Context with which to perform this operation.
+ * @param[in] dest    Destination address. Must be an address on the symmetric
+ *                    heap.
+ * @param[in] source  Source address. Must be an address on the symmetric heap.
+ * @param[in] nelems  Size of the transfer in bytes.
+ * @param[in] pe      PE of the remote process.
+ *
+ * @return void.
+ */
+///@{
+GET_API_EXT_GEN(wave, float, float)
+GET_API_EXT_GEN(wave, double, double)
+GET_API_EXT_GEN(wave, char, char)
+// GET_API_EXT_GEN(wave, long double, longdouble)
+GET_API_EXT_GEN(wave, signed char, schar)
+GET_API_EXT_GEN(wave, short, short)                     // NOLINT(runtime/int)
+GET_API_EXT_GEN(wave, int, int)
+GET_API_EXT_GEN(wave, long, long)                       // NOLINT(runtime/int)
+GET_API_EXT_GEN(wave, long long, longlong)              // NOLINT(runtime/int)
+GET_API_EXT_GEN(wave, unsigned char, uchar)
+GET_API_EXT_GEN(wave, unsigned short, ushort)           // NOLINT(runtime/int)
+GET_API_EXT_GEN(wave, unsigned int, uint)
+GET_API_EXT_GEN(wave, unsigned long, ulong)             // NOLINT(runtime/int)
+GET_API_EXT_GEN(wave, unsigned long long, ulonglong)    // NOLINT(runtime/int)
+///@}
+
+/**
+ * @brief Reads contiguous data of \p nelems elements from \p source on \p pe
+ * to \p dest on the calling PE. The calling work-group will block until the
+ * operation completes (data has been placed in \p dest).
+ *
+ * This function can be called from divergent control paths at per-workgroup
+ * granularity. However,  all threads in the workgroup must participate in
+ * the call using the same parameters
+ *
+ * @param[in] ctx     Context with which to perform this operation.
+ * @param[in] dest    Destination address. Must be an address on the symmetric
+ *                    heap.
+ * @param[in] source  Source address. Must be an address on the symmetric heap.
+ * @param[in] nelems  Size of the transfer in bytes.
+ * @param[in] pe      PE of the remote process.
+ *
+ * @return void.
+ */
+///@{
+GET_API_EXT_GEN(wg, float, float)
+GET_API_EXT_GEN(wg, double, double)
+GET_API_EXT_GEN(wg, char, char)
+// GET_API_EXT_GEN(wg, long double, longdouble)
+GET_API_EXT_GEN(wg, signed char, schar)
+GET_API_EXT_GEN(wg, short, short)                       // NOLINT(runtime/int)
+GET_API_EXT_GEN(wg, int, int)
+GET_API_EXT_GEN(wg, long, long)                         // NOLINT(runtime/int)
+GET_API_EXT_GEN(wg, long long, longlong)                // NOLINT(runtime/int)
+GET_API_EXT_GEN(wg, unsigned char, uchar)
+GET_API_EXT_GEN(wg, unsigned short, ushort)             // NOLINT(runtime/int)
+GET_API_EXT_GEN(wg, unsigned int, uint)
+GET_API_EXT_GEN(wg, unsigned long, ulong)               // NOLINT(runtime/int)
+GET_API_EXT_GEN(wg, unsigned long long, ulonglong)      // NOLINT(runtime/int)
+///@}
+
+/**
+ * @brief Writes contiguous data of \p nelems bytes from \p source on the
+ * calling PE to \p dest on \p pe. The operation is not blocking. The caller
+ * will return as soon as the request is posted. The caller must call
+ * roc_shmem_quiet() on the same context if completion notification is
+ * required.
+ *
+ * This function can be called from divergent control paths at per-wave
+ * granularity. However, all threads in a wave must call in with the same
+ * parameters
+ *
+ * @param[in] ctx     Context with which to perform this operation.
+ * @param[in] dest    Destination address. Must be an address on the symmetric
+                      heap.
+ * @param[in] source  Source address. Must be an address on the symmetric heap.
+ * @param[in] nelems  Size of the transfer in bytes.
+ * @param[in] pe      PE of the remote process.
+ *
+ * @return void.
+ */
+__device__ void
+roc_shmemx_ctx_putmem_nbi_wave(roc_shmem_ctx_t ctx,
+                               void *dest,
+                               const void *source,
+                               size_t nelems,
+                               int pe);
+
+__device__ void
+roc_shmemx_putmem_nbi_wave(void *dest,
+                           const void *source,
+                           size_t nelems,
+                           int pe);
+
+/**
+ * @brief Writes contiguous data of \p nelems elements from \p source on the
+ * calling PE to \p dest on \p pe. The operation is not blocking. The caller
+ * will return as soon as the request is posted. The caller must call
+ * roc_shmem_quiet() on the same context if completion notification is
+ * required.
+ *
+ * This function can be called from divergent control paths at per-wave
+ * granularity. However, all threads in the wave must call in with the same
+ * arguments.
+ *
+ * @param[in] ctx     Context with which to perform this operation.
+ * @param[in] dest    Destination address. Must be an address on the symmetric
+                      heap.
+ * @param[in] source  Source address. Must be an address on the symmetric heap.
+ * @param[in] nelems  Size of the transfer in bytes.
+ * @param[in] pe      PE of the remote process.
+ *
+ * @return void.
+ */
+///@{
+PUT_NBI_API_EXT_GEN(wave, float, float)
+PUT_NBI_API_EXT_GEN(wave, double, double)
+PUT_NBI_API_EXT_GEN(wave, char, char)
+// PUT_NBI_API_EXT_GEN(wave, long double, longdouble)
+PUT_NBI_API_EXT_GEN(wave, signed char, schar)
+PUT_NBI_API_EXT_GEN(wave, short, short)                 // NOLINT(runtime/int)
+PUT_NBI_API_EXT_GEN(wave, int, int)
+PUT_NBI_API_EXT_GEN(wave, long, long)                   // NOLINT(runtime/int)
+PUT_NBI_API_EXT_GEN(wave, long long, longlong)          // NOLINT(runtime/int)
+PUT_NBI_API_EXT_GEN(wave, unsigned char, uchar)
+PUT_NBI_API_EXT_GEN(wave, unsigned short, ushort)       // NOLINT(runtime/int)
+PUT_NBI_API_EXT_GEN(wave, unsigned int, uint)
+PUT_NBI_API_EXT_GEN(wave, unsigned long, ulong)         // NOLINT(runtime/int)
+PUT_NBI_API_EXT_GEN(wave, unsigned long long, ulonglong)             // NOLINT
+///@}
+
+/**
+ * @brief Writes contiguous data of \p nelems bytes from \p source on the
+ * calling PE to \p dest on \p pe. The operation is not blocking. The caller
+ * will return as soon as the request is posted. The caller must call
+ * roc_shmem_quiet() on the same context if completion notification is
+ * required.
+ *
+ * This function can be called from divergent control paths at per-workgroup
+ * granularity. However, all threads in a WG must call in with the same
+ * parameters
+ *
+ * @param[in] ctx     Context with which to perform this operation.
+ * @param[in] dest    Destination address. Must be an address on the symmetric
+                      heap.
+ * @param[in] source  Source address. Must be an address on the symmetric heap.
+ * @param[in] nelems  Size of the transfer in bytes.
+ * @param[in] pe      PE of the remote process.
+ *
+ * @return void.
+ */
+__device__ void
+roc_shmemx_ctx_putmem_nbi_wg(roc_shmem_ctx_t ctx,
+                             void *dest,
+                             const void *source,
+                             size_t nelems,
+                             int pe);
+
+__device__ void
+roc_shmemx_putmem_nbi_wg(void *dest,
+                         const void *source,
+                         size_t nelems,
+                         int pe);
+
+/**
+ * @brief Writes contiguous data of \p nelems elements from \p source on the
+ * calling PE to \p dest on \p pe. The operation is not blocking. The caller
+ * will return as soon as the request is posted. The caller must call
+ * roc_shmem_quiet() on the same context if completion notification is
+ * required.
+ *
+ * This function can be called from divergent control paths at per-workgroup
+ * granularity. However, all threads in the WG must call in with the sameo
+ * arguments.
+ *
+ * @param[in] ctx     Context with which to perform this operation.
+ * @param[in] dest    Destination address. Must be an address on the symmetric
+                      heap.
+ * @param[in] source  Source address. Must be an address on the symmetric heap.
+ * @param[in] nelems  Size of the transfer in bytes.
+ * @param[in] pe      PE of the remote process.
+ *
+ * @return void.
+ */
+///@{
+PUT_NBI_API_EXT_GEN(wg, float, float)
+PUT_NBI_API_EXT_GEN(wg, double, double)
+PUT_NBI_API_EXT_GEN(wg, char, char)
+// PUT_NBI_API_EXT_GEN(wg, long double, longdouble)
+PUT_NBI_API_EXT_GEN(wg, signed char, schar)
+PUT_NBI_API_EXT_GEN(wg, short, short)                   // NOLINT(runtime/int)
+PUT_NBI_API_EXT_GEN(wg, int, int)
+PUT_NBI_API_EXT_GEN(wg, long, long)                     // NOLINT(runtime/int)
+PUT_NBI_API_EXT_GEN(wg, long long, longlong)            // NOLINT(runtime/int)
+PUT_NBI_API_EXT_GEN(wg, unsigned char, uchar)
+PUT_NBI_API_EXT_GEN(wg, unsigned short, ushort)         // NOLINT(runtime/int)
+PUT_NBI_API_EXT_GEN(wg, unsigned int, uint)
+PUT_NBI_API_EXT_GEN(wg, unsigned long, ulong)           // NOLINT(runtime/int)
+PUT_NBI_API_EXT_GEN(wg, unsigned long long, ulonglong)  // NOLINT(runtime/int)
+///@}
+
+/**
+ * @brief Reads contiguous data of \p nelems bytes from \p source on \p pe
+ * to \p dest on the calling PE. The operation is not blocking. The caller
+ * will return as soon as the request is posted. The caller must call
+ * roc_shmem_quiet() on the same context if completion notification is
+ * required.
+ *
+ * This function can be called from divergent control paths at per-wave
+ * granularity. However, all threads in the wave must call in with the same
+ * arguments.
+ *
+ * @param[in] ctx     Context with which to perform this operation.
+ * @param[in] dest    Destination address. Must be an address on the symmetric
+ *                    heap.
+ * @param[in] source  Source address. Must be an address on the symmetric heap.
+ * @param[in] nelems  Size of the transfer in bytes.
+ * @param[in] pe      PE of the remote process.
+ *
+ * @return void.
+ */
+__device__ void
+roc_shmemx_ctx_getmem_nbi_wave(roc_shmem_ctx_t ctx,
+                               void *dest,
+                               const void *source,
+                               size_t nelems,
+                               int pe);
+
+__device__ void
+roc_shmemx_getmem_nbi_wave(void *dest,
+                           const void *source,
+                           size_t nelems,
+                           int pe);
+
+/**
+ * @brief Reads contiguous data of \p nelems elements from \p source on \p pe
+ * to \p dest on the calling PE. The operation is not blocking. The caller
+ * will return as soon as the request is posted. The caller must call
+ * roc_shmem_quiet() on the same context if completion notification is
+ * required.
+ *
+ * This function can be called from divergent control paths at per-wave
+ * granularity. However, all threads in the wave must call in with the same
+ * arguments.
+ *
+ * @param[in] ctx     Context with which to perform this operation.
+ * @param[in] dest    Destination address. Must be an address on the symmetric
+ *                    heap.
+ * @param[in] source  Source address. Must be an address on the symmetric heap.
+ * @param[in] nelems  Size of the transfer in bytes.
+ * @param[in] pe      PE of the remote process.
+ *
+ * @return void.
+ */
+///@{
+GET_NBI_API_EXT_GEN(wave, float, float)
+GET_NBI_API_EXT_GEN(wave, double, double)
+GET_NBI_API_EXT_GEN(wave, char, char)
+// GET_NBI_API_EXT_GEN(wave, long double, longdouble)
+GET_NBI_API_EXT_GEN(wave, signed char, schar)
+GET_NBI_API_EXT_GEN(wave, short, short)                 // NOLINT(runtime/int)
+GET_NBI_API_EXT_GEN(wave, int, int)
+GET_NBI_API_EXT_GEN(wave, long, long)                   // NOLINT(runtime/int)
+GET_NBI_API_EXT_GEN(wave, long long, longlong)          // NOLINT(runtime/int)
+GET_NBI_API_EXT_GEN(wave, unsigned char, uchar)
+GET_NBI_API_EXT_GEN(wave, unsigned short, ushort)       // NOLINT(runtime/int)
+GET_NBI_API_EXT_GEN(wave, unsigned int, uint)
+GET_NBI_API_EXT_GEN(wave, unsigned long, ulong)         // NOLINT(runtime/int)
+GET_NBI_API_EXT_GEN(wave, unsigned long long, ulonglong)             // NOLINT
+///@}
+
+/**
+ * @brief Reads contiguous data of \p nelems bytes from \p source on \p pe
+ * to \p dest on the calling PE. The operation is not blocking. The caller
+ * will return as soon as the request is posted. The caller must call
+ * roc_shmem_quiet() on the same context if completion notification is
+ * required.
+ *
+ * This function can be called from divergent control paths at per-workgroup
+ * granularity. However, all threads in the WG must call in with the same
+ * arguments.
+ *
+ * @param[in] ctx     Context with which to perform this operation.
+ * @param[in] dest    Destination address. Must be an address on the symmetric
+ *                    heap.
+ * @param[in] source  Source address. Must be an address on the symmetric heap.
+ * @param[in] nelems  Size of the transfer in bytes.
+ * @param[in] pe      PE of the remote process.
+ *
+ * @return void.
+ */
+__device__ void
+roc_shmemx_ctx_getmem_nbi_wg(roc_shmem_ctx_t ctx,
+                             void *dest,
+                             const void *source,
+                             size_t nelems,
+                             int pe);
+
+__device__ void
+roc_shmemx_getmem_nbi_wg(void *dest,
+                         const void *source,
+                         size_t nelems,
+                         int pe);
+
+/**
+ * @brief Reads contiguous data of \p nelems elements from \p source on \p pe
+ * to \p dest on the calling PE. The operation is not blocking. The caller
+ * will return as soon as the request is posted. The caller must call
+ * roc_shmem_quiet() on the same context if completion notification is
+ * required.
+ *
+ * This function can be called from divergent control paths at per-workgroup
+ * granularity. However, all threads in the WG must call in with the same
+ * arguments.
+ *
+ * @param[in] ctx     Context with which to perform this operation.
+ * @param[in] dest    Destination address. Must be an address on the symmetric
+ *                    heap.
+ * @param[in] source  Source address. Must be an address on the symmetric heap.
+ * @param[in] nelems  Size of the transfer in bytes.
+ * @param[in] pe      PE of the remote process.
+ *
+ * @return void.
+ */
+///@{
+GET_NBI_API_EXT_GEN(wg, float, float)
+GET_NBI_API_EXT_GEN(wg, double, double)
+GET_NBI_API_EXT_GEN(wg, char, char)
+// GET_NBI_API_EXT_GEN(wg, long double, longdouble)
+GET_NBI_API_EXT_GEN(wg, signed char, schar)
+GET_NBI_API_EXT_GEN(wg, short, short)                   // NOLINT(runtime/int)
+GET_NBI_API_EXT_GEN(wg, int, int)
+GET_NBI_API_EXT_GEN(wg, long, long)                     // NOLINT(runtime/int)
+GET_NBI_API_EXT_GEN(wg, long long, longlong)            // NOLINT(runtime/int)
+GET_NBI_API_EXT_GEN(wg, unsigned char, uchar)
+GET_NBI_API_EXT_GEN(wg, unsigned short, ushort)         // NOLINT(runtime/int)
+GET_NBI_API_EXT_GEN(wg, unsigned int, uint)
+GET_NBI_API_EXT_GEN(wg, unsigned long, ulong)           // NOLINT(runtime/int)
+GET_NBI_API_EXT_GEN(wg, unsigned long long, ulonglong)  // NOLINT(runtime/int)
+///@}
+
+#endif  // LIBRARY_INCLUDE_ROC_SHMEM_HPP_

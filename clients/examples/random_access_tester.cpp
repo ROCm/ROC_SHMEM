@@ -75,7 +75,7 @@ RandomAccessTest(int loop,
     roc_shmem_wg_init();
     roc_shmem_wg_ctx_create(ctx_type, &ctx);
 
-    int pe = roc_shmem_my_pe(ctx);
+    int pe = roc_shmem_ctx_my_pe(ctx);
     int offset;
     int PE;
 
@@ -90,17 +90,17 @@ RandomAccessTest(int loop,
                 start = roc_shmem_timer();
             switch (type) {
                 case GetType:
-                    roc_shmem_getmem(ctx, r_buf, s_buf, size, PE);
+                    roc_shmem_ctx_getmem(ctx, r_buf, s_buf, size, PE);
                     break;
                 case PutType:
-                    roc_shmem_putmem(ctx, (char*)r_buf, (char*)s_buf, size, PE);
+                    roc_shmem_ctx_putmem(ctx, (char*)r_buf, (char*)s_buf, size, PE);
                     break;
                 default:
                     break;
             }
         }
 
-        roc_shmem_quiet(ctx);
+        roc_shmem_ctx_quiet(ctx);
 
         atomicAdd((unsigned long long *) &timer[hipBlockIdx_x],
                     roc_shmem_timer() - start);

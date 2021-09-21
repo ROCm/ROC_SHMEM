@@ -1,0 +1,59 @@
+# Builds for host-facing support
+
+As of July 29, 2021 (when support for host-facing functions was merged in),
+we are running it with MPICH-3.4 and UCX-1.10.0.
+
+## Background
+
+MPICH-3.4 does not have support for HIP (GPU support in MPICH checks whether
+the buffer is on the host or the device).
+
+UCX-1.10.0 claims it does not support GPU-aware communication for RMA
+operations. As of the time of this writing, this claim remains even on the
+latest UCX version (1.11.0 and the master branch). UCX developers to merge
+in stable GPU-aware support by the end of 2021.
+
+A side note: OSU microbechmarks with RoCM memory hang with UCX-1.10.0
+(during ucp_mem_map() which is called by MPI_Win_create()).
+I don't see this hang with the latest version of UCX.
+
+So, for RoCM memory, MPICH-3.4 still offloads RMA operations to UCX.
+
+## So, how does it work with the current builds?
+
+Theoretically, there are no limitations preventing GPU-aware RDMA
+communicaiton. As long as the GPU memory is registered with the NIC,
+the NIC can perform operations on device memory.
+
+Even though UCX claims to not support GPU-aware RMA communication, it does
+not check whether or not the buffer being passed in is a device or host
+buffer. So, as long as the device memory being used is registered with the
+NIC (this does occur during MPI_Win_create), we are good.
+
+UCX claims to not support GPU-aware communication because they have
+not added in support for the different types of scenarios that could
+exist in a system (eg, when a system does not have GPU-direct). The
+scope of ROC_SHMEM is currenlty limited to configurations that UCX
+already supports.
+
+## But the main branch of MPICH does support HIP now?
+
+Since MPICH is going off of UCX's claim that it does not support
+GPU-aware RMA communication, MPICH executes its RMA operations
+using active messages when it notices that the buffer is a GPU
+buffer. So, if we use MPICH with HIP support, we end up using
+active-message implementations unnecessarily, and hence lose
+a lot of performance.
+
+## Moving forward
+
+We should switch to using MPICH "correctly" (i.e. with HIP support)
+only when UCX officially claims to support GPU-aware RMA
+communication because that is when MPICH will offload MPI
+RMA operations to UCX RMA operations.
+
+But if there is a need for MPICH's HIP support for GPU IPC (unsure
+if this is needed for now), we will need an alternative. In the
+current MPICH configuration, communication between processes on
+the same node are funneled through the netmod (UCX in our case) as
+well.
