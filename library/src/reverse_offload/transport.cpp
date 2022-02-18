@@ -413,7 +413,7 @@ convertOp(ROC_SHMEM_OP op)
     }
 }
 
-static MPI_Op
+static MPI_Datatype
 convertType(ro_net_types type)
 {
     switch(type) {

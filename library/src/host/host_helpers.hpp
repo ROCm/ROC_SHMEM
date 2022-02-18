@@ -32,9 +32,9 @@ HostInterface::compute_offset(const void *dest,
     MPI_Aint dest_disp;
     MPI_Aint start_disp;
 
-    assert((reinterpret_cast<char*>(dest) >=
+    assert((reinterpret_cast<const char*>(dest) >=
             reinterpret_cast<char*>(win_start)) &&
-           (reinterpret_cast<char*>(dest) <
+           (reinterpret_cast<const char*>(dest) <
             reinterpret_cast<char*>(win_end)));
 
     MPI_Get_address(dest, &dest_disp);
