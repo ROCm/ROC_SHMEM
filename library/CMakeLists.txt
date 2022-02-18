@@ -27,7 +27,6 @@ cmake_minimum_required(VERSION 3.16.3 FATAL_ERROR)
 ###############################################################################
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_COMPILER /opt/rocm/bin/hipcc)
 set(CMAKE_CXX_FLAGS_DEBUG "-O0 -ggdb")
 
 ###############################################################################
