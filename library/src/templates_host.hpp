@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2020 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -20,8 +20,8 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef TEMPLATES_HOST_H
-#define TEMPLATES_HOST_H
+#ifndef ROCSHMEM_LIBRARY_SRC_TEMPLATES_HOST_HPP
+#define ROCSHMEM_LIBRARY_SRC_TEMPLATES_HOST_HPP
 
 #include <roc_shmem.hpp>
 
@@ -37,6 +37,8 @@
 /******************************************************************************
  **************************** HOST FUNCTIONS **********************************
  *****************************************************************************/
+
+namespace rocshmem {
 
 template <typename T>
 __host__ void roc_shmem_put(roc_shmem_ctx_t ctx, T *dest, const T *source,
@@ -149,4 +151,6 @@ __host__ void roc_shmem_wait_until(T *ptr, roc_shmem_cmps cmp, T val);
 template <typename T>
 __device__ int roc_shmem_test(T *ptr, roc_shmem_cmps cmp, T val);
 
-#endif
+}  // namespace rocshmem
+
+#endif  // ROCSHMEM_LIBRARY_SRC_TEMPLATES_HOST_HPP

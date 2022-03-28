@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2020 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -20,12 +20,14 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef WF_COAL_POLICY_HPP
-#define WF_COAL_POLICY_HPP
+#ifndef ROCSHMEM_LIBRARY_SRC_WF_COAL_POLICY_HPP
+#define ROCSHMEM_LIBRARY_SRC_WF_COAL_POLICY_HPP
 
 #include "config.h"
 
 #include <hip/hip_runtime.h>
+
+namespace rocshmem {
 
 class WfCoalOn
 {
@@ -66,4 +68,6 @@ typedef WfCoalOn WavefrontCoalescer;
 typedef WfCoalOff WavefrontCoalescer;
 #endif
 
-#endif // WF_COAL_POLICY_HPP
+}  // namespace rocshmem
+
+#endif  // ROCSHMEM_LIBRARY_SRC_WF_COAL_POLICY_HPP

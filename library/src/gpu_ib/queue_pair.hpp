@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2021 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -20,8 +20,8 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef LIBRARY_SRC_GPU_IB_QUEUE_PAIR_HPP_
-#define LIBRARY_SRC_GPU_IB_QUEUE_PAIR_HPP_
+#ifndef ROCSHMEM_LIBRARY_SRC_GPU_IB_QUEUE_PAIR_HPP
+#define ROCSHMEM_LIBRARY_SRC_GPU_IB_QUEUE_PAIR_HPP
 
 /**
  * @file queue_pair.hpp
@@ -34,12 +34,14 @@
 
 #include <infiniband/mlx5dv.h>
 
-#include "atomic_return.hpp"
+#include "../atomic_return.hpp"
 #include "config.h"  // NOLINT(build/include_subdir)
 #include "connection_policy.hpp"
 #include "hdp_policy.hpp"
 #include "stats.hpp"
 #include "thread_policy.hpp"
+
+namespace rocshmem {
 
 class GPUIBBackend;
 
@@ -48,9 +50,9 @@ enum gpu_ib_stats {
     UPDATE_WQE,
     POLL_CQ,
     NEXT_CQ,
-    RTN_QUIET_COUNT,
-    RTN_DB_COUNT,
-    RTN_WQE_COUNT,
+    QUIET_COUNT,
+    DB_COUNT,
+    WQE_COUNT,
     MEM_WAIT,
     INIT,
     FINALIZE,
@@ -79,6 +81,12 @@ class QueuePair {
      */
     __device__ void
     waitCQSpace(int num_msgs);
+
+    /**
+     * TODO(bpotter): document
+     */
+    __device__ void
+    waitSQSpace(int num_msgs);
 
     /**
      * TODO(bpotter): document
@@ -213,8 +221,20 @@ class QueuePair {
     /**
      * TODO(bpotter): document
      */
+    __device__ void
+    set_completion_flag_on_wqe(int num_wqes);
+
+    /**
+     * TODO(bpotter): document
+     */
     template<bool cqe>
-    __device__ void update_wqe_ce(int num_wqes);
+    __device__ void update_wqe_ce_single(int num_wqes);
+
+    /**
+     * TODO(bpotter): document
+     */
+    template<bool cqe>
+    __device__ void update_wqe_ce_thread(int num_wqes);
 
     /**
      * TODO(bpotter): document
@@ -285,11 +305,12 @@ class QueuePair {
 
     ConnectionImpl connection_policy;
 
-    char **base_heap = nullptr;
+    char * const* base_heap {nullptr};
     /*
      * Current index into the SQ (non-modulo size).
      */
     uint32_t sq_counter = 0;
+    uint32_t local_sq_cnt = 0;
 
     /*
      * Number of outstanding messages on this QP that need to be completed
@@ -339,4 +360,6 @@ class QueuePair {
     friend DCConnectionImpl;
 };
 
-#endif  // LIBRARY_SRC_GPU_IB_QUEUE_PAIR_HPP_
+}  // namespace rocshmem
+
+#endif  // ROCSHMEM_LIBRARY_SRC_GPU_IB_QUEUE_PAIR_HPP

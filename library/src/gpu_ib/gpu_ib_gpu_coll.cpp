@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2021 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -22,9 +22,11 @@
 
 #include <roc_shmem.hpp>
 
-#include "context.hpp"
+#include "context_incl.hpp"
 #include "gpu_ib_gpu_templates.hpp"
 #include "util.hpp"
+
+namespace rocshmem {
 
 __device__ void
 GPUIBContext::internal_direct_barrier(int pe,
@@ -91,3 +93,5 @@ GPUIBContext::barrier_all() {
     }
     __syncthreads();
 }
+
+}  // namespace rocshmem

@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -20,8 +20,8 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef UTIL_H
-#define UTIL_H
+#ifndef ROCSHMEM_LIBRARY_SRC_UTIL_HPP
+#define ROCSHMEM_LIBRARY_SRC_UTIL_HPP
 
 #include <hip/hip_runtime.h>
 
@@ -29,71 +29,56 @@
 #include <hsa/hsa_ext_amd.h>
 
 #include "config.h"
+#include "constants.hpp"
 
+namespace rocshmem {
 
-__device__  inline int _uncached_load_ubyte (uint8_t* src)
-{
+__device__  inline int
+uncached_load_ubyte(uint8_t* src) {
     int ret;
     __asm__  volatile("global_load_ubyte %0 %1 off glc slc \n"
                        "s_waitcnt vmcnt(0)"
-                      : "=v" (ret)
-                      : "v" (src));
+                : "=v" (ret)
+                : "v" (src));
     return ret;
 }
 
-
-template<typename T>
-__device__ inline T _uncached_load_ (T * src)
-{
+template <typename T>
+__device__ inline T
+uncached_load(T* src) {
     T ret;
-    switch(sizeof(T))
-    {
-        case 4 :  __asm__  volatile("global_load_dword %0 %1 off glc slc \n"
-                       "s_waitcnt vmcnt(0)"
-                      : "=v" (ret)
-                      : "v" (src));
+    switch(sizeof(T)) {
+      case 4:
+        __asm__  volatile("global_load_dword %0 %1 off glc slc \n"
+                          "s_waitcnt vmcnt(0)"
+                    : "=v" (ret)
+                    : "v" (src));
+        break;
+      case 8:
+        __asm__  volatile("global_load_dwordx2 %0 %1 off glc slc \n"
+                          "s_waitcnt vmcnt(0)"
+                    : "=v" (ret)
+                    : "v" (src));
             break;
-        case 8 :  __asm__  volatile("global_load_dwordx2 %0 %1 off glc slc \n"
-                       "s_waitcnt vmcnt(0)"
-                      : "=v" (ret)
-                      : "v" (src));
-            break;
-        default:
-            break;
+      default:
+        break;
     }
     return ret;
 }
 
-
-
-
 #define LOAD(VAR) __atomic_load_n((VAR), __ATOMIC_SEQ_CST)
 #define STORE(DST, SRC) __atomic_store_n((DST), (SRC), __ATOMIC_SEQ_CST)
 
-#define CHECK_HIP(cmd) \
-{\
-    hipError_t error  = cmd;\
+#define CHECK_HIP(cmd) {\
+    hipError_t error = cmd;\
     if (error != hipSuccess) { \
         fprintf(stderr, "error: '%s'(%d) at %s:%d\n", \
-                hipGetErrorString(error), error,__FILE__, __LINE__); \
+                hipGetErrorString(error), error, __FILE__, __LINE__); \
         exit(EXIT_FAILURE);\
     }\
 }
 
-/**
- * @brief Enumerates the Backend derived classes.
- *
- * @note Derived classes which use Backend as a base class must add
- * themselves to this enum class to support static inheritance.
- */
-enum class BackendType
-{
-    RO_BACKEND,
-    GPU_IB_BACKEND
-};
-
-
-#define SFENCE()   asm volatile("sfence" ::: "memory")
+#define SFENCE() asm volatile("sfence" ::: "memory")
 
 #ifdef DEBUG
 # define DPRINTF(x) if (ROC_SHMEM_DEBUG) printf x
@@ -111,10 +96,9 @@ const extern int gpu_clock_freq_mhz;
 
 extern bool ROC_SHMEM_DEBUG;
 
-const int WF_SIZE = 64;
-
 /* Device-side internal functions */
 __device__ void __roc_inv();
+__device__ void __roc_flush();
 __device__ uint64_t __read_clock();
 
 #define HW_ID_WV_ID_OFFSET 0
@@ -131,53 +115,65 @@ __device__ uint64_t __read_clock();
 #define WVS_PER_CU 40
 #define WVS_PER_SE 640
 
-__device__ int get_hw_wv_index();
-__device__ int get_hw_cu_index();
+__device__ int
+get_hw_wv_index();
+
+__device__ int
+get_hw_cu_index();
 
 /*
  * Returns true if the caller's thread index is (0, 0, 0) in its block.
  */
-__device__ bool is_thread_zero_in_block();
+__device__ bool
+is_thread_zero_in_block();
 
 /*
  * Returns true if the caller's block index is (0, 0, 0) in its grid.  All
  * threads in the same block will return the same answer.
  */
-__device__ bool is_block_zero_in_grid();
+__device__ bool
+is_block_zero_in_grid();
 
 /*
  * Returns the number of threads in the caller's flattened thread block.
  */
-__device__ int get_flat_block_size();
+__device__ int
+get_flat_block_size();
 
 /*
  * Returns the flattened thread index of the calling thread within its
  * thread block.
  */
-__device__ int get_flat_block_id();
+__device__ int
+get_flat_block_id();
 
 /*
  * Returns the flattened block index that the calling thread is a member of in
  * in the grid. Callers from the same block will have the same index.
  */
-__device__ int get_flat_grid_id();
+__device__ int
+get_flat_grid_id();
 
 /*
  * Returns true if the caller's thread flad_id is 0 in its wave.
  */
-__device__ bool is_thread_zero_in_wave();
+__device__ bool
+is_thread_zero_in_wave();
 
 
-__device__ uint32_t lowerID();
-__device__ int wave_SZ();
+__device__ uint32_t
+lowerID();
+
+__device__ int
+wave_SZ();
 
 extern __constant__ int *print_lock;
 
 template <typename ...Args>
 __device__ void
-gpu_dprintf(const char *fmt, const Args &...args)
-{
-    for (int i = 0; i < WF_SIZE; i ++) {
+gpu_dprintf(const char* fmt,
+            const Args &...args) {
+    for (int i {0}; i < WF_SIZE; i ++) {
         if ((get_flat_block_id() % WF_SIZE) == i) {
             /*
              * GPU-wide global lock that ensures that both prints are executed
@@ -203,17 +199,28 @@ gpu_dprintf(const char *fmt, const Args &...args)
     }
 }
 
-__device__ void memcpy(void* dst, void* src, size_t size);
+__device__ void
+memcpy(void* dst, void* src, size_t size);
 
-__device__ void memcpy_wg(void* dst, void* src, size_t size);
+__device__ void
+memcpy_wg(void* dst, void* src, size_t size);
 
-__device__ void memcpy_wave(void* dst, void* src, size_t size);
+__device__ void
+memcpy_wave(void* dst, void* src, size_t size);
 
-int rocm_init();
+int
+rocm_init();
 
-void rocm_memory_lock_to_fine_grain(void *ptr, size_t size, void **gpu_ptr,
-                                    int gpu_id);
+void
+rocm_memory_lock_to_fine_grain(void* ptr,
+                               size_t size,
+                               void** gpu_ptr,
+                               int gpu_id);
 
 // Returns clock frequency used by s_memrealtime() in Mhz
-int wallClk_freq_mhz();
-#endif
+int
+wallClk_freq_mhz();
+
+}  // namespace rocshmem
+
+#endif  // ROCSHMEM_LIBRARY_SRC_UTIL_HPP

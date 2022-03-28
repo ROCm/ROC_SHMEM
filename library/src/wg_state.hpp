@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -20,10 +20,13 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef WGSTATE_H
-#define WGSTATE_H
+#ifndef ROCSHMEM_LIBRARY_SRC_WGSTATE_HPP
+#define ROCSHMEM_LIBRARY_SRC_WGSTATE_HPP
 
 #include "util.hpp"
+#include "wg_team_ctxs_policy.hpp"
+
+namespace rocshmem {
 
 class Context;
 
@@ -89,6 +92,11 @@ class WGState
      * Get the private context for this work-group.
      */
     __device__ Context * get_private_ctx() const { return wg_ctx; }
+
+    /**
+     * The policy to support team contexts
+     */
+    WGTeamCtxsPolicy team_ctxs_policy {};
 };
 
 /*
@@ -101,4 +109,6 @@ class WGState
  * them from Context.
  */
 
-#endif // WGSTATE_H
+}  // namespace rocshmem
+
+#endif  // ROCSHMEM_LIBRARY_SRC_WGSTATE_HPP

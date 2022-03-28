@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2021 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -20,22 +20,25 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef LIBRARY_SRC_HOST_HOST_HELPERS_HPP_
-#define LIBRARY_SRC_HOST_HOST_HELPERS_HPP_
+#ifndef ROCSHMEM_LIBRARY_SRC_HOST_HOST_HELPERS_HPP
+#define ROCSHMEM_LIBRARY_SRC_HOST_HOST_HELPERS_HPP
 
 #include "host.hpp"
+#include "window_info.hpp"
+
+namespace rocshmem {
 
 __host__ inline MPI_Aint
-HostInterface::compute_offset(const void *dest,
-                              void *win_start,
-                              void *win_end) {
-    MPI_Aint dest_disp;
-    MPI_Aint start_disp;
-
-    assert((reinterpret_cast<char*>(dest) >=
+HostInterface::compute_offset(const void* dest,
+                              void* win_start,
+                              void* win_end) {
+    assert((reinterpret_cast<char*>(const_cast<void*>(dest)) >=
             reinterpret_cast<char*>(win_start)) &&
-           (reinterpret_cast<char*>(dest) <
+           (reinterpret_cast<char*>(const_cast<void*>(dest)) <
             reinterpret_cast<char*>(win_end)));
+
+    MPI_Aint dest_disp {};
+    MPI_Aint start_disp {};
 
     MPI_Get_address(dest, &dest_disp);
     MPI_Get_address(win_start, &start_disp);
@@ -50,17 +53,17 @@ HostInterface::complete_all(MPI_Win win) {
 }
 
 __host__ inline void
-HostInterface::initiate_put(void *dest,
-                            const void *source,
+HostInterface::initiate_put(void* dest,
+                            const void* source,
                             size_t nelems,
                             int pe,
-                            WindowInfo *window_info) {
-    MPI_Win win = window_info->get_win();
-    void *win_start = window_info->get_start();
-    void *win_end = window_info->get_end();
+                            WindowInfo* window_info) {
+    MPI_Win win {window_info->get_win()};
+    void* win_start {window_info->get_start()};
+    void* win_end {window_info->get_end()};
 
     /* Calculate offset of remote dest from base address of window */
-    MPI_Aint offset = compute_offset(dest, win_start, win_end);
+    MPI_Aint offset {compute_offset(dest, win_start, win_end)};
 
     /*
      * Current semantics of our API restrict the buffers
@@ -70,21 +73,21 @@ HostInterface::initiate_put(void *dest,
      * NIC to DMA read the latest value instead of the
      * value that may have been cached in the HDP.
      */
-    hdp_policy->hdp_flush();
+    hdp_policy_->hdp_flush();
 
     /* Offload remote write operation to MPI */
     MPI_Put(source, nelems, MPI_CHAR, pe, offset, nelems, MPI_CHAR, win);
 }
 
 __host__ inline void
-HostInterface::initiate_get(void *dest,
-                            const void *source,
+HostInterface::initiate_get(void* dest,
+                            const void* source,
                             size_t nelems,
                             int pe,
-                            WindowInfo *window_info) {
-    MPI_Win win = window_info->get_win();
-    void *win_start = window_info->get_start();
-    void *win_end = window_info->get_end();
+                            WindowInfo* window_info) {
+    MPI_Win win {window_info->get_win()};
+    void* win_start {window_info->get_start()};
+    void* win_end {window_info->get_end()};
 
     /* Calculate offset of remote source from base address of window */
     MPI_Aint offset = compute_offset(source, win_start, win_end);
@@ -93,4 +96,6 @@ HostInterface::initiate_get(void *dest,
     MPI_Get(dest, nelems, MPI_CHAR, pe, offset, nelems, MPI_CHAR, win);
 }
 
-#endif  // LIBRARY_SRC_HOST_HOST_HELPERS_HPP_
+}  // namespace rocshmem
+
+#endif  // ROCSHMEM_LIBRARY_SRC_HOST_HOST_HELPERS_HPP

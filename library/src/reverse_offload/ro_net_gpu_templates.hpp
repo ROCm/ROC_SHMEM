@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -20,8 +20,8 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef RO_NET_GPU_TEMPLATES_H
-#define RO_NET_GPU_TEMPLATES_H
+#ifndef ROCSHMEM_LIBRARY_SRC_REVERSE_OFFLOAD_RO_NET_GPU_TEMPLATES_HPP
+#define ROCSHMEM_LIBRARY_SRC_REVERSE_OFFLOAD_RO_NET_GPU_TEMPLATES_HPP
 
 #include "config.h"
 
@@ -29,11 +29,12 @@
 #define HIP_ENABLE_PRINTF 1
 #endif
 
+#include "context_ro_device.hpp"
 #include "ro_net_internal.hpp"
-#include "context.hpp"
+#include "ro_net_team.hpp"
+#include "wg_state.hpp"
 
-
-
+namespace rocshmem {
 
 template<typename T> struct GetROType { };
 
@@ -82,6 +83,26 @@ template<> struct GetROType<long double>
 
 template <typename T, ROC_SHMEM_OP Op>
 __device__ void
+ROContext::to_all(roc_shmem_team_t team, T *dest, const T *source, int nreduce)
+{
+    if (!is_thread_zero_in_block()) {
+        __syncthreads();
+        return;
+    }
+
+    ROTeam *team_obj = reinterpret_cast<ROTeam *>(team);
+
+    build_queue_element(RO_NET_TEAM_TO_ALL,
+                        dest, (void *) source, nreduce,
+                        0, 0, 0, 0, nullptr, nullptr, team_obj->mpi_comm,
+                        (struct ro_net_wg_handle *) backend_ctx, true,
+                        Op, GetROType<T>::Type);
+
+    __syncthreads();
+}
+
+template <typename T, ROC_SHMEM_OP Op>
+__device__ void
 ROContext::to_all(T *dest, const T *source, int nreduce, int PE_start,
                   int logPE_stride, int PE_size, T *pWrk, long *pSync)
 {
@@ -96,7 +117,7 @@ ROContext::to_all(T *dest, const T *source, int nreduce, int PE_start,
      */
     build_queue_element(RO_NET_TO_ALL,
                         dest, (void *) source, nreduce, PE_start, logPE_stride,
-                        PE_size, 0, pWrk, pSync,
+                        PE_size, 0, pWrk, pSync, MPI_COMM_NULL,
                         (struct ro_net_wg_handle *) backend_ctx, true,
                         Op, GetROType<T>::Type);
 
@@ -110,9 +131,6 @@ ROContext::put(T *dest, const T *source, size_t nelems, int pe)
 
     size_t size = sizeof(T) * nelems;
     putmem((void*) dest, (void*) source, size, pe);
-    //build_queue_element(RO_NET_PUT, dest, (void *) source, size, pe, 0, 0, 0,
-    //                    nullptr, nullptr,
-    //                    (struct ro_net_wg_handle *) backend_ctx, true);
 
 }
 
@@ -122,26 +140,48 @@ ROContext::put_nbi(T *dest, const T *source, size_t nelems, int pe)
 {
     size_t size = sizeof(T) * nelems;
     putmem_nbi((void*) dest, (void*) source, size, pe);
-
-    //build_queue_element(RO_NET_PUT_NBI, dest, (void *) source, size, pe, 0,
-    //                    0, 0, nullptr, nullptr,
-    //                    (struct ro_net_wg_handle *) backend_ctx, true);
 }
 
 template <typename T>
 __device__ void
 ROContext::p(T *dest, T value, int pe)
 {
-    build_queue_element(RO_NET_P, dest, &value, sizeof(T), pe, 0, 0, 0, nullptr,
-                        nullptr, (struct ro_net_wg_handle *) backend_ctx,
+     if (ipcImpl_.isIpcAvailable(my_pe, pe)) {
+        uint64_t L_offset = reinterpret_cast<char*>(dest) - ipcImpl_.ipc_bases[my_pe];
+        ipcImpl_.ipcCopy(ipcImpl_.ipc_bases[pe] + L_offset,
+                         reinterpret_cast<void*>(&value),
+                         sizeof(T));
+    } else{
+        build_queue_element(RO_NET_P, dest, &value, sizeof(T), pe, 0, 0, 0, nullptr,
+                        nullptr, MPI_COMM_NULL, (struct ro_net_wg_handle *) backend_ctx,
                         true);
+    }
 }
 
 template <typename T>
 __device__ T
 ROContext::g(const T *source, int pe)
 {
-    assert("RO _g unimplemented\n");
+     if (ipcImpl_.isIpcAvailable(my_pe, pe)) {
+        const char *src_typed = reinterpret_cast<const char*>(source);
+        uint64_t L_offset = const_cast<char*>(src_typed) - ipcImpl_.ipc_bases[my_pe];
+        T dest;
+        ipcImpl_.ipcCopy(&dest,
+                         ipcImpl_.ipc_bases[pe] + L_offset,
+                         sizeof(T));
+        return dest;
+    } else {
+        int thread_id = get_flat_block_id();
+        int block_size = get_flat_block_size();
+        auto *wg_state = WGState::instance();
+        int offset = wg_state->get_global_buffer_id() * block_size + thread_id;
+
+        char *base_dest = backend_ctx->g_ret;
+        char *dest = &base_dest[offset *sizeof(int64_t)];
+        size_t nelems = sizeof(T);
+        get<T>((T*)dest, source, 1, pe);
+        return *(reinterpret_cast<T*> (dest));
+    }
 }
 
 template <typename T>
@@ -150,9 +190,6 @@ ROContext::get(T *dest, const T *source, size_t nelems, int pe)
 {
     size_t size = sizeof(T) * nelems;
     getmem((void*)dest, (void*) source, size, pe);
-    //build_queue_element(RO_NET_GET, dest, (void *) source, size, pe, 0, 0, 0,
-    //                    nullptr, nullptr,
-    //                    (struct ro_net_wg_handle *) backend_ctx, true);
 }
 
 template <typename T>
@@ -163,9 +200,30 @@ ROContext::get_nbi(T *dest, const T *source, size_t nelems, int pe)
     size_t size = sizeof(T) * nelems;
     getmem_nbi((void*)dest, (void*) source, size, pe);
 
-    //build_queue_element(RO_NET_GET_NBI, dest, (void *) source, size, pe, 0,
-    //                    0, 0, nullptr, nullptr,
-    //                    (struct ro_net_wg_handle *) backend_ctx, true);
+}
+
+template <typename T>
+__device__ void
+ROContext::broadcast(roc_shmem_team_t team,
+                     T *dest,
+                     const T *source,
+                     int nelems,
+                     int pe_root)
+{
+     if (!is_thread_zero_in_block()) {
+        __syncthreads();
+        return;
+    }
+
+    ROTeam *team_obj = reinterpret_cast<ROTeam *>(team);
+
+    build_queue_element(RO_NET_TEAM_BROADCAST,
+                        dest, (void *) source, nelems,
+                        0, 0, 0, pe_root, nullptr, nullptr, team_obj->mpi_comm,
+                        (struct ro_net_wg_handle *) backend_ctx, true, ROC_SHMEM_SUM,
+                        GetROType<T>::Type);
+
+    __syncthreads();
 }
 
 template <typename T>
@@ -190,7 +248,7 @@ ROContext::broadcast(T *dest,
      */
     build_queue_element(RO_NET_BROADCAST,
                         dest, (void *) source, nelems, pe_start, log_pe_stride,
-                        pe_size, pe_root, nullptr, p_sync,
+                        pe_size, pe_root, nullptr, p_sync, MPI_COMM_NULL,
                         (struct ro_net_wg_handle *) backend_ctx, true, ROC_SHMEM_SUM,
                         GetROType<T>::Type);
 
@@ -269,5 +327,6 @@ ROContext::get_nbi_wave(T *dest, const T *source, size_t nelems, int pe)
     getmem_nbi_wave((void*)dest, (void*) source, size, pe);
 }
 
+}  // namespace rocshmem
 
-#endif // RO_NET_GPU_TEMPLATES_H
+#endif  // ROCSHMEM_LIBRARY_SRC_REVERSE_OFFLOAD_RO_NET_GPU_TEMPLATES_HPP

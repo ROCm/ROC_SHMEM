@@ -1,5 +1,5 @@
 ###############################################################################
-# Copyright (c) 2020 Advanced Micro Devices, Inc. All rights reserved.
+# Copyright (c) 2022 Advanced Micro Devices, Inc. All rights reserved.
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -26,14 +26,22 @@
 target_sources(
   ${PROJECT_NAME}
   PRIVATE
-    util.cpp
-    roc_shmem_gpu.cpp
-    context.cpp
+    atomic_return.cpp
+    backend_bc.cpp
+    context_host.cpp
+    context_device.cpp
+    device_mutex.cpp
     hdp_policy.cpp
+    ipc_policy.cpp
+    mpi_init_singleton.cpp
+    roc_shmem_gpu.cpp
     roc_shmem.cpp
+    team.cpp
+    team_tracker.cpp
+    util.cpp
     wf_coal_policy.cpp
     wg_state.cpp
-    backend.cpp
+    wg_team_ctxs_policy.cpp
 )
 
 target_include_directories(
@@ -60,3 +68,4 @@ target_compile_options(
 add_subdirectory(gpu_ib)
 add_subdirectory(reverse_offload)
 add_subdirectory(host)
+add_subdirectory(memory)

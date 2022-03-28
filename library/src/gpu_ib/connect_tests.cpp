@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2021 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -26,6 +26,8 @@
 #include "dynamic_connection.hpp"
 #include "reliable_connection.hpp"
 
+namespace rocshmem {
+
 // requires defined use_hdp_map to work
 
 // test with different use_ib_hca
@@ -51,3 +53,5 @@ main(int argc, char **argv) {
     testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }
+
+}  // namespace rocshmem

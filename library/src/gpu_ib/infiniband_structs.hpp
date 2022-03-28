@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2021 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -20,10 +20,12 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef LIBRARY_SRC_GPU_IB_INFINIBAND_STRUCTS_HPP_
-#define LIBRARY_SRC_GPU_IB_INFINIBAND_STRUCTS_HPP_
+#ifndef ROCSHMEM_LIBRARY_SRC_GPU_IB_INFINIBAND_STRUCTS_HPP
+#define ROCSHMEM_LIBRARY_SRC_GPU_IB_INFINIBAND_STRUCTS_HPP
 
 #include <infiniband/mlx5dv.h>
+
+namespace rocshmem {
 
 typedef struct ib_mlx5_base_av {
     uint64_t dc_key;
@@ -42,4 +44,6 @@ union mlx5_segment {
     ib_mlx5_base_av_t base_av;
 };
 
-#endif  // LIBRARY_SRC_GPU_IB_INFINIBAND_STRUCTS_HPP_
+}  // namespace rocshmem
+
+#endif  // ROCSHMEM_LIBRARY_SRC_GPU_IB_INFINIBAND_STRUCTS_HPP

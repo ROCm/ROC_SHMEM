@@ -20,8 +20,8 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef LIBRARY_INCLUDE_ROC_SHMEM_HPP_
-#define LIBRARY_INCLUDE_ROC_SHMEM_HPP_
+#ifndef ROCSHMEM_LIBRARY_INCLUDE_ROC_SHMEM_HPP
+#define ROCSHMEM_LIBRARY_INCLUDE_ROC_SHMEM_HPP
 
 #include <hip/hip_runtime.h>
 
@@ -38,6 +38,8 @@
  *
  * http://openshmem.org/site/sites/default/site_files/OpenSHMEM-1.4.pdf
  */
+
+namespace rocshmem {
 
 enum ROC_SHMEM_OP {
     ROC_SHMEM_SUM,
@@ -56,6 +58,7 @@ enum class Status {
     ROC_SHMEM_UNKNOWN_ERROR,
     ROC_SHMEM_INVALID_ARGUMENTS,
     ROC_SHMEM_OOM_ERROR,
+    ROC_SHMEM_TOO_MANY_TEAMS_ERROR,
     ROC_SHMEM_SUCCESS,
 };
 
@@ -79,6 +82,18 @@ enum roc_shmem_thread_ops {
     ROC_SHMEM_THREAD_MULTIPLE
 };
 
+/**
+ * @brief Bitwise flags to mask configuration parameters.
+ */
+enum roc_shmem_team_configs {
+    ROC_SHMEM_TEAM_DEFAULT_CONFIGS,
+    ROC_SHMEM_TEAM_NUM_CONTEXTS
+};
+
+typedef struct {
+    int num_contexts;
+} roc_shmem_team_config_t;
+
 constexpr size_t ROC_SHMEM_REDUCE_MIN_WRKDATA_SIZE = 1024;
 constexpr size_t ROC_SHMEM_BARRIER_SYNC_SIZE = 256;
 constexpr size_t ROC_SHMEM_REDUCE_SYNC_SIZE = 256;
@@ -95,30 +110,24 @@ const int ROC_SHMEM_CTX_WG_PRIVATE = 8;
  * @brief GPU side OpenSHMEM context created from each work-groups'
  * roc_shmem_wg_handle_t
  */
-typedef uint64_t* roc_shmem_ctx_t;
+typedef struct {
+    void* ctx_opaque;
+    void* team_opaque;
+} roc_shmem_ctx_t;
 
 /**
  * Shmem default context.
  */
 extern __constant__ roc_shmem_ctx_t ROC_SHMEM_CTX_DEFAULT;
 
+typedef uint64_t* roc_shmem_team_t;
+extern roc_shmem_team_t ROC_SHMEM_TEAM_WORLD;
+
+const roc_shmem_team_t ROC_SHMEM_TEAM_INVALID = nullptr;
 
 /******************************************************************************
  **************************** HOST INTERFACE **********************************
  *****************************************************************************/
-/**
- * @brief Initialize the ROC_SHMEM runtime and underlying transport layer.
- *        Allocate GPU/CPU queues and optionally spawn progress threads.
- *
- * @param[in] num_wgs   (Optional) Communicate to ROC_SHMEM that launched
- *                      kernels will never exceed num_wgs number of work-groups
- *                      in a single grid launch. ROC_SHMEM can use this to
- *                      reduce memory utilization in some cases. If no argument
- *                      is provided, ROC_SHMEM will size resources based on
- *                      worst-case analysis of the target hardware.
- *
- * @return Status of the initialization.
- */
 __host__ Status
 roc_shmem_init(unsigned num_wgs = 0);
 
@@ -200,7 +209,7 @@ roc_shmem_malloc(size_t size);
  *
  * @return Status of the operation.
  */
-__host__ Status
+__host__ void
 roc_shmem_free(void* ptr);
 
 /**
@@ -218,6 +227,91 @@ roc_shmem_n_pes();
  */
 __host__ int
 roc_shmem_my_pe();
+
+/**
+ * @brief Translate the PE in src_team to that in dest_team.
+ *
+ * @param[in] src_team  Handle of the team from which to translate
+ * @param[in] src_pe    PE-of-interest's index in src_team
+ * @param[in] dest_team Handle of the team to which to translate
+ *
+ * @return PE of src_pe in dest_team. If any input is invalid
+ *         or if src_pe is not in both source and destination
+ *         teams, a value of -1 is returned.
+ */
+__host__ int
+roc_shmem_team_translate_pe(roc_shmem_team_t src_team,
+                            int src_pe,
+                            roc_shmem_team_t dest_team);
+
+/**
+ * @brief Query the number of PEs in a team.
+ *
+ * @param[in] team The team to query PE ID in.
+ *
+ * @return Number of PEs in the provided team.
+ */
+__host__ int
+roc_shmem_team_n_pes(roc_shmem_team_t team);
+
+/**
+ * @brief Query the PE ID of the caller in a team.
+ *
+ * @param[in] team The team to query PE ID in.
+ *
+ * @return PE ID of the caller in the provided team.
+ */
+__host__ int
+roc_shmem_team_my_pe(roc_shmem_team_t team);
+
+/**
+ * @brief Create a new a team of PEs. Must be called by all PEs
+ * in the parent team.
+ *
+ * @param[in] parent_team The team to split from.
+ * @param[in] start       The lowest PE number of the subset of the PEs
+ *                        from the parent team that will form the new
+ *                        team.
+ * @param[in] stide       The stride between team PE members in the
+ *                        parent team that comprise the subset of PEs
+ *                        that will form the new team.
+ * @param[in] size        The number of PEs in the new team.
+ * @param[in] config      Pointer to the config parameters for the new
+ *                        team.
+ * @param[in] config_mask Bitwise mask representing parameters to use
+ *                        from config
+ * @param[out] new_team   Pointer to the newly created team. If an error
+ *                        occurs during team creation, or if the PE in
+ *                        the parent team is not in the new team, the
+ *                        value will be ROC_SHMEM_TEAM_INVALID.
+ *
+ * @return Zero upon successful team creation; non-zero if erroneous.
+ */
+__host__ int
+roc_shmem_team_split_strided(roc_shmem_team_t parent_team,
+                             int start,
+                             int stride,
+                             int size,
+                             const roc_shmem_team_config_t *config,
+                             long config_mask,
+                             roc_shmem_team_t *new_team);
+
+/**
+ * @brief Destroy a team. Must be called by all PEs in the team.
+ * The user must destroy all private contexts created in the
+ * team before destroying this team. Otherwise, the behavior
+ * is undefined. This call will destroy only the shareable contexts
+ * created from the referenced team.
+ *
+ * @param[in] team The team to destroy. The behavior is undefined if
+ *                 the input team is ROC_SHMEM_TEAM_WORLD or any other
+ *                 invalid team. If the input is ROC_SHMEM_TEAM_INVALID,
+ *                 this function will not perform any operation.
+ *
+ * @return None.
+ */
+__host__ void
+roc_shmem_team_destroy(roc_shmem_team_t team);
 
 /**
  * @brief ROC_SHMEM makes extensive use of dynamic shared memory inside of
@@ -485,6 +579,11 @@ __device__ void
 roc_shmem_wg_ctx_create(int64_t options,
                         roc_shmem_ctx_t *ctx);
 
+__device__ int
+roc_shmem_wg_team_create_ctx(roc_shmem_team_t team,
+                             long options,
+                             roc_shmem_ctx_t *ctx);
+
 /**
  * @brief Destroys an OpenSHMEM context.
  *
@@ -698,6 +797,22 @@ __device__ int
 roc_shmem_my_pe();
 
 /**
+ * @brief Translate the PE in src_team to that in dest_team.
+ *
+ * @param[in] src_team  Handle of the team from which to translate
+ * @param[in] src_pe    PE-of-interest's index in src_team
+ * @param[in] dest_team Handle of the team to which to translate
+ *
+ * @return PE of src_pe in dest_team. If any input is invalid
+ *         or if src_pe is not in both source and destination
+ *         teams, a value of -1 is returned.
+ */
+__device__ int
+roc_shmem_team_translate_pe(roc_shmem_team_t src_team,
+                            int src_pe,
+                            roc_shmem_team_t dest_team);
+
+/**
  * @brief perform a collective barrier between all PEs in the system.
  * The caller is blocked until the barrier is resolved.
  *
@@ -784,6 +899,12 @@ roc_shmem_ctx_threadfence_system(roc_shmem_ctx_t ctx);
                                                  int PE_size, \
                                                  T *pWrk, \
                                                  long *pSync);  /* NOLINT */ \
+    __device__ void \
+    roc_shmem_ctx_##TNAME##_##Op_API##_wg_to_all(roc_shmem_ctx_t ctx, \
+                                                 roc_shmem_team_t team, \
+                                                 T *dest, \
+                                                 const T *source, \
+                                                 int nreduce); \
     __host__ void \
     roc_shmem_ctx_##TNAME##_##Op_API##_to_all(roc_shmem_ctx_t ctx, \
                                               T *dest, \
@@ -793,7 +914,13 @@ roc_shmem_ctx_threadfence_system(roc_shmem_ctx_t ctx);
                                               int logPE_stride, \
                                               int PE_size, \
                                               T *pWrk, \
-                                              long *pSync);     /* NOLINT */
+                                              long *pSync);     /* NOLINT */ \
+    __host__ void \
+    roc_shmem_ctx_##TNAME##_##Op_API##_to_all(roc_shmem_ctx_t ctx, \
+                                              roc_shmem_team_t team, \
+                                              T *dest, \
+                                              const T *source, \
+                                              int nreduce);
 
 #define ARITH_REDUCTION_API_GEN(T, TNAME) \
     REDUCTION_API_GEN(T, TNAME, sum) \
@@ -826,7 +953,7 @@ roc_shmem_ctx_threadfence_system(roc_shmem_ctx_t ctx);
                                          int pe_start, \
                                          int log_pe_stride, \
                                          int pe_size, \
-                                         long *p_sync);         /* NOLINT */ \
+                                         long *p_sync);                 /* NOLINT */ \
     __host__ void \
     roc_shmem_ctx_##TNAME##_broadcast(roc_shmem_ctx_t ctx, \
                                       T *dest, \
@@ -836,7 +963,21 @@ roc_shmem_ctx_threadfence_system(roc_shmem_ctx_t ctx);
                                       int pe_start, \
                                       int log_pe_stride, \
                                       int pe_size, \
-                                      long *p_sync);            /* NOLINT */
+                                      long *p_sync);                    /* NOLINT */ \
+    __device__ void \
+    roc_shmem_ctx_##TNAME##_wg_broadcast(roc_shmem_ctx_t ctx, \
+                                         roc_shmem_team_t team, \
+                                         T *dest, \
+                                         const T *source, \
+                                         int nelem, \
+                                         int pe_root);                  /* NOLINT */ \
+    __host__ void \
+    roc_shmem_ctx_##TNAME##_broadcast(roc_shmem_ctx_t ctx, \
+                                      roc_shmem_team_t team, \
+                                      T *dest, \
+                                      const T *source, \
+                                      int nelem, \
+                                      int pe_root);                  /* NOLINT */
 
 /*
  * MACRO DECLARE SHMEM_PUT APIs
@@ -2283,4 +2424,6 @@ GET_NBI_API_EXT_GEN(wg, unsigned long, ulong)           // NOLINT(runtime/int)
 GET_NBI_API_EXT_GEN(wg, unsigned long long, ulonglong)  // NOLINT(runtime/int)
 ///@}
 
-#endif  // LIBRARY_INCLUDE_ROC_SHMEM_HPP_
+}  // namespace rocshmem
+
+#endif  // ROCSHMEM_LIBRARY_INCLUDE_ROC_SHMEM_HPP

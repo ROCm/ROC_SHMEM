@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2021 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -20,8 +20,8 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef LIBRARY_SRC_GPU_IB_NETWORK_POLICY_HPP_
-#define LIBRARY_SRC_GPU_IB_NETWORK_POLICY_HPP_
+#ifndef ROCSHMEM_LIBRARY_SRC_GPU_IB_NETWORK_POLICY_HPP
+#define ROCSHMEM_LIBRARY_SRC_GPU_IB_NETWORK_POLICY_HPP
 
 #include <hip/hip_runtime.h>
 #include <mpi.h>
@@ -31,29 +31,93 @@
 #include "connection_policy.hpp"
 #include "hdp_policy.hpp"
 #include "stats.hpp"
+#include "symmetric_heap.hpp"
 
+struct ibv_mr;
+struct hdp_reg_t;
+
+namespace rocshmem {
+
+struct atomic_ret_t;
 class GPUIBBackend;
 class GPUIBContext;
 class GPUIBHostContext;
 class Connection;
 class QueuePair;
-struct atomic_ret_t;
-struct ibv_mr;
-struct hdp_reg_t;
 
 class NetworkOnImpl {
+ public:
+    Status dump_backend_stats(ROCStats *globalStats);
+
+    Status reset_backend_stats();
+
+    /**
+     * @brief setup the network resources and initialization for the
+     * GPUIBBackend
+     */
+    __host__ void
+    networkHostSetup(GPUIBBackend *B);
+
+    /**
+     * @brief deallocate and close the network resources
+     */
+    __host__ void
+    networkHostFinalize();
+
+    /**
+     * @brief calculates the size of the shared (LDS) resources needed
+     * when network is used
+     */
+    __host__ uint32_t
+    networkDynamicShared();
+
+    /**
+     * @brief initialize the network resources for each context
+     */
+    __host__ void
+    networkHostInit(GPUIBContext *ctx,
+                    int buffer_id);
+
+    /**
+     * @brief initialize the network resources for each context on GPU side
+     */
+    __device__ void
+    networkGpuInit(GPUIBContext *ctx,
+                   int buffer_id);
+
+    /**
+     * @brief returns the QP for the targeted pe
+     */
+    __device__ __host__ QueuePair*
+    getQueuePair(QueuePair *qp,
+                 int pe);
+
+    /**
+     * @brief returns the numbers of QPs used per the calling PE
+     */
+    __device__ __host__ int
+    getNumQueuePairs();
+
+    /**
+     * @brief returns the number of PEs accessible via network
+     */
+    __device__ __host__ int
+    getNumDest() {
+        return num_pes;
+    }
+
  protected:
     /**
      * @brief flag to indicated that the helper thread reach this milestone
      */
-    volatile bool network_init_done = false;
+    volatile bool network_init_done {false};
 
     Status
     heap_memory_rkey(char *local_heap_base,
                      int heap_size,
                      MPI_Comm thread_comm);
 
-     /**
+    /**
      * @brief Exchange HDP information between all processing elements.
      *
      * Each device has a Host Data Path (HDP) associated with it must be
@@ -113,32 +177,30 @@ class NetworkOnImpl {
      * the return of g shmem ops (eg: shmem_int_g)
      */
     void
-    roc_shmem_g_init(char *my_heap_base,
-                     size_t *current_offset,
-                     int MAX_WG_SIZE,
+    roc_shmem_g_init(SymmetricHeap* heap_handle,
                      MPI_Comm thread_comm);
 
-     /**
+    /**
      * @brief The backend delegates some InfiniBand connection setup to
      * the Connection class.
      */
-    Connection *connection = nullptr;
+    Connection *connection {nullptr};
 
  public:
     /**
      * @brief Number of PEs. Get directly from the GPUIBBackend.
      */
-    int num_pes;
+    int num_pes {0};
 
     /**
      * @brief This PE's rank.
      */
-    int my_pe;
+    int my_pe {-1};
 
     /**
      * @brief Number of WG that will be performing communication
      */
-    int num_wg;
+    int num_wg {0};
 
     /**
      * @brief Holds InfiniBand remote keys for HDP memory regions.
@@ -153,7 +215,7 @@ class NetworkOnImpl {
      * class does not do much besides initialize this data structure and
      * hold it until the QueuePair can consume it.
      */
-    uint32_t *hdp_rkey = nullptr;
+    uint32_t *hdp_rkey {nullptr};
 
     /**
      * @brief Holds HDP register addresses for each processing element.
@@ -171,18 +233,12 @@ class NetworkOnImpl {
      * class does not do much besides initialize this data structure and
      * hold it until the QueuePair can consume it.
      */
-    uintptr_t *hdp_address = nullptr;
+    uintptr_t *hdp_address {nullptr};
 
     /**
-     * @brief Control struct for atomic memory region.
-     *
-     * The atomic region is used by the atomic operations which have return
-     * values. The library user does not need to provide an address for the
-     * return value so we are forced to do it on their behalf.
-     *
-     * @todo Remove the "rtn" naming scheme from struct.
+     * @brief Handle for the HDP memory region.
      */
-    atomic_ret_t *atomic_ret = nullptr;
+    ibv_mr *hdp_mr {nullptr};
 
     /**
      * @brief Set of QueuePairs used by device to do networking.
@@ -196,7 +252,7 @@ class NetworkOnImpl {
      * owning Context. Should then consider pushing into base class since
      * it's not gpu-ib specific.
      */
-    QueuePair *gpu_qps = nullptr;
+    QueuePair *gpu_qps {nullptr};
 
     /**
      * @brief C-array of symmetric heap base pointers.
@@ -205,29 +261,33 @@ class NetworkOnImpl {
      * virtual address for each processing element that we can communicate
      * with.
      */
-    uint32_t *heap_rkey = nullptr;
+    uint32_t *heap_rkey {nullptr};
 
     /**
      * @brief Handle for the symmetric heap memory region.
      */
-    ibv_mr *heap_mr = nullptr;
+    ibv_mr *heap_mr {nullptr};
 
     /**
-     * @brief Handle for the HDP memory region.
+     * @brief Local key for the symmetric heap memory region.
      */
-    ibv_mr *hdp_mr = nullptr;
+    uint32_t lkey {0};
+
+    /**
+     * @brief Control struct for atomic memory region.
+     *
+     * The atomic region is used by the atomic operations which have return
+     * values. The library user does not need to provide an address for the
+     * return value so we are forced to do it on their behalf.
+     */
+    atomic_ret_t *atomic_ret {nullptr};
 
     /**
      * @brief Handle for the atomic memory region.
      *
      * @todo Provide more descriptive variable name.
      */
-    ibv_mr *mr = nullptr;
-
-    /**
-     * @brief Local key for the symmetric heap memory region.
-     */
-    uint32_t lkey = 0;
+    ibv_mr *mr {nullptr};
 
     /**
      * @brief Buffer used to store the results of a *_g operation.
@@ -235,7 +295,7 @@ class NetworkOnImpl {
      * These operations do not provide a destination buffer so the runtime
      * must manage one.
      */
-    char *g_ret = nullptr;
+    char *g_ret {nullptr};
 
     /**
      * @brief Compile-time configuration policy for InfiniBand connections.
@@ -244,98 +304,11 @@ class NetworkOnImpl {
      * Dynamic connection types. By default, Reliable connections are
      * created.
      */
-    ConnectionImpl *connection_policy = nullptr;
-
-    Status dump_backend_stats(ROCStats *globalStats);
-
-    Status reset_backend_stats();
-
-    /**
-     * @brief setup the network resources and initialization for the
-     * GPUIBBackend
-     */
-    __host__ void
-    networkHostSetup(GPUIBBackend *B);
-
-     /**
-     * @brief dealloc and close the network  resources
-     */
-    __host__ void
-    networkHostFinalize();
-
-    /**
-     * @brief calculates the size of teh Shared (LDS) resources needed
-     * when network is used
-     */
-    __host__ uint32_t
-    networkDynamicShared();
-
-    /**
-     * @brief initialize the network resouces for each context
-     */
-    __host__ void
-    networkHostInit(GPUIBContext *ctx,
-                    int buffer_id);
-
-    /**
-     * @brief initialize the network resouces for each context on GPU side
-     */
-    __device__ void
-    networkGpuInit(GPUIBContext *ctx,
-                   int buffer_id);
-
-    /*
-     * @brief returns the QP for the targeted pe
-     */
-    __device__ __host__ QueuePair*
-    getQueuePair(QueuePair *qp,
-                 int pe);
-
-    /*
-     * @brief returns the numbers of QPs used per the calling PE
-     */
-    __device__ __host__ int
-    getNumQueuePairs();
-
-    /*
-     * @brief returns the number of PEs accessible via network
-     */
-    __device__ __host__ int
-    getNumDest() {
-        return num_pes;
-    }
+    ConnectionImpl *connection_policy {nullptr};
 };
 
 class NetworkOffImpl {
  public:
-    int num_pes = 0;
-
-    int my_pe = -1;
-
-    int num_wg = 0;
-
-    uint32_t *hdp_rkey = nullptr;
-
-    uintptr_t *hdp_address = nullptr;
-
-    atomic_ret_t *atomic_ret = nullptr;
-
-    QueuePair *gpu_qps = nullptr;
-
-    uint32_t *heap_rkey = nullptr;
-
-    ibv_mr *heap_mr = nullptr;
-
-    ibv_mr *hdp_mr = nullptr;
-
-    ibv_mr *mr = nullptr;
-
-    uint32_t lkey = 0;
-
-    char *g_ret = nullptr;
-
-    ConnectionImpl *connection_policy = nullptr;
-
     Status
     dump_backend_stats(ROCStats *globalStats) {
         return Status::ROC_SHMEM_SUCCESS;
@@ -384,6 +357,35 @@ class NetworkOffImpl {
     getNumDest() {
         return 0;
     }
+
+ public:
+    int num_pes {0};
+
+    int my_pe {-1};
+
+    int num_wg {0};
+
+    uint32_t *hdp_rkey {nullptr};
+
+    uintptr_t *hdp_address {nullptr};
+
+    ibv_mr *hdp_mr {nullptr};
+
+    QueuePair *gpu_qps {nullptr};
+
+    uint32_t *heap_rkey {nullptr};
+
+    ibv_mr *heap_mr {nullptr};
+
+    uint32_t lkey {0};
+
+    atomic_ret_t *atomic_ret {nullptr};
+
+    ibv_mr *mr {nullptr};
+
+    char *g_ret {nullptr};
+
+    ConnectionImpl *connection_policy {nullptr};
 };
 
 /*
@@ -395,4 +397,6 @@ typedef NetworkOffImpl NetworkImpl;
 typedef NetworkOnImpl NetworkImpl;
 #endif
 
-#endif  // LIBRARY_SRC_GPU_IB_NETWORK_POLICY_HPP_
+}  // namespace rocshmem
+
+#endif  // ROCSHMEM_LIBRARY_SRC_GPU_IB_NETWORK_POLICY_HPP

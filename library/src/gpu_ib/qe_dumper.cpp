@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2021 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -22,66 +22,70 @@
 
 #include "qe_dumper.hpp"
 
+namespace rocshmem {
+
 QeDumper::QeDumper(int dest_pe,
                    int src_wg,
                    int index)
-    : _dest_pe(dest_pe),
-      _src_wg(src_wg),
-      _index(index) {
-    void *temp = malloc(sizeof(GPUIBBackend*));
-    _gpu_backend = static_cast<GPUIBBackend*>(temp);
+    : dest_pe_(dest_pe),
+      src_wg_(src_wg),
+      index_(index) {
+    void* temp = malloc(sizeof(GPUIBBackend*));
+    gpu_backend_ = static_cast<GPUIBBackend*>(temp);
 
-    GPUIBBackend *gpu_handle_address;
-    hipGetSymbolAddress(reinterpret_cast<void**>(&gpu_handle_address),
-                        HIP_SYMBOL(gpu_handle));
+    GPUIBBackend* device_backend_proxy_address;
+    CHECK_HIP(hipGetSymbolAddress(reinterpret_cast<void**>(&device_backend_proxy_address),
+                        HIP_SYMBOL(device_backend_proxy)));
 
-    hipMemcpy(&_gpu_backend,
-              gpu_handle_address,
-              sizeof(GPUIBBackend*),
-              hipMemcpyDeviceToHost);
+    CHECK_HIP(hipMemcpy(&gpu_backend_,
+                        device_backend_proxy_address,
+                        sizeof(GPUIBBackend*),
+                        hipMemcpyDeviceToHost));
 
-    int qp_offset = _gpu_backend->num_wg * _dest_pe + _src_wg;
+    int qp_offset = gpu_backend_->num_wg * dest_pe_ + src_wg_;
 
-    _qp = &(_gpu_backend->networkImpl.gpu_qps[qp_offset]);
+    qp_ = &(gpu_backend_->networkImpl.gpu_qps[qp_offset]);
 }
 
 QeDumper::~QeDumper() {
-    if (_gpu_backend) {
-        free(_gpu_backend);
+    if (gpu_backend_) {
+        free(gpu_backend_);
     }
 }
 
 void
 QeDumper::dump_cq() {
-    _type = "CQ";
+    type_ = "CQ";
 
-    auto *raw_cqe = &(_qp->current_cq_q_H[_index]);
-    _raw_u64 = reinterpret_cast<uint64_t*>(raw_cqe);
+    auto *raw_cqe = &(qp_->current_cq_q_H[index_]);
+    raw_u64_ = reinterpret_cast<uint64_t*>(raw_cqe);
 
-    _dump_uint64(8);
+    dump_uint64_(8);
 }
 
 void
 QeDumper::dump_sq() {
-    _type = "SQ";
+    type_ = "SQ";
 
-    auto *raw_sqe = &(_qp->current_sq_H[_index * 8]);
-    _raw_u64 = reinterpret_cast<uint64_t*>(raw_sqe);
+    auto *raw_sqe = &(qp_->current_sq_H[index_ * 8]);
+    raw_u64_ = reinterpret_cast<uint64_t*>(raw_sqe);
 
-    _dump_uint64(8);
+    dump_uint64_(8);
 }
 
 void
-QeDumper::_dump_uint64(size_t num_elems) const {
+QeDumper::dump_uint64_(size_t num_elems) const {
     printf("%s(%d, %d, %d) *** = ",
-           _type.c_str(),
-           _dest_pe,
-           _src_wg,
-           _index);
+           type_.c_str(),
+           dest_pe_,
+           src_wg_,
+           index_);
 
     for (size_t i = 0; i < num_elems; i++) {
-        printf(" %lx ", _raw_u64[i]);
+        printf(" %lx ", raw_u64_[i]);
     }
 
-    printf("done %s\n", _type.c_str());
+    printf("done %s\n", type_.c_str());
 }
+
+}  // namespace rocshmem

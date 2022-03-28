@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2021 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -33,17 +33,19 @@
 #include "config.h"  // NOLINT(build/include_subdir)
 #include "util.hpp"
 
+namespace rocshmem {
+
 HdpMapPolicy::HdpMapPolicy() {
     hdp_flush_off = HDP_FLUSH % getpagesize();
     hdp_flush_pa_off = HDP_FLUSH - hdp_flush_off;
     hdp_read_off = HDP_READ % getpagesize();
     hdp_read_pa_off = HDP_READ - hdp_read_off;
 
-    // TODO(khamidou): multi-device?
-    int dev_id = 0;
+    int hip_dev_id = 0;
+    CHECK_HIP(hipGetDevice(&hip_dev_id));
 
     std::string name = "/dev/hdp_umap_";
-    name += std::to_string(dev_id);
+    name += std::to_string(hip_dev_id);
 
     if ((fd = open(name.c_str(), O_RDWR)) == -1) {
         printf("could not open the HDP dev module \n");
@@ -77,18 +79,23 @@ HdpMapPolicy::HdpMapPolicy() {
     rocm_memory_lock_to_fine_grain(cpu_hdp_flush,
                                    getpagesize(),
                                    &dev_ptr,
-                                   dev_id);
+                                   hip_dev_id);
 
     gpu_hdp_flush = reinterpret_cast<unsigned int*>(dev_ptr);
 }
 
 HdpRocmPolicy::HdpRocmPolicy() {
-    // TODO(khamidou): multi-device?
-    int dev_id = 0;
+    int hip_dev_id = 0;
+    CHECK_HIP(hipGetDevice(&hip_dev_id));
 
     CHECK_HIP(hipDeviceGetAttribute(reinterpret_cast<int*>(&cpu_hdp_flush),
                                     hipDeviceAttributeHdpMemFlushCntl,
-                                    dev_id));
+                                    hip_dev_id));
 
     gpu_hdp_flush = cpu_hdp_flush;
 }
+
+NoHdpPolicy::NoHdpPolicy(){
+}
+
+}  // namespace rocshmem

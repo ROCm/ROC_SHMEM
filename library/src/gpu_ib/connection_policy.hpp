@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2021 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -20,12 +20,14 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef LIBRARY_SRC_GPU_IB_CONNECTION_POLICY_HPP_
-#define LIBRARY_SRC_GPU_IB_CONNECTION_POLICY_HPP_
+#ifndef ROCSHMEM_LIBRARY_SRC_GPU_IB_CONNECTION_POLICY_HPP
+#define ROCSHMEM_LIBRARY_SRC_GPU_IB_CONNECTION_POLICY_HPP
 
 #include "config.h"  // NOLINT(build/include_subdir)
 
 #include "infiniband_structs.hpp"  // NOLINT(build/include_subdir)
+
+namespace rocshmem {
 
 /*
  * CRTP base class for connection type
@@ -62,7 +64,7 @@ class ConnectionBase {
      * Updates the connection-specific segment in the SQ.
      */
     __device__ bool
-    updateConnectionSegment(ib_mlx5_base_av_t *wqe,
+    updateConnectionSegment(ib_mlx5_base_av_t* wqe,
                             int pe) {
         return static_cast<Derived*>(this)->
             updateConnectionSegmentImpl(wqe, pe);
@@ -72,7 +74,7 @@ class ConnectionBase {
      * Set the rkey based on this connection type.
      */
     __device__ void
-    setRkey(uint32_t *rkey,
+    setRkey(uint32_t* rkey,
             int pe) {
         static_cast<Derived*>(this)->setRkeyImpl(rkey, pe);
     }
@@ -85,8 +87,8 @@ class Connection;
  */
 class RCConnectionImpl : public ConnectionBase<RCConnectionImpl> {
  public:
-    RCConnectionImpl(Connection *conn,
-                     uint32_t *_vec_rkey);
+    RCConnectionImpl(Connection* conn,
+                     uint32_t* _vec_rkey);
 
     __device__ int
     wqeCntrlOffsetImpl() {
@@ -102,11 +104,11 @@ class RCConnectionImpl : public ConnectionBase<RCConnectionImpl> {
     getNumWqesImpl(uint8_t opcode);
 
     __device__ bool
-    updateConnectionSegmentImpl(ib_mlx5_base_av_t *wqe,
+    updateConnectionSegmentImpl(ib_mlx5_base_av_t* wqe,
                                 int pe);
 
     __device__ void
-    setRkeyImpl(uint32_t *rkey,
+    setRkeyImpl(uint32_t* rkey,
                 int pe);
 };
 
@@ -115,8 +117,8 @@ class RCConnectionImpl : public ConnectionBase<RCConnectionImpl> {
  */
 class DCConnectionImpl : public ConnectionBase<DCConnectionImpl> {
  public:
-    DCConnectionImpl(Connection *conn,
-                     uint32_t *_vec_rkey);
+    DCConnectionImpl(Connection* conn,
+                     uint32_t* _vec_rkey);
 
     __device__ int
     wqeCntrlOffsetImpl() {
@@ -132,19 +134,19 @@ class DCConnectionImpl : public ConnectionBase<DCConnectionImpl> {
     getNumWqesImpl(uint8_t opcode);
 
     __device__ bool
-    updateConnectionSegmentImpl(ib_mlx5_base_av_t *wqe,
+    updateConnectionSegmentImpl(ib_mlx5_base_av_t* wqe,
                                 int pe);
 
     __device__ void
-    setRkeyImpl(uint32_t *rkey,
+    setRkeyImpl(uint32_t* rkey,
                 int pe);
 
  private:
-    uint32_t *vec_dct_num = nullptr;
+    uint32_t* vec_dct_num {nullptr};
 
-    uint32_t *vec_rkey = nullptr;
+    uint32_t* vec_rkey {nullptr};
 
-    uint16_t *vec_lids = nullptr;
+    uint16_t* vec_lids {nullptr};
 };
 
 /*
@@ -156,4 +158,6 @@ typedef DCConnectionImpl ConnectionImpl;
 typedef RCConnectionImpl ConnectionImpl;
 #endif
 
-#endif  // LIBRARY_SRC_GPU_IB_CONNECTION_POLICY_HPP_
+}  // namespace rocshmem
+
+#endif  // ROCSHMEM_LIBRARY_SRC_GPU_IB_CONNECTION_POLICY_HPP

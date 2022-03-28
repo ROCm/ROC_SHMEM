@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2020 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -23,9 +23,11 @@
 #include <mpi.h>
 
 #include "reliable_connection.hpp"
-#include "backend.hpp"
+#include "backend_ib.hpp"
 
-ReliableConnection::ReliableConnection(GPUIBBackend *b)
+namespace rocshmem {
+
+ReliableConnection::ReliableConnection(GPUIBBackend* b)
     : Connection(b, 0) {
 }
 
@@ -48,7 +50,7 @@ ReliableConnection::initqp(uint8_t port) {
 }
 
 Connection::RtrState
-ReliableConnection::rtr(dest_info_t *dest,
+ReliableConnection::rtr(dest_info_t* dest,
                         uint8_t port) {
     RtrState rtr {};
 
@@ -66,7 +68,7 @@ ReliableConnection::rtr(dest_info_t *dest,
 }
 
 Connection::RtsState
-ReliableConnection::rts(dest_info_t *dest) {
+ReliableConnection::rts(dest_info_t* dest) {
     RtsState rts {};
 
     rts.exp_qp_attr.sq_psn = dest->psn;
@@ -76,9 +78,9 @@ ReliableConnection::rts(dest_info_t *dest) {
     return rts;
 }
 
-ibv_qp *
-ReliableConnection::create_qp_0(ibv_context *context,
-                                ibv_qp_init_attr_ex *qp_attr) {
+ibv_qp*
+ReliableConnection::create_qp_0(ibv_context* context,
+                                ibv_qp_init_attr_ex* qp_attr) {
     return ibv_create_qp_ex(context, qp_attr);
 }
 
@@ -90,13 +92,13 @@ ReliableConnection::create_qps_1() {
 Status
 ReliableConnection::create_qps_2(int port,
                                  int my_rank,
-                                 ibv_port_attr *ib_port_att) {
+                                 ibv_port_attr* ib_port_att) {
     return Status::ROC_SHMEM_SUCCESS;
 }
 
 Status
-ReliableConnection::create_qps_3(int port, ibv_qp *qp, int offset,
-                                 ibv_port_attr *ib_port_att) {
+ReliableConnection::create_qps_3(int port, ibv_qp* qp, int offset,
+                                 ibv_port_attr* ib_port_att) {
     Status status = init_qp_status(qp, port);
     if (status != Status::ROC_SHMEM_SUCCESS) {
         return Status::ROC_SHMEM_UNKNOWN_ERROR;
@@ -110,7 +112,7 @@ ReliableConnection::create_qps_3(int port, ibv_qp *qp, int offset,
 }
 
 Status
-ReliableConnection::get_remote_conn(int *remote_conn) {
+ReliableConnection::get_remote_conn(int* remote_conn) {
     *remote_conn = backend->num_pes;
 
     return Status::ROC_SHMEM_SUCCESS;
@@ -158,8 +160,8 @@ ReliableConnection::initialize_1(int port, int num_wg) {
 }
 
 Status
-ReliableConnection::initialize_rkey_handle(uint32_t **heap_rkey_handle,
-                                           ibv_mr *mr) {
+ReliableConnection::initialize_rkey_handle(uint32_t** heap_rkey_handle,
+                                           ibv_mr* mr) {
     CHECK_HIP(hipHostMalloc(heap_rkey_handle,
                             sizeof(uint32_t) * backend->num_pes));
     (*heap_rkey_handle)[backend->my_pe] = mr->rkey;
@@ -168,7 +170,7 @@ ReliableConnection::initialize_rkey_handle(uint32_t **heap_rkey_handle,
 }
 
 void
-ReliableConnection::free_rkey_handle(uint32_t *heap_rkey_handle) {
+ReliableConnection::free_rkey_handle(uint32_t* heap_rkey_handle) {
     CHECK_HIP(hipHostFree(heap_rkey_handle));
 }
 
@@ -181,15 +183,15 @@ ReliableConnection::qpattr(ibv_qp_cap cap) {
 
 void
 ReliableConnection::post_dv_rc_wqe(int remote_conn) {
-    mlx5_wqe_ctrl_seg *ctrl;
-    mlx5_wqe_raddr_seg *rdma;
-    mlx5_wqe_data_seg *data;
+    mlx5_wqe_ctrl_seg* ctrl;
+    mlx5_wqe_raddr_seg* rdma;
+    mlx5_wqe_data_seg* data;
 
     for (int i = 0; i < remote_conn; i++) {
         int num_wg = backend->num_wg;
         for (int j = 0; j < num_wg; j++) {
             int qp_index = i * num_wg + j;
-            uint64_t *ptr = get_address_sq(qp_index);
+            uint64_t* ptr = get_address_sq(qp_index);
 
             const uint16_t nb_post = 1;  // 4 * sq_size;
             for (uint16_t index = 0; index < nb_post; index++) {
@@ -211,7 +213,8 @@ ReliableConnection::post_dv_rc_wqe(int remote_conn) {
                 ptr = ptr + 2;
 
                 rdma = reinterpret_cast<mlx5_wqe_raddr_seg*>(ptr);
-                auto temp = backend->heap_bases[(backend->my_pe + 1) % 2];
+                const auto& heap_bases = backend->heap.get_heap_bases();
+                auto temp = heap_bases[(backend->my_pe + 1) % 2];
                 uint64_t r_address = reinterpret_cast<uint64_t>(temp);
                 uint32_t rkey = backend->networkImpl.heap_rkey[i];
                 set_rdma_seg(rdma,
@@ -221,7 +224,7 @@ ReliableConnection::post_dv_rc_wqe(int remote_conn) {
 
                 data = reinterpret_cast<mlx5_wqe_data_seg*>(ptr);
                 uint32_t lkey = backend->networkImpl.heap_mr->lkey;
-                temp = backend->heap_bases[backend->my_pe];
+                temp = heap_bases[backend->my_pe];
                 uint64_t address = reinterpret_cast<uint64_t>(temp);
                 mlx5dv_set_data_seg(data,
                                     1,
@@ -242,8 +245,8 @@ ReliableConnection::post_wqes() {
 }
 
 void
-ReliableConnection::initialize_wr_fields(ibv_send_wr *wr,
-                                         ibv_ah *ah,
+ReliableConnection::initialize_wr_fields(ibv_send_wr* wr,
+                                         ibv_ah* ah,
                                          int dc_key) {
 }
 
@@ -251,3 +254,5 @@ int
 ReliableConnection::get_sq_dv_offset(int pe_idx, int num_qps, int wg_idx) {
     return pe_idx * num_qps + wg_idx;
 }
+
+}  // namespace rocshmem

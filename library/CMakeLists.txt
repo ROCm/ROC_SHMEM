@@ -26,6 +26,7 @@ cmake_minimum_required(VERSION 3.16.3 FATAL_ERROR)
 # GLOBAL COMPILE FLAGS
 ###############################################################################
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_COMPILER /opt/rocm/bin/hipcc)
 set(CMAKE_CXX_FLAGS_DEBUG "-O0 -ggdb")
@@ -71,6 +72,7 @@ option(USE_HDP_MAP "Enable hdp map through hdp_map module" OFF)
 option(USE_IPC "Enable IPC support (using HIP)" OFF)
 option(USE_THREADS "Enable workgroup threads to share network queues" OFF)
 option(USE_WF_COAL "Enable wavefront message coalescing" OFF)
+option(USE_CACHED "Enable support for cached/coherent systems" OFF)
 
 configure_file(config.h.in config.h)
 

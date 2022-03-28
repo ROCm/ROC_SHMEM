@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2021 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -20,17 +20,20 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef LIBRARY_SRC_GPU_IB_GPU_IB_GPU_TEMPLATES_HPP_
-#define LIBRARY_SRC_GPU_IB_GPU_IB_GPU_TEMPLATES_HPP_
+#ifndef ROCSHMEM_LIBRARY_SRC_GPU_IB_GPU_IB_GPU_TEMPLATES_HPP
+#define ROCSHMEM_LIBRARY_SRC_GPU_IB_GPU_IB_GPU_TEMPLATES_HPP
 
 #include "config.h"  // NOLINT(build/include_subdir)
 
 #include <roc_shmem.hpp>
 
-#include "util.hpp"
+#include "context_ib_device.hpp"
+#include "gpu_ib_team.hpp"
 #include "queue_pair.hpp"
-#include "context.hpp"
+#include "util.hpp"
 #include "wg_state.hpp"
+
+namespace rocshmem {
 
 template <ROC_SHMEM_OP Op>
 struct OpWrap {
@@ -285,6 +288,39 @@ GPUIBContext::internal_direct_allreduce(T *dst,
 
 template <typename T, ROC_SHMEM_OP Op>
 __device__ void
+GPUIBContext::to_all(roc_shmem_team_t team,
+                     T *dest,
+                     const T *source,
+                     int nreduce) {
+    GPUIBTeam *team_obj = reinterpret_cast<GPUIBTeam *>(team);
+
+    double dbl_log_pe_stride = team_obj->tinfo_wrt_world->log_stride;
+    int log_pe_stride        = static_cast<int>(dbl_log_pe_stride);
+    /**
+     * Ensure that the stride is a multiple of 2 for GPU_IB.
+     * TODO: enable GPU_IB to work with non-power-of-2 strides
+     * and remove this assert.
+     */
+    assert((dbl_log_pe_stride - log_pe_stride) == 0);
+
+    int pe_start        = team_obj->tinfo_wrt_world->pe_start;
+    int pe_size         = team_obj->tinfo_wrt_world->size;
+
+    long *p_sync = team_obj->reduce_pSync;
+    T *pWrk = reinterpret_cast<T*>(team_obj->pWrk);
+
+    to_all<T, Op>(dest,
+                  source,
+                  nreduce,
+                  pe_start,
+                  log_pe_stride,
+                  pe_size,
+                  pWrk,
+                  p_sync);
+}
+
+template <typename T, ROC_SHMEM_OP Op>
+__device__ void
 GPUIBContext::to_all(T *dest,
                      const T *source,
                      int nreduce,
@@ -359,14 +395,14 @@ template <typename T>
 __device__ T
 GPUIBContext::g(const T *source,
                 int pe) {
+    T ret;
     auto *src_const_cast = reinterpret_cast<const char*>(source);
     uint64_t L_offset = const_cast<char*>(src_const_cast) - base_heap[my_pe];
-    if (ipcImpl.isIpcAvailable(my_pe, pe)) {
-        T dest;
-        ipcImpl.ipcCopy(&dest,
-                        ipcImpl.ipc_bases[pe] + L_offset,
-                        sizeof(T));
-        return dest;
+    if (ipcImpl_.isIpcAvailable(my_pe, pe)) {
+        ipcImpl_.ipcCopy(&ret,
+                         ipcImpl_.ipc_bases[pe] + L_offset,
+                         sizeof(T));
+        return ret;
     } else {
         int thread_id = get_flat_block_id();
         int block_size = get_flat_block_size();
@@ -375,20 +411,21 @@ GPUIBContext::g(const T *source,
 
         char *base_dest = g_ret;
         char *dest = &base_dest[offset *sizeof(int64_t)];
-        T ret;
         size_t nelems = sizeof(T);
 
-        bool must_send_message = wf_coal.coalesce(pe, source, dest, nelems);
+        bool must_send_message = wf_coal_.coalesce(pe, source, dest, nelems);
         if (!must_send_message) {
-            return;
+            return ret;
         }
         getQueuePair(pe)->get_nbi<THREAD>(base_heap[pe] + L_offset, dest,
                               nelems, pe, true);
         getQueuePair(pe)->quiet_single<THREAD>();
-
+        getQueuePair(my_pe)->hdp_policy.hdp_flush();;
+	    __threadfence();
         ret = *(reinterpret_cast<T*> (dest));
         return ret;
     }
+    return ret;
 }
 
 template <typename T>
@@ -472,6 +509,38 @@ GPUIBContext::internal_get_broadcast(T *dst,
     __syncthreads();
 }
 
+template <typename T>
+__device__ void
+GPUIBContext::broadcast(roc_shmem_team_t team,
+                        T *dst,
+                        const T *src,
+                        int nelems,
+                        int pe_root) {
+    GPUIBTeam *team_obj = reinterpret_cast<GPUIBTeam *>(team);
+
+    double dbl_log_pe_stride = team_obj->tinfo_wrt_world->log_stride;
+    int log_pe_stride        = static_cast<int>(dbl_log_pe_stride);
+    /**
+     * Ensure that the stride is a multiple of 2 for GPU_IB.
+     * TODO: enable GPU_IB to work with non-powers-of-2 strides
+     * and remove this assert.
+     */
+    assert((dbl_log_pe_stride - log_pe_stride) == 0);
+
+    int pe_start        = team_obj->tinfo_wrt_world->pe_start;
+    int pe_size         = team_obj->tinfo_wrt_world->size;
+
+    long *p_sync = team_obj->bcast_pSync;
+
+    broadcast<T>(dst,
+                 src,
+                 nelems,
+                 pe_root,
+                 pe_start,
+                 log_pe_stride,
+                 pe_size,
+                 p_sync);
+}
 
 template <typename T>
 __device__ void
@@ -573,4 +642,6 @@ GPUIBContext::get_nbi_wave(T *dest,
     getmem_nbi_wave(dest, source, nelems * sizeof(T), pe);
 }
 
-#endif  // LIBRARY_SRC_GPU_IB_GPU_IB_GPU_TEMPLATES_HPP_
+}  // namespace rocshmem
+
+#endif  // ROCSHMEM_LIBRARY_SRC_GPU_IB_GPU_IB_GPU_TEMPLATES_HPP

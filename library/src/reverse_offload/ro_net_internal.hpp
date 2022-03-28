@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -20,15 +20,20 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef RO_NET_INTERNAL_H
-#define RO_NET_INTERNAL_H
+#ifndef ROCSHMEM_LIBRARY_SRC_REVERSE_OFFLOAD_RO_NET_INTERNAL_HPP
+#define ROCSHMEM_LIBRARY_SRC_REVERSE_OFFLOAD_RO_NET_INTERNAL_HPP
 
 #include "config.h"
 
 #include <cstdint>
 #include "hdp_policy.hpp"
+#include "ipc_policy.hpp"
 #include "stats.hpp"
 #include "util.hpp"
+#include "symmetric_heap.hpp"
+#include "atomic_return.hpp"
+
+namespace rocshmem {
 
 #define DEFAULT_QUEUE_SIZE 64
 
@@ -40,12 +45,16 @@ enum ro_net_cmds {
     RO_NET_GET,
     RO_NET_PUT_NBI,
     RO_NET_GET_NBI,
+    RO_NET_AMO_FOP,
+    RO_NET_AMO_FCAS,
     RO_NET_FENCE,
     RO_NET_QUIET,
     RO_NET_FINALIZE,
     RO_NET_TO_ALL,
+    RO_NET_TEAM_TO_ALL,
     RO_NET_BARRIER_ALL,
     RO_NET_BROADCAST,
+    RO_NET_TEAM_BROADCAST,
 };
 
 enum ro_net_types {
@@ -105,6 +114,7 @@ typedef struct queue_element {
     int  op;
     int  datatype;
     int PE_root;
+    MPI_Comm team_comm;
 } __attribute__((__aligned__(64))) queue_element_t;
 
 typedef struct queue_desc {
@@ -159,6 +169,8 @@ struct ro_net_handle {
     uint64_t queue_size;
     char *g_ret;
     HdpPolicy *hdp_policy;
+    WindowInfo *heap_window_info;
+    atomic_ret_t * atomic_ret;
     bool gpu_queue;
 };
 
@@ -173,20 +185,25 @@ struct ro_net_wg_handle {
     uint64_t queue_size;
     char *status;
     char *g_ret;
+    atomic_ret_t atomic_ret;
+    IpcImpl ipcImpl;
+    HdpPolicy hdp_policy;
 };
 
 /* Device-side internal functions */
-__device__ void inline  __ro_inv() { asm volatile ("buffer_wbinvl1_vol;"); }
+__device__ void inline  __ro_inv() { asm volatile ("buffer_wbinvl1;"); }
 
 __device__ bool isFull(uint64_t read_idx, uint64_t write_idx, int queue_size);
 
 __device__ void build_queue_element(ro_net_cmds type, void* dst, void * src,
                                     size_t size, int pe, int logPE_stride,
                                     int PE_size, int PE_root, void* pWrk,
-                                    long* pSync,
+                                    long* pSync, MPI_Comm team_comm,
                                     struct ro_net_wg_handle *handle,
                                     bool blocking,
                                     ROC_SHMEM_OP op = ROC_SHMEM_SUM,
                                     ro_net_types datatype = RO_NET_INT);
 
-#endif
+}  // namespace rocshmem
+
+#endif  // ROCSHMEM_LIBRARY_SRC_REVERSE_OFFLOAD_RO_NET_INTERNAL_HPP

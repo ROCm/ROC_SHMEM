@@ -1,5 +1,5 @@
 ###############################################################################
-# Copyright (c) 2020 Advanced Micro Devices, Inc. All rights reserved.
+# Copyright (c) 2022 Advanced Micro Devices, Inc. All rights reserved.
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -26,9 +26,10 @@
 target_sources(
   ${PROJECT_NAME}
   PRIVATE
-    ro_net.cpp
+    backend_ro.cpp
     ro_net_gpu.cpp
     ro_net_host.cpp
+    ro_net_team.cpp
     transport.cpp
 )
 

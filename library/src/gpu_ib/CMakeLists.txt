@@ -1,5 +1,5 @@
 ###############################################################################
-# Copyright (c) 2020 Advanced Micro Devices, Inc. All rights reserved.
+# Copyright (c) 2022 Advanced Micro Devices, Inc. All rights reserved.
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -31,11 +31,11 @@ target_sources(
     debug.cpp
     dynamic_connection.cpp
     endian.cpp
-    gpu_ib.cpp
+    backend_ib.cpp
     gpu_ib_gpu.cpp
     gpu_ib_host.cpp
+    gpu_ib_team.cpp
     gpu_ib_gpu_coll.cpp
-    ipc_policy.cpp
     network_policy.cpp
     qe_dumper.cpp
     queue_pair.cpp

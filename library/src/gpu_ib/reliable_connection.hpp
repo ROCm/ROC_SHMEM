@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2020 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -20,42 +20,44 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef LIBRARY_SRC_GPU_IB_RELIABLE_CONNECTION_HPP_
-#define LIBRARY_SRC_GPU_IB_RELIABLE_CONNECTION_HPP_
+#ifndef ROCSHMEM_LIBRARY_SRC_GPU_IB_RELIABLE_CONNECTION_HPP
+#define ROCSHMEM_LIBRARY_SRC_GPU_IB_RELIABLE_CONNECTION_HPP
 
 #include <vector>
 
 #include "connection.hpp"
 
+namespace rocshmem {
+
 class ReliableConnection : public Connection {
  public:
-    explicit ReliableConnection(GPUIBBackend *backend);
+    explicit ReliableConnection(GPUIBBackend* backend);
 
     ~ReliableConnection() override;
 
     Status
-    get_remote_conn(int *remote_conn) override;
+    get_remote_conn(int* remote_conn) override;
 
     void
     post_wqes() override;
 
     Status
-    initialize_rkey_handle(uint32_t **heap_rkey_handle,
-                           ibv_mr *mr) override;
+    initialize_rkey_handle(uint32_t** heap_rkey_handle,
+                           ibv_mr* mr) override;
 
     void
-    free_rkey_handle(uint32_t *heap_rkey_handle) override;
+    free_rkey_handle(uint32_t* heap_rkey_handle) override;
 
  private:
     InitQPState
     initqp(uint8_t port) override;
 
     RtrState
-    rtr(dest_info_t *dest,
+    rtr(dest_info_t* dest,
         uint8_t port) override;
 
     RtsState
-    rts(dest_info_t *dest) override;
+    rts(dest_info_t* dest) override;
 
     QPInitAttr
     qpattr(ibv_qp_cap cap) override;
@@ -66,16 +68,16 @@ class ReliableConnection : public Connection {
     Status
     create_qps_2(int port,
                  int my_rank,
-                 ibv_port_attr *ib_port_att) override;
+                 ibv_port_attr* ib_port_att) override;
 
     Status
-    create_qps_3(int port, ibv_qp *qp,
+    create_qps_3(int port, ibv_qp* qp,
                  int offset,
-                 ibv_port_attr *ib_port_att) override;
+                 ibv_port_attr* ib_port_att) override;
 
     ibv_qp*
-    create_qp_0(ibv_context *context,
-                ibv_qp_init_attr_ex *qp_attr) override;
+    create_qp_0(ibv_context* context,
+                ibv_qp_init_attr_ex* qp_attr) override;
 
     Status
     allocate_dynamic_members(int num_wg) override;
@@ -88,8 +90,8 @@ class ReliableConnection : public Connection {
                  int num_wg) override;
 
     void
-    initialize_wr_fields(ibv_send_wr *wr,
-                         ibv_ah *ah,
+    initialize_wr_fields(ibv_send_wr* wr,
+                         ibv_ah* ah,
                          int dc_key) override;
 
     int
@@ -103,4 +105,6 @@ class ReliableConnection : public Connection {
     post_dv_rc_wqe(int remote_conn);
 };
 
-#endif  // LIBRARY_SRC_GPU_IB_RELIABLE_CONNECTION_HPP_
+}  // namespace rocshmem
+
+#endif  // ROCSHMEM_LIBRARY_SRC_GPU_IB_RELIABLE_CONNECTION_HPP

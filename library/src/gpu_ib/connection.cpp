@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2021 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -28,13 +28,16 @@
 #include "mpi.h"  // NOLINT(build/include_subdir)
 #include "util.hpp"
 #include "queue_pair.hpp"
-#include "backend.hpp"
+#include "backend_ib.hpp"
+
+namespace rocshmem {
 
 int Connection::use_gpu_mem = 0;
+int Connection::coherent_cq = 0;
 
-Connection::Connection(GPUIBBackend *b, int k)
+Connection::Connection(GPUIBBackend* b, int k)
   : backend(b), key_offset(k) {
-    char *value = nullptr;
+    char* value = nullptr;
 
     if ((value = getenv("ROC_SHMEM_USE_IB_HCA"))) {
         requested_dev = value;
@@ -58,7 +61,7 @@ Connection::~Connection() {
 }
 
 Status
-Connection::reg_mr(void *ptr, size_t size, ibv_mr **mr) {
+Connection::reg_mr(void* ptr, size_t size, ibv_mr** mr) {
     *mr = ibv_reg_mr(ib_state->pd, ptr, size,
                     IBV_ACCESS_LOCAL_WRITE |
                     IBV_ACCESS_REMOTE_WRITE |
@@ -94,10 +97,10 @@ Connection::initialize(int num_wg) {
         return Status::ROC_SHMEM_UNKNOWN_ERROR;
     }
 
-    struct ibv_device *ib_dev = dev_list[0];
+    struct ibv_device* ib_dev = dev_list[0];
     if (requested_dev != nullptr) {
         for (int i = 0; i < ib_devices; i++) {
-            const char *select_dev = ibv_get_device_name(dev_list[i]);
+            const char* select_dev = ibv_get_device_name(dev_list[i]);
             if (strstr(select_dev, requested_dev) != nullptr) {
                 ib_dev = dev_list[i];
                 break;
@@ -111,7 +114,8 @@ Connection::initialize(int num_wg) {
         return status;
     }
 
-    int rtn_id = 0;
+    int hip_dev_id = 0;
+    CHECK_HIP(hipGetDevice(&hip_dev_id));
 
     int ib_fork_err = ibv_fork_init();
     if (ib_fork_err != 0)
@@ -125,7 +129,7 @@ Connection::initialize(int num_wg) {
         return Status::ROC_SHMEM_UNKNOWN_ERROR;
     }
 
-    status = create_qps(port, rtn_id, backend->my_pe,
+    status = create_qps(port, hip_dev_id, backend->my_pe,
                         &ib_state->portinfo);
     if (status != Status::ROC_SHMEM_SUCCESS) {
         return status;
@@ -153,13 +157,11 @@ Connection::finalize() {
     // ibv_dereg_mr(backend->networkImpl.hdp_mr);
     ibv_dereg_mr(backend->networkImpl.mr);
 
-    MPI_Finalize();
-
     return Status::ROC_SHMEM_SUCCESS;
 }
 
 Status
-Connection::ib_init(struct ibv_device *ib_dev,
+Connection::ib_init(struct ibv_device* ib_dev,
                     uint8_t port) {
     ib_state = new ib_state_t;
     if (!ib_state) {
@@ -191,7 +193,7 @@ Connection::ib_init(struct ibv_device *ib_dev,
 
 template <typename StateType>
 Status
-Connection::try_to_modify_qp(ibv_qp *qp,
+Connection::try_to_modify_qp(ibv_qp* qp,
                              StateType state) {
     if (ibv_modify_qp(qp, &state.exp_qp_attr, state.exp_attr_mask))
         return Status::ROC_SHMEM_UNKNOWN_ERROR;
@@ -199,7 +201,7 @@ Connection::try_to_modify_qp(ibv_qp *qp,
 }
 
 Status
-Connection::init_qp_status(ibv_qp *qp,
+Connection::init_qp_status(ibv_qp* qp,
                            uint8_t port) {
     return try_to_modify_qp<InitQPState>(qp, initqp(port));
 }
@@ -208,8 +210,8 @@ Connection::init_qp_status(ibv_qp *qp,
  * rtr stands for 'ready to receive'
  */
 Status
-Connection::change_status_rtr(ibv_qp *qp,
-                              dest_info_t *dest,
+Connection::change_status_rtr(ibv_qp* qp,
+                              dest_info_t* dest,
                               uint8_t port) {
     return try_to_modify_qp<RtrState>(qp, rtr(dest, port));
 }
@@ -218,16 +220,16 @@ Connection::change_status_rtr(ibv_qp *qp,
  * rts stands for 'ready to send'
  */
 Status
-Connection::change_status_rts(ibv_qp *qp,
-                              dest_info_t *dest) {
+Connection::change_status_rts(ibv_qp* qp,
+                              dest_info_t* dest) {
     return try_to_modify_qp<RtsState>(qp, rts(dest));
 }
 
 Status
 Connection::create_qps(uint8_t port,
-                       int rtn_id,
+                       int hip_dev_id,
                        int my_rank,
-                       ibv_port_attr *ib_port_att) {
+                       ibv_port_attr* ib_port_att) {
     Status status;
     status = create_qps_1();
     if (status != Status::ROC_SHMEM_SUCCESS) {
@@ -279,8 +281,8 @@ Connection::create_qps(uint8_t port,
 }
 
 Status
-Connection::initialize_gpu_policy(ConnectionImpl **conn,
-                                  uint32_t *heap_rkey) {
+Connection::initialize_gpu_policy(ConnectionImpl** conn,
+                                  uint32_t* heap_rkey) {
     CHECK_HIP(hipMalloc(reinterpret_cast<void**>(conn),
                         sizeof(ConnectionImpl)));
     new (*conn) ConnectionImpl(this, heap_rkey);
@@ -292,7 +294,7 @@ Connection::initialize_gpu_policy(ConnectionImpl **conn,
  * Create and write the rdma segment to the SQ
  */
 void
-Connection::set_rdma_seg(mlx5_wqe_raddr_seg *rdma,
+Connection::set_rdma_seg(mlx5_wqe_raddr_seg* rdma,
                          uint64_t address,
                          uint32_t rkey) {
     rdma->raddr = htobe64(address);
@@ -317,28 +319,38 @@ Connection::get_address_sq(int i) {
 }
 
 void*
-Connection::buf_alloc(struct ibv_pd * pd,
-                      void *pd_context,
+Connection::buf_alloc(struct ibv_pd* pd,
+                      void* pd_context,
                       size_t size,
                       size_t alignment,
                       uint64_t resource_type) {
     if (use_gpu_mem) {
-        void *dev_ptr;
-        CHECK_HIP(hipExtMallocWithFlags(reinterpret_cast<void**>(&dev_ptr),
+        void* dev_ptr;
+        if(coherent_cq ==1 ){
+#ifdef USE_CACHED
+            CHECK_HIP(hipMalloc(reinterpret_cast<void**>(&dev_ptr),
+                                        size));
+#else
+            CHECK_HIP(hipExtMallocWithFlags(reinterpret_cast<void**>(&dev_ptr),
                                         size,
                                         hipDeviceMallocFinegrained));
+#endif
+            }else{
+            CHECK_HIP(hipExtMallocWithFlags(reinterpret_cast<void**>(&dev_ptr),
+                                        size,
+                                        hipDeviceMallocFinegrained));
+
+        }
         memset(dev_ptr, 0, size);
-        printf("calling buf_alloc %p size %zu %zu\n",
-               dev_ptr, size, alignment);
         return dev_ptr;
     }
     return IBV_ALLOCATOR_USE_DEFAULT;
 }
 
 void
-Connection::buf_release(struct ibv_pd *pd,
-                        void *pd_context,
-                        void *ptr,
+Connection::buf_release(struct ibv_pd* pd,
+                        void* pd_context,
+                        void* ptr,
                         uint64_t resource_type) {
     if (use_gpu_mem) {
         CHECK_HIP(hipFree(ptr));
@@ -348,7 +360,7 @@ Connection::buf_release(struct ibv_pd *pd,
 }
 
 void
-Connection::init_parent_domain_attr(ibv_parent_domain_init_attr *attr1) {
+Connection::init_parent_domain_attr(ibv_parent_domain_init_attr* attr1) {
     attr1->pd = ib_state->pd;
     attr1->td = nullptr;
     attr1->comp_mask = IBV_PARENT_DOMAIN_INIT_ATTR_ALLOCATORS;
@@ -358,8 +370,8 @@ Connection::init_parent_domain_attr(ibv_parent_domain_init_attr *attr1) {
 }
 
 ibv_cq*
-Connection::create_cq(ibv_context *context,
-                      ibv_pd *pd,
+Connection::create_cq(ibv_context* context,
+                      ibv_pd* pd,
                       int cqe) {
     use_gpu_mem = cq_use_gpu_mem;
 
@@ -373,19 +385,21 @@ Connection::create_cq(ibv_context *context,
     cq_attr.comp_mask = IBV_CQ_INIT_ATTR_MASK_PD;
     cq_attr.parent_domain = pd;
 
-    ibv_cq_ex *cq = ibv_create_cq_ex(context, &cq_attr);
+    coherent_cq = 1;
+    ibv_cq_ex* cq = ibv_create_cq_ex(context, &cq_attr);
+    coherent_cq = 0;
     if (!cq) {
         printf("error in ibv_create_cq_ex: %d %s\n", errno, strerror(errno));
         return nullptr;
     }
-
     return ibv_cq_ex_to_cq(cq);
 }
 
 Status
-Connection::init_gpu_qp_from_connection(QueuePair *gpu_qp,
+Connection::init_gpu_qp_from_connection(QueuePair* gpu_qp,
                                         int conn_num) {
-    int rtn_id = 0;
+    int hip_dev_id = 0;
+    CHECK_HIP(hipGetDevice(&hip_dev_id));
     use_gpu_mem = cq_use_gpu_mem;
 
     mlx5dv_cq cq_out;
@@ -397,14 +411,14 @@ Connection::init_gpu_qp_from_connection(QueuePair *gpu_qp,
     gpu_qp->cq_log_size = log2(cq_out.cqe_cnt);
     gpu_qp->cq_size = cq_out.cqe_cnt;
 
-    void *gpu_ptr = nullptr;
+    void* gpu_ptr = nullptr;
     if (use_gpu_mem) {
         gpu_qp->current_cq_q = reinterpret_cast<mlx5_cqe64*>(cq_out.buf);
     } else {
         rocm_memory_lock_to_fine_grain(reinterpret_cast<void*>(cq_out.buf),
                                        cq_out.cqe_cnt * 64,
                                        &gpu_ptr,
-                                       rtn_id);
+                                       hip_dev_id);
         gpu_qp->current_cq_q = reinterpret_cast<mlx5_cqe64*>(gpu_ptr);
     }
     gpu_qp->current_cq_q_H = reinterpret_cast<mlx5_cqe64*>(cq_out.buf);
@@ -412,7 +426,7 @@ Connection::init_gpu_qp_from_connection(QueuePair *gpu_qp,
     rocm_memory_lock_to_fine_grain(reinterpret_cast<void*>(cq_out.dbrec),
                                    64,
                                    &gpu_ptr,
-                                   rtn_id);
+                                   hip_dev_id);
 
     gpu_qp->dbrec_cq = reinterpret_cast<volatile uint32_t*>(gpu_ptr);
 
@@ -426,7 +440,7 @@ Connection::init_gpu_qp_from_connection(QueuePair *gpu_qp,
 
     gpu_qp->max_nwqe = (qp_out.sq.wqe_cnt);
 
-    volatile uint32_t *dbrec_send = qp_out.dbrec + 1;
+    volatile uint32_t* dbrec_send = qp_out.dbrec + 1;
 
     if (use_gpu_mem) {
         gpu_qp->current_sq = reinterpret_cast<uint64_t*>(qp_out.sq.buf);
@@ -436,7 +450,7 @@ Connection::init_gpu_qp_from_connection(QueuePair *gpu_qp,
         rocm_memory_lock_to_fine_grain(reinterpret_cast<void*>(qp_out.sq.buf),
                                        qp_out.sq.wqe_cnt * 64,
                                        &gpu_ptr,
-                                       rtn_id);
+                                       hip_dev_id);
 
         gpu_qp->current_sq = reinterpret_cast<uint64_t*>(gpu_ptr);
 
@@ -444,7 +458,7 @@ Connection::init_gpu_qp_from_connection(QueuePair *gpu_qp,
                 reinterpret_cast<void*>(const_cast<uint32_t*>(dbrec_send)),
                 32,
                 &gpu_ptr,
-                rtn_id);
+                hip_dev_id);
 
         gpu_qp->dbrec_send = reinterpret_cast<volatile uint32_t*>(gpu_ptr);
     }
@@ -456,11 +470,11 @@ Connection::init_gpu_qp_from_connection(QueuePair *gpu_qp,
     rocm_memory_lock_to_fine_grain(qp_out.bf.reg,
                                    qp_out.bf.size * 2,
                                    &gpu_ptr,
-                                   rtn_id);
+                                   hip_dev_id);
 
     gpu_qp->db.ptr = reinterpret_cast<uint64_t*>(gpu_ptr);
 
-    uint32_t *sq = reinterpret_cast<uint32_t*>(qp_out.sq.buf);
+    uint32_t* sq = reinterpret_cast<uint32_t*>(qp_out.sq.buf);
     uint32_t ctrl_qp_sq = (reinterpret_cast<uint32_t*>(sq))[1];
     gpu_qp->ctrl_qp_sq = ctrl_qp_sq & 0xFFFFFF;
     gpu_qp->ctrl_sig = (reinterpret_cast<uint64_t*>(sq))[1];
@@ -471,15 +485,15 @@ Connection::init_gpu_qp_from_connection(QueuePair *gpu_qp,
 }
 
 ibv_qp*
-Connection::create_qp(ibv_pd *pd,
-                      ibv_context *context,
-                      ibv_qp_init_attr_ex *qp_attr,
-                      ibv_cq * cq) {
+Connection::create_qp(ibv_pd* pd,
+                      ibv_context* context,
+                      ibv_qp_init_attr_ex* qp_attr,
+                      ibv_cq* cq) {
     use_gpu_mem = sq_use_gpu_mem;
 
     int ret = 0;
-    ibv_qp *qp = nullptr;
-    ibv_cq *tx_cq = nullptr;
+    ibv_qp* qp = nullptr;
+    ibv_cq* tx_cq = nullptr;
 
     assert(pd);
     assert(context);
@@ -500,3 +514,5 @@ Connection::create_qp(ibv_pd *pd,
 
     return qp;
 }
+
+}  // namespace rocshmem

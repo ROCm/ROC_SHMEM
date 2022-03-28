@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2020 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -32,12 +32,14 @@
 #define HIP_ENABLE_PRINTF 1
 #endif
 
-RCConnectionImpl::RCConnectionImpl(Connection *conn,
-                                   uint32_t *_vec_rkey) {
+namespace rocshmem {
+
+RCConnectionImpl::RCConnectionImpl(Connection* conn,
+                                   uint32_t* _vec_rkey) {
 }
 
-DCConnectionImpl::DCConnectionImpl(Connection *conn,
-                                   uint32_t *_vec_rkey)
+DCConnectionImpl::DCConnectionImpl(Connection* conn,
+                                   uint32_t* _vec_rkey)
   : vec_dct_num(static_cast<DynamicConnection*>(conn)->get_vec_dct_num()),
     vec_rkey(_vec_rkey),
     vec_lids(static_cast<DynamicConnection*>(conn)->get_vec_lids()) {
@@ -61,22 +63,24 @@ DCConnectionImpl::getNumWqesImpl(uint8_t opcode) {
 }
 
 __device__ bool
-RCConnectionImpl::updateConnectionSegmentImpl(ib_mlx5_base_av_t *wqe, int pe) {
+RCConnectionImpl::updateConnectionSegmentImpl(ib_mlx5_base_av_t* wqe, int pe) {
     return false;
 }
 
 __device__ bool
-DCConnectionImpl::updateConnectionSegmentImpl(ib_mlx5_base_av_t *wqe, int pe) {
+DCConnectionImpl::updateConnectionSegmentImpl(ib_mlx5_base_av_t* wqe, int pe) {
     wqe->dqp_dct = vec_dct_num[pe];
     wqe->rlid = vec_lids[pe];
     return true;
 }
 
 __device__ void
-RCConnectionImpl::setRkeyImpl(uint32_t *rkey, int pe) {
+RCConnectionImpl::setRkeyImpl(uint32_t* rkey, int pe) {
 }
 
 __device__ void
-DCConnectionImpl::setRkeyImpl(uint32_t *rkey, int pe) {
+DCConnectionImpl::setRkeyImpl(uint32_t* rkey, int pe) {
     *rkey = vec_rkey[pe];
 }
+
+}  // namespace rocshmem

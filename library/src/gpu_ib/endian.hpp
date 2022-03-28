@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2021 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -20,10 +20,12 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef LIBRARY_SRC_GPU_IB_ENDIAN_HPP_
-#define LIBRARY_SRC_GPU_IB_ENDIAN_HPP_
+#ifndef ROCSHMEM_LIBRARY_SRC_GPU_IB_ENDIAN_HPP
+#define ROCSHMEM_LIBRARY_SRC_GPU_IB_ENDIAN_HPP
 
 #include <hip/hip_runtime.h>
+
+namespace rocshmem {
 
 template <typename T>
 __device__ void
@@ -60,4 +62,6 @@ __device__ void
 swap_endian_store(int16_t *dst,
                   const int16_t val);
 
-#endif  // LIBRARY_SRC_GPU_IB_ENDIAN_HPP_
+}  // namespace rocshmem
+
+#endif  // ROCSHMEM_LIBRARY_SRC_GPU_IB_ENDIAN_HPP

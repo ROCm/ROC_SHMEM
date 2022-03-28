@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2021 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -20,14 +20,16 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef LIBRARY_SRC_HDP_POLICY_HPP_
-#define LIBRARY_SRC_HDP_POLICY_HPP_
+#ifndef ROCSHMEM_LIBRARY_SRC_HDP_POLICY_HPP
+#define ROCSHMEM_LIBRARY_SRC_HDP_POLICY_HPP
 
 #include <hip/hip_runtime.h>
 #include <hsa/hsa_ext_amd.h>
 
 #include "config.h"  // NOLINT(build/include_subdir)
 #include "util.hpp"
+
+namespace rocshmem {
 
 /*
  * Base class for HDP policies.
@@ -54,6 +56,41 @@ class HdpBasePolicy {
     get_hdp_flush_addr() const {
         return cpu_hdp_flush;
     }
+    __device__ void
+    flushCoherency(){
+        hdp_flush();
+    }
+};
+
+/*
+ * No HDP management is needed
+ * */
+class NoHdpPolicy : public HdpBasePolicy{
+   public:
+    __device__
+    void hdp_flush() {
+    }
+
+    __host__ void
+    hdp_flush() {
+    }
+
+    __host__ unsigned int*
+    get_hdp_flush_addr() const {
+        return 0;
+    }
+
+    __device__ void
+    flushCoherency(){
+        __roc_flush();
+    }
+
+    __device__
+    NoHdpPolicy() {
+    }
+
+    NoHdpPolicy();
+
 };
 
 /*
@@ -65,15 +102,8 @@ class HdpMapPolicy : public HdpBasePolicy {
     const int VEGA10_HDP_FLUSH = 0x385c;
     const int VEGA10_HDP_READ = 0x3fc4;
 
-// #ifdef __HIP_ARCH_GFX900__
     const int HDP_FLUSH = VEGA10_HDP_FLUSH;
     const int HDP_READ = VEGA10_HDP_READ;
-// #elif __HIP_ARCH_GFX803__
-//    const int HDP_FLUSH = FIJI_HDP_FLUSH;
-//    const int HDP_READ = FIJI_HDP_READ;
-// #else
-//    #error "Unknown GPU. RTN requires Fiji or Vega GPUs"
-// #endif
 
     int fd = -1;
     int hdp_flush_off = 0;
@@ -106,10 +136,16 @@ class HdpRocmPolicy : public HdpBasePolicy {
 /*
  * Select which one of our HDP policies to use at compile time.
  */
+#ifdef USE_CACHED
+typedef NoHdpPolicy HdpPolicy;
+#else
 #ifdef USE_HDP_MAP
 typedef HdpMapPolicy HdpPolicy;
 #else
 typedef HdpRocmPolicy HdpPolicy;
 #endif
+#endif
 
-#endif  // LIBRARY_SRC_HDP_POLICY_HPP_
+} // namespace rocshmem
+
+#endif  // ROCSHMEM_LIBRARY_SRC_HDP_POLICY_HPP

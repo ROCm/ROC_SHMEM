@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2021 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -24,6 +24,8 @@
 
 #include "queue_pair.hpp"
 #include "thread_policy.hpp"
+
+namespace rocshmem {
 
 __device__ void
 SingleThreadImpl::quiet(QueuePair *handle) {
@@ -127,11 +129,12 @@ SingleThreadImpl::decQuietCounter(uint32_t *quiet_counter, int num) {
 __device__ void
 MultiThreadImpl::decQuietCounter(uint32_t *quiet_counter, int num) {
     atomicSub(quiet_counter, num);
+
 }
 
 __device__ void
 WG::decQuietCounter(uint32_t *quiet_counter, int num) {
-    atomicSub(quiet_counter, num);
+    *quiet_counter -= num;
 }
 
 __device__ void
@@ -150,7 +153,7 @@ SingleThreadImpl::finishPost(QueuePair *handle,
     if (ring_db) {
         uint64_t db_val = handle->db_val;
         handle->compute_db_val_opcode(&db_val, le_sq_counter, opcode);
-        handle->update_wqe_ce<cqe>(num_wqes);
+        handle->update_wqe_ce_single<cqe>(num_wqes);
         handle->ring_doorbell(db_val);
     }
 }
@@ -205,12 +208,13 @@ MultiThreadImpl::finishPost_internal(QueuePair *handle,
      * Assuming here that postLock locks out all wavefronts in this WG but
      * one, and that this will select a single thread in the wavefront.
      */
+    __threadfence();
     if (get_flat_block_id() % WF_SIZE == lowerID()) {
         if (ring_db) {
             uint64_t db_val =
                 handle->current_sq[8 * ((handle->sq_counter - num_wqes)
                 % handle->max_nwqe)];
-            handle->update_wqe_ce<cqe>(num_wqes);
+            handle->update_wqe_ce_thread<true>(num_wqes);
             handle->ring_doorbell(db_val);
         }
 
@@ -230,7 +234,7 @@ WG::finishPost(QueuePair *handle,
         uint64_t db_val =
             handle->current_sq[8 * ((handle->sq_counter - num_wqes)
             % handle->max_nwqe)];
-            handle->update_wqe_ce<cqe>(num_wqes);
+            handle->update_wqe_ce_single<cqe>(num_wqes);
         handle->ring_doorbell(db_val);
     }
 }
@@ -247,7 +251,7 @@ WAVE::finishPost(QueuePair *handle,
         uint64_t db_val =
             handle->current_sq[8 * ((handle->sq_counter - num_wqes)
             % handle->max_nwqe)];
-            handle->update_wqe_ce<cqe>(num_wqes);
+            handle->update_wqe_ce_thread<cqe>(num_wqes);
         handle->ring_doorbell(db_val);
     }
     handle->threadImpl.sq_lock = 0;
@@ -256,7 +260,8 @@ WAVE::finishPost(QueuePair *handle,
 __device__ void
 SingleThreadImpl::postLock(QueuePair *handle, int pe) {
     handle->hdp_policy.hdp_flush();
-    handle->waitCQSpace(1);
+    //handle->waitCQSpace(1);
+    handle->waitSQSpace(1);
 }
 
 __device__ void
@@ -278,7 +283,8 @@ MultiThreadImpl::postLock_internal(QueuePair *handle) {
          * active_threads are going to the same PE when calculating whether
          * we are full.
          */
-        handle->waitCQSpace(active_threads);
+        //handle->waitCQSpace(active_threads);
+        handle->waitSQSpace(active_threads);
     }
 
     /*
@@ -315,7 +321,8 @@ MultiThreadImpl::postLock(QueuePair *handle, int pe) {
 __device__ void
 WG::postLock(QueuePair *handle, int pe) {
     handle->hdp_policy.hdp_flush();
-    handle->waitCQSpace(1);
+    //handle->waitCQSpace(1);
+    handle->waitSQSpace(1);
 }
 
 __device__ void
@@ -334,7 +341,8 @@ WAVE::postLock(QueuePair *handle, int pe) {
      * active_threads are going to the same PE when calculating whether
      * we are full.
      */
-    handle->waitCQSpace(1);
+    //handle->waitCQSpace(1);
+    handle->waitSQSpace(1);
 }
 
 template <typename T>
@@ -429,3 +437,5 @@ TYPE_GEN(unsigned long long)  // NOLINT(runtime/int)
 
 TYPE_BOOL(true)
 TYPE_BOOL(false)
+
+}  // namespace rocshmem

@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -23,6 +23,11 @@
 #include "transport.hpp"
 #include "ro_net_internal.hpp"
 #include "util.hpp"
+#include "backend_ro.hpp"
+
+using namespace std;
+
+namespace rocshmem {
 
 #define NET_CHECK(cmd) \
 {\
@@ -32,17 +37,45 @@
     }\
 }
 
+MPI_Op
+MPITransport::get_mpi_op(ROC_SHMEM_OP op)
+{
+    switch(op){
+        case ROC_SHMEM_SUM : return MPI_SUM;
+            break;
+        case ROC_SHMEM_MAX : return MPI_MAX;
+            break;
+        case ROC_SHMEM_MIN : return MPI_MIN;
+            break;
+        case ROC_SHMEM_PROD: return MPI_PROD;
+            break;
+        case ROC_SHMEM_AND : return MPI_BAND;
+            break;
+        case ROC_SHMEM_OR  : return MPI_BOR;
+            break;
+        case ROC_SHMEM_XOR : return MPI_BXOR;
+            break;
+        default:
+            break;
+    }
+}
+
 MPITransport::MPITransport()
     : Transport(), hostBarrierDone(0), transport_up(false), handle(nullptr)
 {
     int provided;
     indices = new int[INDICES_SIZE];
-    NET_CHECK(MPI_Init_thread(0, 0, MPI_THREAD_MULTIPLE, &provided));
-    if (provided != MPI_THREAD_MULTIPLE) {
-        fprintf(stderr, "Warning requested multi-thread level is not "
-                        "supported \n");
-    }
 
+    int init_done = 0;
+    NET_CHECK(MPI_Initialized(&init_done));
+
+    if (!init_done) {
+        NET_CHECK(MPI_Init_thread(0, 0, MPI_THREAD_MULTIPLE, &provided));
+        if (provided != MPI_THREAD_MULTIPLE) {
+            fprintf(stderr, "Warning requested multi-thread level is not "
+                        "supported \n");
+        }
+    }
     NET_CHECK(MPI_Comm_dup(MPI_COMM_WORLD, &ro_net_comm_world));
 
     NET_CHECK(MPI_Comm_size(ro_net_comm_world, &num_pes));
@@ -52,8 +85,6 @@ MPITransport::MPITransport()
 MPITransport::~MPITransport()
 {
     delete [] indices;
-
-    MPI_Finalize();
 }
 
 void
@@ -106,7 +137,11 @@ MPITransport::submitRequestsToMPI()
             // No equivalent inline OP for MPI, so allocate a temp buffer
             // for value.
             void * source_buffer = malloc(next_element->size);
-            memcpy(source_buffer, &next_element->src, next_element->size);
+
+            ::memcpy(source_buffer,
+                     &next_element->src,
+                     next_element->size);
+
             putMem(next_element->dst, source_buffer,
                    next_element->size, next_element->PE,
                    queue_idx, next_element->threadId, true, true);
@@ -147,6 +182,45 @@ MPITransport::submitRequestsToMPI()
                         next_element->size, next_element->PE));
 
             break;
+        case RO_NET_AMO_FOP: //AMD Fetch Op
+            amoFOP(next_element->dst, next_element->src,
+                                next_element->size, next_element->PE,
+                                queue_idx, next_element->threadId, true,
+                                (ROC_SHMEM_OP) next_element->op);
+
+            DPRINTF(("Received AMO dst %p src %p Val %d "
+                    "pe %d\n",
+                    next_element->dst, next_element->src,
+                    next_element->size, next_element->PE));
+
+            break;
+        case RO_NET_AMO_FCAS: //AMD Fetch CSWAP
+            amoFCAS(next_element->dst, next_element->src,
+                                next_element->size, next_element->PE,
+                                queue_idx, next_element->threadId, true,
+                                (int64_t) next_element->pWrk);
+
+            DPRINTF(("Received F_CSWAP dst %p src %p Val %ld "
+                    "pe %d cond %ld\n",
+                    next_element->dst, next_element->src,
+                    next_element->size, next_element->PE,
+                    (int64_t)next_element->pWrk ));
+
+            break;
+        case RO_NET_TEAM_TO_ALL: //float_sum_to_all;
+            team_reduction(next_element->dst, next_element->src,
+                                    next_element->size,
+                                    queue_idx,
+                                    next_element->team_comm,
+                                    (ROC_SHMEM_OP) next_element->op,
+                                    (ro_net_types) next_element->datatype,
+                                    next_element->threadId, true);
+
+            DPRINTF(("Received FLOAT_SUM_TEAM_TO_ALL dst %p src %p size %d "
+                    "team %d\n ", next_element->dst, next_element->src,
+                    next_element->size, next_element->team_comm));
+
+            break;
         case RO_NET_TO_ALL: //float_sum_to_all;
             reduction(next_element->dst, next_element->src,
                                     next_element->size,
@@ -167,7 +241,22 @@ MPITransport::submitRequestsToMPI()
                     next_element->pWrk, next_element->pSync));
 
             break;
-         case RO_NET_BROADCAST:
+        case RO_NET_TEAM_BROADCAST:
+            team_broadcast(next_element->dst, next_element->src,
+                                    next_element->size, queue_idx,
+                                    next_element->team_comm,
+                                    next_element->PE_root,
+                                    (ro_net_types) next_element->datatype,
+                                    next_element->threadId, true);
+
+            DPRINTF(("Received TEAM_BROADCAST  dst %p src %p size %d "
+                    "team %d, PE_root %d \n", next_element->dst,
+                    next_element->src, next_element->size,
+                    next_element->team_comm, next_element->PE_root));
+
+            break;
+
+        case RO_NET_BROADCAST:
             broadcast(next_element->dst, next_element->src,
                                     next_element->size,
                                     next_element->PE, queue_idx,
@@ -220,8 +309,6 @@ Status
 MPITransport::initTransport(int num_queues,
                             ro_net_handle *ro_net_gpu_handle)
 {
-    if (getenv("RO_NET_CPU_HEAP"))
-        gpu_heap = false;
 
     waiting_quiet.resize(num_queues, std::vector<int>());
     outstanding.resize(num_queues, 0);
@@ -241,82 +328,40 @@ MPITransport::finalizeTransport()
     delete progress_thread;
     delete host_interface;
 
-    /* Free all of the allocated memory */
-    auto iter = window_vec.begin();
-    while (iter != window_vec.end()) {
-        MPI_Win window = window_vec[0].getWindow();
-        void *ptr = (void*) window_vec[0].getStart();
-        NET_CHECK(MPI_Win_unlock_all(window));
-        NET_CHECK(MPI_Win_free(&window));
-
-        /**
-         * Invoking this here instead of in
-         * a batch in ROHostContext because
-         * the memory is being freed here too
-         */
-        default_host_ctx->deregister_memory(ptr);
-
-        if (gpu_heap) {
-            CHECK_HIP(hipFree(ptr));
-        } else {
-            CHECK_HIP(hipHostFree(ptr));
-        }
-        window_vec.erase(window_vec.begin());
-
-        iter = window_vec.begin();
-    }
-
     return Status::ROC_SHMEM_SUCCESS;
 }
 
-Status
-MPITransport::allocateMemory(void **ptr, size_t size)
+roc_shmem_team_t
+get_external_team(ROTeam *team)
 {
-    if (gpu_heap) {
-        CHECK_HIP(hipExtMallocWithFlags(ptr, size,
-                                        hipDeviceMallocFinegrained));
-    } else {
-        CHECK_HIP(hipHostMalloc(ptr, size, hipHostMallocCoherent));
-    }
+    return reinterpret_cast<roc_shmem_team_t>(team);
+}
 
-    MPI_Win window;
-    NET_CHECK(MPI_Win_create(*ptr, size, 1, MPI_INFO_NULL, ro_net_comm_world,
-                             &window));
-
-    NET_CHECK(MPI_Win_lock_all(0, window));
-    NET_CHECK(MPI_Win_flush_all(window));
-
-    window_vec.emplace_back(window, *ptr, size);
-    DPRINTF(("Creating MPI Window ptr %p size %zu num_windows %zu\n", *ptr,
-            size, window_vec.size()));
+Status
+MPITransport::createNewTeam(ROBackend *backend_handle,
+                            Team *parent_team,
+                            TeamInfo *team_info_wrt_parent,
+                            TeamInfo *team_info_wrt_world,
+                            int num_pes,
+                            int my_pe_in_new_team,
+                            MPI_Comm team_comm,
+                            roc_shmem_team_t *new_team) {
+    ROTeam *new_team_obj;
 
     /**
-     * Register this new memory with the host-facing context.
+     * Allocate device-side memory for team_world and
+     * construct a RO team in it
      */
-    default_host_ctx->register_memory(*ptr, size);
+    CHECK_HIP(hipMalloc(&new_team_obj, sizeof(ROTeam)));
+    new (new_team_obj) ROTeam(*backend_handle,
+                              team_info_wrt_parent,
+                              team_info_wrt_world,
+                              num_pes,
+                              my_pe_in_new_team,
+                              team_comm);
 
-    return Status::ROC_SHMEM_SUCCESS;
-}
+    *new_team = get_external_team(new_team_obj);
 
-Status
-MPITransport::deallocateMemory(void *ptr)
-{
-    if (ptr != nullptr) {
-        int idx = findWinIdx(ptr);
-        MPI_Win window = window_vec[idx].getWindow();
-        NET_CHECK(MPI_Win_unlock_all(window));
-        NET_CHECK(MPI_Win_free(&window));
-
-        default_host_ctx->deregister_memory(ptr);
-
-        if (gpu_heap) {
-            CHECK_HIP(hipFree(ptr));
-        } else {
-            CHECK_HIP(hipHostFree(ptr));
-        }
-        window_vec.erase(window_vec.begin() + idx);
-
-    }
     return Status::ROC_SHMEM_SUCCESS;
 }
 
@@ -363,17 +408,6 @@ void
 MPITransport::global_exit(int status)
 {
     MPI_Abort(ro_net_comm_world, status);
-}
-
-int
-MPITransport::findWinIdx(void *dst) const
-{
-    for (int i = 0; i < window_vec.size(); i++) {
-        if (dst >= window_vec[i].getStart() && dst < window_vec[i].getEnd())
-            return i;
-    }
-    fprintf(stderr, "Unrecoverable error: Unknown window for %p\n", dst);
-    exit(-1);
 }
 
 Status
@@ -491,16 +525,64 @@ MPITransport::broadcast(void *dst, void *src, int size, int pe, int wg_id,
     return Status::ROC_SHMEM_SUCCESS;
 }
 
+Status
+MPITransport::team_reduction(void *dst, void *src, int size, int wg_id,
+                             MPI_Comm team, ROC_SHMEM_OP op, ro_net_types type,
+                             int threadId, bool blocking)
+{
+    MPI_Request request;
+
+    MPI_Op mpi_op = convertOp(op);
+    MPI_Datatype mpi_type = convertType(type);
+    MPI_Comm comm = team;
+
+    if (dst == src) {
+        NET_CHECK(MPI_Iallreduce(MPI_IN_PLACE, dst, size, mpi_type, mpi_op,
+                                 comm, &request));
+    } else {
+        NET_CHECK(MPI_Iallreduce(src, dst, size, mpi_type, mpi_op, comm,
+                                 &request));
+    }
+
+    req_prop_vec.emplace_back(threadId, wg_id, blocking);
+    req_vec.push_back(request);
+    outstanding[wg_id]++;
+    return Status::ROC_SHMEM_SUCCESS;
+}
+
+Status
+MPITransport::team_broadcast(void *dst, void *src, int size, int wg_id,
+                             MPI_Comm team, int root, ro_net_types type,
+                             int threadId, bool blocking)
+{
+    MPI_Request request;
+    int new_rank;
+    void *data;
+
+    MPI_Datatype mpi_type = convertType(type);
+    MPI_Comm comm = team;
+    MPI_Comm_rank(comm, &new_rank);
+    if(new_rank == root)
+        data = src;
+    else
+        data = dst;
+
+    NET_CHECK(MPI_Ibcast(data, size, mpi_type, root, comm,
+                                 &request));
+
+    req_prop_vec.emplace_back(threadId, wg_id, blocking);
+    req_vec.push_back(request);
+    outstanding[wg_id]++;
+    return Status::ROC_SHMEM_SUCCESS;
+}
 
 Status
 MPITransport::putMem(void *dst, void *src, int size, int pe, int wg_id,
                      int threadId, bool blocking, bool inline_data)
 {
-    int idx = findWinIdx(dst);
-
     MPI_Request request;
 
-    if (!handle->gpu_queue && gpu_heap) {
+    if (!handle->gpu_queue) {
         // Need to flush HDP read cache so that the NIC can see data to push
         // out to the network.  If we have the network buffers allocated
         // on the host or we've already flushed for the command queue on the
@@ -508,13 +590,15 @@ MPITransport::putMem(void *dst, void *src, int size, int pe, int wg_id,
         handle->hdp_policy->hdp_flush();
     }
 
-    NET_CHECK(MPI_Rput(src, size, MPI_CHAR, pe, window_vec[idx].getOffset(dst),
-                       size, MPI_CHAR, window_vec[idx].getWindow(), &request));
+    NET_CHECK(MPI_Rput(src, size, MPI_CHAR, pe,
+                       handle->heap_window_info->get_offset(dst),
+                       size, MPI_CHAR, handle->heap_window_info->get_win(),
+                       &request));
 
     // Since MPI makes puts as complete as soon as the local buffer is free,
     // we need a flush to satisfy quiet.  Put it here as a hack for now even
     // though it should be in the progress loop.
-    NET_CHECK(MPI_Win_flush_all(window_vec[idx].getWindow()));
+    NET_CHECK(MPI_Win_flush_all(handle->heap_window_info->get_win()));
 
     req_prop_vec.emplace_back(threadId, wg_id, blocking, src, inline_data);
     req_vec.push_back(request);
@@ -523,17 +607,86 @@ MPITransport::putMem(void *dst, void *src, int size, int pe, int wg_id,
 }
 
 Status
+MPITransport::amoFOP(void *dst, void *src, int64_t val, int pe, int wg_id,
+                     int threadId, bool blocking, ROC_SHMEM_OP op)
+{
+    //MPI_Request request;
+
+    if (!handle->gpu_queue) {
+        // Need to flush HDP read cache so that the NIC can see data to push
+        // out to the network.  If we have the network buffers allocated
+        // on the host or we've already flushed for the command queue on the
+        // GPU then we can ignore this step.
+        handle->hdp_policy->hdp_flush();
+    }
+
+    NET_CHECK(MPI_Fetch_and_op((void*)&val, src, MPI_INT64_T, pe,
+                                handle->heap_window_info->get_offset(dst),
+                                get_mpi_op(op),
+                                handle->heap_window_info->get_win()));
+
+    // Since MPI makes puts as complete as soon as the local buffer is free,
+    // we need a flush to satisfy quiet.  Put it here as a hack for now even
+    // though it should be in the progress loop.
+    NET_CHECK(MPI_Win_flush_local(pe, handle->heap_window_info->get_win()));
+
+    handle->queue_descs[wg_id].status[threadId] = 1;
+    if (handle->gpu_queue) {
+        SFENCE();
+        handle->hdp_policy->hdp_flush();
+    }
+
+    //req_prop_vec.emplace_back(threadId, wg_id, blocking, src, inline_data);
+    //req_vec.push_back(request);
+    //outstanding[wg_id]++;
+    return Status::ROC_SHMEM_SUCCESS;
+}
+
+Status
+MPITransport::amoFCAS(void *dst, void *src, int64_t val, int pe, int wg_id,
+                     int threadId, bool blocking, int64_t cond)
+{
+    //MPI_Request request;
+
+    if (!handle->gpu_queue) {
+        // Need to flush HDP read cache so that the NIC can see data to push
+        // out to the network.  If we have the network buffers allocated
+        // on the host or we've already flushed for the command queue on the
+        // GPU then we can ignore this step.
+        handle->hdp_policy->hdp_flush();
+    }
+
+    NET_CHECK(MPI_Compare_and_swap((const void*)&val, (const void*) &cond,
+                                    src, MPI_INT64_T, pe,
+                                    handle->heap_window_info->get_offset(dst),
+                                    handle->heap_window_info->get_win()));
+
+    // Since MPI makes puts as complete as soon as the local buffer is free,
+    // we need a flush to satisfy quiet.  Put it here as a hack for now even
+    // though it should be in the progress loop.
+    NET_CHECK(MPI_Win_flush_local(pe, handle->heap_window_info->get_win()));
+
+    handle->queue_descs[wg_id].status[threadId] = 1;
+    if (handle->gpu_queue) {
+        SFENCE();
+        handle->hdp_policy->hdp_flush();
+    }
+
+    return Status::ROC_SHMEM_SUCCESS;
+}
+
+
+Status
 MPITransport::getMem(void *dst, void *src, int size, int pe, int wg_id,
                      int threadId, bool blocking)
 {
-    int idx = findWinIdx(src);
 
     MPI_Request request;
 
     outstanding[wg_id]++;
 
-    NET_CHECK(MPI_Rget(dst, size, MPI_CHAR, pe, window_vec[idx].getOffset(src),
-                    size, MPI_CHAR, window_vec[idx].getWindow(), &request));
+    NET_CHECK(MPI_Rget(dst, size, MPI_CHAR, pe, handle->heap_window_info->get_offset(src),
+                    size, MPI_CHAR, handle->heap_window_info->get_win(), &request));
 
    req_prop_vec.emplace_back(threadId, wg_id, blocking);
    req_vec.push_back(request);
@@ -734,7 +887,6 @@ OpenSHMEMTransport::broadcast(void *dst, void *src, int size, int pe,
     return Status::ROC_SHMEM_SUCCESS;
 }
 
-
 Status
 OpenSHMEMTransport::putMem(void *dst, void *src, int size, int pe, int wg_id)
 {
@@ -748,6 +900,14 @@ OpenSHMEMTransport::getMem(void *dst, void *src, int size, int pe, int wg_id)
 {
     assert(wg_id < ctx_vec.size());
     shmem_ctx_getmem_nbi(ctx_vec[wg_id], dst, src, size, pe);
+    return Status::ROC_SHMEM_SUCCESS;
+}
+
+Status
+OpenSHMEMTransport::amoFOP(void *dst, void *src, int64_t val, int pe,
+                                      int wg_id, int threadId, bool blocking,
+                                      ROC_SHMEM_OP op)
+{
     return Status::ROC_SHMEM_SUCCESS;
 }
 
@@ -790,3 +950,5 @@ OpenSHMEMTransport::numOutstandingRequests()
 }
 
 #endif
+
+}  // namespace rocshmem

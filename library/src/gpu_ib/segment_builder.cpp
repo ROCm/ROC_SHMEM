@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2021 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -23,6 +23,8 @@
 #include "segment_builder.hpp"
 
 #include "endian.hpp"
+
+namespace rocshmem {
 
 __device__
 SegmentBuilder::SegmentBuilder(uint64_t wqe_idx,
@@ -137,3 +139,5 @@ update_connection_seg(int pe, ConnectionImpl *conn_policy) {
         seg_ptr++;
     }
 }
+
+}  // namespace rocshmem

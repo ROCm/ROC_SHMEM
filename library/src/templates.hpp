@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2020 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -20,8 +20,8 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef TEMPLATES_H
-#define TEMPLATES_H
+#ifndef ROCSHMEM_LIBRARY_SRC_TEMPLATES_HPP
+#define ROCSHMEM_LIBRARY_SRC_TEMPLATES_HPP
 
 #include <roc_shmem.hpp>
 
@@ -37,6 +37,8 @@
 /******************************************************************************
  **************************** DEVICE FUNCTIONS **********************************
  *****************************************************************************/
+
+namespace rocshmem {
 
 /**
  * @brief Writes contiguous data of \p nelems elements from \p source on the
@@ -769,4 +771,6 @@ roc_shmemx_get_nbi_wave(T *dest, const T *source, size_t nelems, int pe)
     roc_shmemx_get_nbi_wave(ROC_SHMEM_CTX_DEFAULT, dest, source, nelems, pe);
 }
 
-#endif
+}  // namespace rocshmem
+
+#endif  // ROCSHMEM_LIBRARY_SRC_TEMPLATES_HPP

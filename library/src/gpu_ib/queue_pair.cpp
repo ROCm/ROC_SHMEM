@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2021 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -24,11 +24,13 @@
 
 #include <hip/hip_runtime.h>
 
-#include "backend.hpp"
+#include "backend_ib.hpp"
 #include "config.h"  // NOLINT(build/include_subdir)
 #include "endian.hpp"
 #include "segment_builder.hpp"
 #include "util.hpp"
+
+namespace rocshmem {
 
 QueuePair::QueuePair(GPUIBBackend *backend)
     : hdp_policy(*backend->hdp_policy),
@@ -45,6 +47,7 @@ QueuePair::~QueuePair() {
     uint64_t start = profiler.startTimer();
 
     global_qp->sq_counter = sq_counter;
+    global_qp->local_sq_cnt = local_sq_cnt;
     global_qp->cq_consumer_counter = cq_consumer_counter;
     global_qp->current_sq = current_sq;
     global_qp->current_cq_q = current_cq_q;
@@ -81,24 +84,45 @@ __device__ void
 QueuePair::ring_doorbell(uint64_t db_val) {
     swap_endian_store(const_cast<uint32_t*>(dbrec_send),
                       reinterpret_cast<uint32_t>(sq_counter));
-
     STORE(db.ptr, db_val);
     db.uint  ^= 256;
 }
 
-template<>
 __device__ void
-QueuePair::update_wqe_ce<false>(int num_wqes) {
+QueuePair::set_completion_flag_on_wqe(int num_wqes){
+    uint64_t *wqe = &current_sq[8 * ((sq_counter - num_wqes) % max_nwqe)];
+    uint8_t *wqe_ce = reinterpret_cast<uint8_t*>(wqe) + 11;
+    *wqe_ce = 8;
 }
 
 template<>
 __device__ void
-QueuePair::update_wqe_ce<true>(int num_wqes) {
-    uint64_t *wqe = &current_sq[8 * ((sq_counter - num_wqes) % max_nwqe)];
-    uint8_t *wqe_ce = reinterpret_cast<uint8_t*>(wqe) + 11;
-    *wqe_ce = 8;
+QueuePair::update_wqe_ce_single<false>(int num_wqes) {
+    if(sq_counter % max_nwqe == (max_nwqe-2)){
+        set_completion_flag_on_wqe(num_wqes);
+        quiet_counter++;
+    }
+}
+
+template<>
+__device__ void
+QueuePair::update_wqe_ce_single<true>(int num_wqes) {
+    set_completion_flag_on_wqe(num_wqes);
     quiet_counter++;
 }
+
+template<>
+__device__ void
+QueuePair::update_wqe_ce_thread<false>(int num_wqes) {
+}
+
+template<>
+__device__ void
+QueuePair::update_wqe_ce_thread<true>(int num_wqes) {
+    set_completion_flag_on_wqe(num_wqes);
+    atomicAdd(&quiet_counter, 1);
+}
+
 
 __device__ void
 QueuePair::compute_db_val_opcode(uint64_t *db_val,
@@ -119,37 +143,41 @@ QueuePair::compute_db_val_opcode(uint64_t *db_val,
 template <class level>
 __device__ void
 QueuePair::quiet_internal() {
-    if (!quiet_counter) {
+    uint32_t quiet_val = quiet_counter;
+    if (!quiet_val) {
         return;
     }
 
     level L;
 
-    profiler.incStat(RTN_QUIET_COUNT);
+    profiler.incStat(QUIET_COUNT);
 
     uint64_t start = profiler.startTimer();
 
-    cq_consumer_counter = cq_consumer_counter + quiet_counter - 1;
+    cq_consumer_counter = cq_consumer_counter + quiet_val - 1;
+    uint32_t indx = (cq_consumer_counter % cq_size);
 
-    mlx5_cqe64 *cqe_entry = &current_cq_q[cq_consumer_counter % cq_size];
+    mlx5_cqe64 *cqe_entry = &current_cq_q[indx];
 
-    int val_ld =  _uncached_load_ubyte(&(cqe_entry->op_own));
+    int val_ld = uncached_load_ubyte(&(cqe_entry->op_own));
     uint8_t val_op_own = val_ld;
 
      while (!((val_op_own & 0x1) ==
              ((cq_consumer_counter >> cq_log_size) & 1))
             || ((val_op_own) >> 4) == 0xF) {
-        val_ld =  _uncached_load_ubyte(&(cqe_entry->op_own));
+        val_ld = uncached_load_ubyte(&(cqe_entry->op_own));
         val_op_own = val_ld;
     }
 
     uint8_t opcode = val_op_own >> 4;
     if (opcode != 0) {
         uint8_t syndrome = get_cq_error_syndrome(cqe_entry);
-        gpu_dprintf("*** inside QUIET ERROR signature %d \n", syndrome);
+        mlx5_err_cqe * cqe_err = reinterpret_cast<mlx5_err_cqe*>(cqe_entry);
+        gpu_dprintf("QUIET ERROR: signature %d opcode_qpn %llx wqe_cnt %llx \n",
+                    syndrome, cqe_err->s_wqe_opcode_qpn, cqe_err->wqe_counter);
     }
 
-    L.decQuietCounter(&quiet_counter, quiet_counter);
+    L.decQuietCounter(&quiet_counter, quiet_val);
     profiler.endTimer(start, POLL_CQ);
 
     start = profiler.startTimer();
@@ -197,10 +225,10 @@ QueuePair::update_posted_wqe_generic(int pe,
 
     // 16-bit little endian version of the SQ index needed to build the cntrl
     // segment in the WQE.
-    // FIXME(khamidou): Seems completely broken past 64K...
     uint16_t le_sq_counter;
     uint16_t sq_counter_u16 = my_sq_counter;
     swap_endian_store(&le_sq_counter, sq_counter_u16);
+
 
     bool flag = sq_overflow;
     uint32_t lkey_in_stack_frame = lkey;
@@ -243,7 +271,7 @@ QueuePair::update_posted_wqe_generic(int pe,
         seg_build.update_data_seg(laddr, size, lkey_in_stack_frame);
     }
 
-    profiler.incStat(RTN_WQE_COUNT);
+    profiler.incStat(WQE_COUNT);
     profiler.endTimer(start, UPDATE_WQE);
     start = profiler.startTimer();
 
@@ -254,7 +282,7 @@ QueuePair::update_posted_wqe_generic(int pe,
                                le_sq_counter,
                                opcode);
 
-    profiler.incStat(RTN_DB_COUNT);
+    profiler.incStat(DB_COUNT);
     profiler.endTimer(start, RING_SQ_DB);
 }
 
@@ -396,7 +424,7 @@ QueuePair::atomic_fetch(void *dest,
                                             pos);
     quiet_single<THREAD>();
 
-    while (_uncached_load_(load_address) == -100) {
+    while (uncached_load(load_address) == -100) {
     }
 
     int64_t ret = *load_address;
@@ -453,14 +481,33 @@ QueuePair::waitCQSpace(int num_msgs) {
     // We cannot post more outstanding requests than the completion queue
     // size.  Force a quiet if we are out of space.
     if ((quiet_counter + num_msgs) >= cq_size) {
-        gpu_dprintf("*** inside post_cq forcing flush: outstanding %d "
+        GPU_DPRINTF("*** inside post_cq forcing flush: outstanding %d "
                     "adding %d cq_size %d\n", quiet_counter, num_msgs,
                     cq_size);
 
         // TODO(khamidou): More targeted flush would be better here.
-        quiet_internal<THREAD>();
+        quiet_single<THREAD>();
     }
 }
+
+__device__ void
+QueuePair::waitSQSpace(int num_msgs) {
+    // We cannot post more outstanding requests than the Send queue
+    // size.  Force a quiet if we are out of space.
+    local_sq_cnt += num_msgs;
+    int div = local_sq_cnt /max_nwqe;
+
+    if (div >0) {
+        GPU_DPRINTF("*** inside waitSQSpace forcing flush to overrun the SQ"
+                    " sq_counter %d  adding %d quiet_conter %d \n", sq_counter,
+                    num_msgs, max_nwqe, quiet_counter);
+
+        quiet_single<THREAD>();
+        local_sq_cnt = local_sq_cnt% max_nwqe;
+
+    }
+}
+
 
 void
 QueuePair::setDBval(uint64_t val) {
@@ -512,3 +559,5 @@ QueuePair::setDBval(uint64_t val) {
 THREAD_LEVEL_GEN(THREAD)
 THREAD_LEVEL_GEN(WG)
 THREAD_LEVEL_GEN(WAVE)
+
+}  // namespace rocshmem

@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2021 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -20,16 +20,18 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef LIBRARY_SRC_GPU_IB_QE_DUMPER_HPP__
-#define LIBRARY_SRC_GPU_IB_QE_DUMPER_HPP__
+#ifndef ROCSHMEM_LIBRARY_SRC_GPU_IB_QE_DUMPER_HPP
+#define ROCSHMEM_LIBRARY_SRC_GPU_IB_QE_DUMPER_HPP
 
 #include <hip/hip_runtime.h>
 #include <infiniband/mlx5dv.h>
 
 #include <string>
 
-#include "backend.hpp"
+#include "backend_ib.hpp"
 #include "queue_pair.hpp"
+
+namespace rocshmem {
 
 class QeDumper {
  public:
@@ -47,21 +49,23 @@ class QeDumper {
 
  private:
     void
-    _dump_uint64(size_t num_elems) const;
+    dump_uint64_(size_t num_elems) const;
 
-    int _dest_pe;
+    int dest_pe_ {-1};
 
-    int _src_wg;
+    int src_wg_ {-1};
 
-    int _index;
+    int index_ {-1};
 
-    GPUIBBackend *_gpu_backend = nullptr;
+    GPUIBBackend* gpu_backend_ {nullptr};
 
-    std::string _type {};
+    std::string type_ {};
 
-    QueuePair *_qp = nullptr;
+    QueuePair* qp_ {nullptr};
 
-    uint64_t *_raw_u64 = nullptr;
+    uint64_t* raw_u64_ {nullptr};
 };
 
-#endif  // LIBRARY_SRC_GPU_IB_QE_DUMPER_HPP__
+}  // namespace rocshmem
+
+#endif  // ROCSHMEM_LIBRARY_SRC_GPU_IB_QE_DUMPER_HPP

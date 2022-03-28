@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2020 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -20,14 +20,14 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef STATS_H
-#define STATS_H
+#ifndef ROCSHMEM_LIBRARY_SRC_STATS_HPP
+#define ROCSHMEM_LIBRARY_SRC_STATS_HPP
 
 #include "roc_shmem.hpp"
 #include <mpi.h>
 #include <atomic>
 
-using namespace std;
+namespace rocshmem {
 
 enum roc_shmem_stats {
     NUM_PUT = 0,
@@ -94,7 +94,7 @@ enum roc_shmem_host_stats {
 
 typedef unsigned long long StatType;
 
-typedef atomic_ullong AtomicStatType;
+typedef std::atomic_ullong AtomicStatType;
 
 template <int I>
 class Stats
@@ -187,4 +187,6 @@ typedef NullStats<NUM_STATS> ROCStats;
 typedef NullStats<NUM_STATS> ROCHostStats;
 #endif
 
-#endif
+}  // namespace rocshmem
+
+#endif  // ROCSHMEM_LIBRARY_SRC_STATS_HPP

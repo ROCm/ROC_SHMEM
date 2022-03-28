@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2020 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -21,13 +21,15 @@
  *****************************************************************************/
 
 #include "dynamic_connection.hpp"
-#include "backend.hpp"
+#include "backend_ib.hpp"
 
 #include "mpi.h"  // NOLINT(build/include_subdir)
 
-DynamicConnection::DynamicConnection(GPUIBBackend *b)
+namespace rocshmem {
+
+DynamicConnection::DynamicConnection(GPUIBBackend* b)
     : Connection(b, 4) {
-    char *value = nullptr;
+    char* value = nullptr;
 
     if ((value = getenv("ROC_SHMEM_NUM_DCIs"))) {
         num_dcis = atoi(value);
@@ -44,8 +46,8 @@ DynamicConnection::~DynamicConnection() {
 }
 
 ibv_qp_init_attr_ex
-DynamicConnection::dct_qp_init_attr(ibv_cq *cq,
-                                 ibv_srq *srq,
+DynamicConnection::dct_qp_init_attr(ibv_cq* cq,
+                                 ibv_srq* srq,
                                  uint8_t port) const {
     ibv_qp_init_attr_ex attr {};
 
@@ -81,7 +83,7 @@ DynamicConnection::initqp(uint8_t port) {
 }
 
 Connection::RtrState
-DynamicConnection::rtr(dest_info_t *dest,
+DynamicConnection::rtr(dest_info_t* dest,
                        uint8_t port) {
     RtrState rtr {};
 
@@ -95,14 +97,14 @@ DynamicConnection::rtr(dest_info_t *dest,
 }
 
 Connection::RtsState
-DynamicConnection::rts(dest_info_t *dest) {
+DynamicConnection::rts(dest_info_t* dest) {
     RtsState rts {};
     rts.exp_attr_mask |=IBV_QP_SQ_PSN;
     return rts;
 }
 
 Status
-DynamicConnection::connect_dci(ibv_qp *qp, uint8_t port) {
+DynamicConnection::connect_dci(ibv_qp* qp, uint8_t port) {
     Status status;
     status = init_qp_status(qp, port);
     if (status != Status::ROC_SHMEM_SUCCESS) {
@@ -125,9 +127,9 @@ DynamicConnection::connect_dci(ibv_qp *qp, uint8_t port) {
  * create a DCT and get is to ready state
  */
 Status
-DynamicConnection::create_dct(int32_t *dct_num,
-                              ibv_cq *cq,
-                              ibv_srq *srq,
+DynamicConnection::create_dct(int32_t* dct_num,
+                              ibv_cq* cq,
+                              ibv_srq* srq,
                               uint8_t port) {
     Status status;
 
@@ -185,9 +187,9 @@ DynamicConnection::create_dct(int32_t *dct_num,
  * @brief create a qp (DCI qp) using DEVX
  */
 ibv_qp*
-DynamicConnection::create_qp_0(ibv_context *context,
-                               ibv_qp_init_attr_ex *qp_attr) {
-    ibv_qp *qp;
+DynamicConnection::create_qp_0(ibv_context* context,
+                               ibv_qp_init_attr_ex* qp_attr) {
+    ibv_qp* qp;
     qp_attr->qp_type = IBV_QPT_DRIVER;
 
     mlx5dv_qp_init_attr dv_attr {};
@@ -221,7 +223,7 @@ DynamicConnection::create_qps_1() {
 
 Status
 DynamicConnection::create_qps_2(int port, int my_rank,
-                                ibv_port_attr *ib_port_att) {
+                                ibv_port_attr* ib_port_att) {
     for (int i = 0; i < num_dct; i++) {
         int32_t dct_num;
         Status status;
@@ -238,13 +240,13 @@ DynamicConnection::create_qps_2(int port, int my_rank,
 }
 
 Status
-DynamicConnection::create_qps_3(int port, ibv_qp *qp, int offset,
-                                ibv_port_attr *ib_port_att) {
+DynamicConnection::create_qps_3(int port, ibv_qp* qp, int offset,
+                                ibv_port_attr* ib_port_att) {
     return connect_dci(qp, port);
 }
 
 Status
-DynamicConnection::get_remote_conn(int *remote_conn) {
+DynamicConnection::get_remote_conn(int* remote_conn) {
     *remote_conn = num_dcis;
     return Status::ROC_SHMEM_SUCCESS;
 }
@@ -273,8 +275,8 @@ DynamicConnection::allocate_dynamic_members(int num_wg) {
  * the DC segment
  */
 Status
-DynamicConnection::dc_get_av(ibv_ah *ah,
-                             mlx5_wqe_av *mlx5_av) {
+DynamicConnection::dc_get_av(ibv_ah* ah,
+                             mlx5_wqe_av* mlx5_av) {
     mlx5dv_obj dv;
     mlx5dv_ah dah;
 
@@ -313,7 +315,7 @@ DynamicConnection::initialize_1(int port,
                   backend->thread_comm);
 
     hipStream_t stream;
-    hipStreamCreateWithFlags(&stream, hipStreamNonBlocking);
+    CHECK_HIP(hipStreamCreateWithFlags(&stream, hipStreamNonBlocking));
     CHECK_HIP(hipMalloc(reinterpret_cast<void**>(&vec_dct_num),
                         sizeof(int32_t) * num_dct * backend->num_pes));
 
@@ -349,14 +351,14 @@ DynamicConnection::initialize_1(int port,
 
     dc_get_av(ah, &mlx5_av);
 
-    hipStreamSynchronize(stream);
-    hipStreamDestroy(stream);
+    CHECK_HIP(hipStreamSynchronize(stream));
+    CHECK_HIP(hipStreamDestroy(stream));
     return Status::ROC_SHMEM_SUCCESS;
 }
 
 Status
-DynamicConnection::initialize_rkey_handle(uint32_t **heap_rkey_handle,
-                                          ibv_mr *mr) {
+DynamicConnection::initialize_rkey_handle(uint32_t** heap_rkey_handle,
+                                          ibv_mr* mr) {
     CHECK_HIP(hipMalloc(heap_rkey_handle,
                         sizeof(uint32_t) * backend->num_pes));
     (*heap_rkey_handle)[backend->my_pe] = htobe32(mr->rkey);
@@ -364,7 +366,7 @@ DynamicConnection::initialize_rkey_handle(uint32_t **heap_rkey_handle,
 }
 
 void
-DynamicConnection::free_rkey_handle(uint32_t *heap_rkey_handle) {
+DynamicConnection::free_rkey_handle(uint32_t* heap_rkey_handle) {
      CHECK_HIP(hipFree(heap_rkey_handle));
 }
 
@@ -379,11 +381,11 @@ DynamicConnection::qpattr(ibv_qp_cap cap) {
  * We get all the info needed from the mlx5_wqe_av that we extract from ibv_ah.
  */
 void
-DynamicConnection::set_dgram_seg(mlx5_wqe_datagram_seg *dc_seg,
+DynamicConnection::set_dgram_seg(mlx5_wqe_datagram_seg* dc_seg,
                                  uint64_t dc_key,
                                  uint32_t dct_num,
                                  uint8_t ext,
-                                 mlx5_wqe_av *mlx5_av) {
+                                 mlx5_wqe_av* mlx5_av) {
     dc_seg->av.key.dc_key = htobe64(dc_key);
     dc_seg->av.dqp_dct = htobe32(((uint32_t) ext << 31 | dct_num));
     dc_seg->av.stat_rate_sl = mlx5_av->stat_rate_sl;
@@ -398,13 +400,13 @@ DynamicConnection::set_dgram_seg(mlx5_wqe_datagram_seg *dc_seg,
  */
 void
 DynamicConnection::post_dv_dc_wqe(int remote_conn) {
-    mlx5_wqe_ctrl_seg *ctrl;
-    mlx5_wqe_datagram_seg *dc_seg;
-    mlx5_wqe_raddr_seg *rdma;
-    mlx5_wqe_data_seg *data;
+    mlx5_wqe_ctrl_seg* ctrl;
+    mlx5_wqe_datagram_seg* dc_seg;
+    mlx5_wqe_raddr_seg* rdma;
+    mlx5_wqe_data_seg* data;
 
     for (int i = 0; i < remote_conn; i++) {
-        uint64_t *ptr = get_address_sq(i);
+        uint64_t* ptr = get_address_sq(i);
 
         const uint32_t nb_post = 4 * sq_size;
         for (uint16_t index = 0; index < nb_post; index++) {
@@ -459,8 +461,8 @@ DynamicConnection::post_wqes() {
 }
 
 void
-DynamicConnection::initialize_wr_fields(ibv_send_wr *wr,
-                                        ibv_ah *ah,
+DynamicConnection::initialize_wr_fields(ibv_send_wr* wr,
+                                        ibv_ah* ah,
                                         int dc_key) {
 }
 
@@ -468,3 +470,5 @@ int
 DynamicConnection::get_sq_dv_offset(int pe_idx, int num_qps, int wg_idx) {
     return wg_idx;
 }
+
+}  // namespace rocshmem

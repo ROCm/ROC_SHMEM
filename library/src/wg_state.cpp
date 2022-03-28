@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -21,8 +21,10 @@
  *****************************************************************************/
 
 #include "wg_state.hpp"
-#include "context.hpp"
-#include "backend.hpp"
+#include "context_incl.hpp"
+#include "backend_bc.hpp"
+
+namespace rocshmem {
 
 __device__ void
 WGState::create()
@@ -40,7 +42,7 @@ WGState::WGState()
 
     // Set the heap base to account for space used by this context
     dynamicPtr = baseDynamicPtr + sizeof(*this);
-    buffer_id = reserve_wg_buffers(gpu_handle->num_wg);
+    buffer_id = reserve_wg_buffers(device_backend_proxy->num_wg);
 }
 
 __device__ void
@@ -49,7 +51,7 @@ WGState::return_buffers()
     wg_ctx->ctx_destroy();
 
     if (is_thread_zero_in_block())
-        gpu_handle->bufferTokens[buffer_id] = 0;
+        device_backend_proxy->bufferTokens[buffer_id] = 0;
 
     __syncthreads();
 }
@@ -102,7 +104,8 @@ WGState::reserve_wg_buffers(int num_buffers)
     // be scheduled, then we are going to end up fighting with other WGs
     // for them.  Iterate over all available buffer tokens and find an
     // avilable buffer.
-    while (atomicCAS(&gpu_handle->bufferTokens[buffer_index], 0, 1) == 1)
+    while (atomicCAS(&device_backend_proxy->bufferTokens[buffer_index],
+                     0, 1) == 1)
         buffer_index = (buffer_index + 1) % num_buffers;
 
     return buffer_index;
@@ -119,3 +122,5 @@ WGState::instance()
    HIP_DYNAMIC_SHARED(WGState, wg_state);
    return wg_state;
 }
+
+}  // namespace rocshmem

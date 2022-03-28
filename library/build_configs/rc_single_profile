@@ -10,7 +10,7 @@ fi
 src_path=$(dirname "$(realpath $0)")/..
 
 cmake \
-    -DCMAKE_BUILD_TYPE=Debug \
+    -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX=$install_path \
     -DCMAKE_VERBOSE_MAKEFILE=ON \
     -DDEBUG=OFF \

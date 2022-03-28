@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -24,15 +24,17 @@
 
 #include <mpi.h>
 
-#include "atomic_return.hpp"
-#include "backend.hpp"
+#include "../atomic_return.hpp"
+#include "backend_ib.hpp"
 #include "config.h"  // NOLINT(build/include_subdir)
 #include "connection.hpp"
-#include "context.hpp"
+#include "context_incl.hpp"
 #include "dynamic_connection.hpp"
 #include "queue_pair.hpp"
 #include "reliable_connection.hpp"
 #include "wg_state.hpp"
+
+namespace rocshmem {
 
 Status
 NetworkOnImpl::dump_backend_stats(ROCStats *globalStats) {
@@ -50,18 +52,18 @@ NetworkOnImpl::dump_backend_stats(ROCStats *globalStats) {
     uint64_t cycles_finalize =
         gpu_qps[statblocks - 1].profiler.getStat(FINALIZE);
 
-    uint64_t total_rtn_quiet_count = 0;
-    uint64_t total_rtn_db_count = 0;
-    uint64_t total_rtn_wqe_count = 0;
+    uint64_t total_quiet_count = 0;
+    uint64_t total_db_count = 0;
+    uint64_t total_wqe_count = 0;
 
     for (int i = 0; i < statblocks; i++) {
         cycles_ring_sq_db += gpu_qps[i].profiler.getStat(RING_SQ_DB);
         cycles_update_wqe += gpu_qps[i].profiler.getStat(UPDATE_WQE);
         cycles_poll_cq += gpu_qps[i].profiler.getStat(POLL_CQ);
         cycles_next_cq += gpu_qps[i].profiler.getStat(NEXT_CQ);
-        total_rtn_quiet_count += gpu_qps[i].profiler.getStat(RTN_QUIET_COUNT);
-        total_rtn_db_count += gpu_qps[i].profiler.getStat(RTN_DB_COUNT);
-        total_rtn_wqe_count += gpu_qps[i].profiler.getStat(RTN_WQE_COUNT);
+        total_quiet_count += gpu_qps[i].profiler.getStat(QUIET_COUNT);
+        total_db_count += gpu_qps[i].profiler.getStat(DB_COUNT);
+        total_wqe_count += gpu_qps[i].profiler.getStat(WQE_COUNT);
     }
 
     double us_ring_sq_db = cycles_ring_sq_db / gpu_clock_freq_mhz;
@@ -74,10 +76,10 @@ NetworkOnImpl::dump_backend_stats(ROCStats *globalStats) {
     const int FIELD_WIDTH = 20;
     const int FLOAT_PRECISION = 2;
 
-    printf("RTN Counts: Internal Quiets %lu DB Rings %lu WQE Posts %lu\n",
-           total_rtn_quiet_count,
-           total_rtn_db_count,
-           total_rtn_wqe_count);
+    printf("Counts: Internal Quiets %lu DB Rings %lu WQE Posts %lu\n",
+           total_quiet_count,
+           total_db_count,
+           total_wqe_count);
 
     printf("\n%*s%*s%*s%*s%*s%*s\n",
            FIELD_WIDTH + 1, "Init (us)",
@@ -91,10 +93,10 @@ NetworkOnImpl::dump_backend_stats(ROCStats *globalStats) {
     printf("%*.*f %*.*f %*.*f %*.*f %*.*f %*.*f\n",
            FIELD_WIDTH, FLOAT_PRECISION, us_init / totalFinalize,
            FIELD_WIDTH, FLOAT_PRECISION, us_finalize / totalFinalize,
-           FIELD_WIDTH, FLOAT_PRECISION, us_ring_sq_db / total_rtn_db_count,
-           FIELD_WIDTH, FLOAT_PRECISION, us_update_wqe / total_rtn_wqe_count,
-           FIELD_WIDTH, FLOAT_PRECISION, us_poll_cq / total_rtn_quiet_count,
-           FIELD_WIDTH, FLOAT_PRECISION, us_next_cq / total_rtn_quiet_count);
+           FIELD_WIDTH, FLOAT_PRECISION, us_ring_sq_db / total_db_count,
+           FIELD_WIDTH, FLOAT_PRECISION, us_update_wqe / total_wqe_count,
+           FIELD_WIDTH, FLOAT_PRECISION, us_poll_cq / total_quiet_count,
+           FIELD_WIDTH, FLOAT_PRECISION, us_next_cq / total_quiet_count);
 #endif
     return Status::ROC_SHMEM_SUCCESS;
 }
@@ -196,7 +198,7 @@ NetworkOnImpl::exchange_hdp_info(HdpPolicy *hdp_policy,
      * Copy the recently exchanged HDP keys to device memory.
      */
     hipStream_t stream;
-    hipStreamCreateWithFlags(&stream, hipStreamNonBlocking);
+    CHECK_HIP(hipStreamCreateWithFlags(&stream, hipStreamNonBlocking));
     CHECK_HIP(hipMemcpyAsync(hdp_rkey,
                              host_hdp_cpy,
                              num_pes * sizeof(uint32_t),
@@ -211,8 +213,8 @@ NetworkOnImpl::exchange_hdp_info(HdpPolicy *hdp_policy,
                              num_pes * sizeof(uint32_t *),
                              hipMemcpyHostToDevice,
                              stream));
-    hipStreamSynchronize(stream);
-    hipStreamDestroy(stream);
+    CHECK_HIP(hipStreamSynchronize(stream));
+    CHECK_HIP(hipStreamDestroy(stream));
 
     /*
      * Free the host-side resources used to exchange HDP resources
@@ -226,27 +228,12 @@ NetworkOnImpl::exchange_hdp_info(HdpPolicy *hdp_policy,
 
 Status
 NetworkOnImpl::setup_atomic_region() {
-    /*
-     * Allocate device-side control struct for the atomic return region.
-     */
-    CHECK_HIP(hipMalloc(reinterpret_cast<void**>(&atomic_ret),
-                        sizeof(atomic_ret_t)));
 
     /*
      * Allocate fine-grained device-side memory for the atomic return
      * region.
      */
-    CHECK_HIP(hipExtMallocWithFlags(
-        reinterpret_cast<void**>(&atomic_ret->atomic_base_ptr),
-        max_nb_atomic * num_wg * sizeof(uint64_t),
-        hipDeviceMallocFinegrained));
-
-    /*
-     * Zero-initialize the entire atomic return region.
-     */
-    memset(atomic_ret->atomic_base_ptr,
-           0,
-           max_nb_atomic * num_wg * sizeof(uint64_t));
+    allocate_atomic_region(&atomic_ret, num_wg);
 
     /*
      * Register the atomic return region on the InfiniBand network.
@@ -272,7 +259,7 @@ Status
 NetworkOnImpl::heap_memory_rkey(char *local_heap_base,
                                 int heap_size,
                                 MPI_Comm thread_comm) {
-     /*
+    /*
      * Allocate host-side memory to hold remote keys for all processing
      * elements.
      */
@@ -312,15 +299,15 @@ NetworkOnImpl::heap_memory_rkey(char *local_heap_base,
      * heap base remote key array.
      */
     hipStream_t stream;
-    hipStreamCreateWithFlags(&stream, hipStreamNonBlocking);
+    CHECK_HIP(hipStreamCreateWithFlags(&stream, hipStreamNonBlocking));
     CHECK_HIP(hipMemcpyAsync(host_rkey_cpy,
                              heap_rkey,
                              rkeys_size,
                              hipMemcpyDeviceToHost,
                              stream));
-    hipStreamSynchronize(stream);
+    CHECK_HIP(hipStreamSynchronize(stream));
 
-     /*
+    /*
      * Do all-to-all exchange of symmetric heap base remote key between the
      * processing elements.
      */
@@ -341,8 +328,8 @@ NetworkOnImpl::heap_memory_rkey(char *local_heap_base,
                              rkeys_size,
                              hipMemcpyHostToDevice,
                              stream));
-    hipStreamSynchronize(stream);
-    hipStreamDestroy(stream);
+    CHECK_HIP(hipStreamSynchronize(stream));
+    CHECK_HIP(hipStreamDestroy(stream));
 
     /*
      * Free the host-side resources used to do the processing element
@@ -350,7 +337,7 @@ NetworkOnImpl::heap_memory_rkey(char *local_heap_base,
      */
     free(host_rkey_cpy);
 
-     /*
+    /*
      * Initialize this member variable to hold the InfiniBand memory
      * region's local key.
      */
@@ -392,33 +379,12 @@ NetworkOnImpl::setup_gpu_qps(GPUIBBackend *B) {
 }
 
 void
-NetworkOnImpl::roc_shmem_g_init(char *my_heap_base,
-                                size_t *current_heap_offset,
-                                int MAX_WG_SIZE,
+NetworkOnImpl::roc_shmem_g_init(SymmetricHeap* heap_handle,
                                 MPI_Comm thread_comm) {
-    /*
-     * Grab a pointer to the top of the symmetric heap.
-     */
-    char *ptr = reinterpret_cast<char*>(my_heap_base) + (*current_heap_offset);
-
-    /*
-     * Create space on the heap for return address for g operations.
-     */
-    *current_heap_offset = (*current_heap_offset) +
-                           sizeof(int64_t) *
-                           MAX_WG_SIZE *
-                           num_wg;
-
-    /*
-     * Assign g return operation address to previous top of symmetric heap.
-     */
-    g_ret = reinterpret_cast<char*>(ptr);
-
-    /*
-     * Make sure that all processing elements have done this before
-     * continuing.
-     */
-    MPI_Barrier(thread_comm);
+    init_g_ret(heap_handle,
+               thread_comm,
+               num_wg,
+               &g_ret);
 }
 
 __host__ void
@@ -433,7 +399,6 @@ NetworkOnImpl::networkHostSetup(GPUIBBackend *B) {
     connection = new ReliableConnection(B);
 #endif
 
-    network_init_done = true;
     Status status = connection->initialize(B->num_wg);
     assert(status == Status::ROC_SHMEM_SUCCESS);
 
@@ -441,10 +406,14 @@ NetworkOnImpl::networkHostSetup(GPUIBBackend *B) {
                                B->thread_comm);
     assert(status == Status::ROC_SHMEM_SUCCESS);
 
-    status = heap_memory_rkey(B->heap_bases[my_pe],
-                              B->heap_size,
+    const auto& heap_bases {B->heap.get_heap_bases()};
+    status = heap_memory_rkey(heap_bases[my_pe],
+                              B->heap.get_size(),
                               B->thread_comm);
     assert(status == Status::ROC_SHMEM_SUCCESS);
+    // The earliest we can allow the main thread to launch a kernel to
+    // avoid potential deadlock
+    network_init_done = true;
 
     status = setup_atomic_region();
     assert(status == Status::ROC_SHMEM_SUCCESS);
@@ -453,9 +422,7 @@ NetworkOnImpl::networkHostSetup(GPUIBBackend *B) {
                                                heap_rkey);
     assert(status == Status::ROC_SHMEM_SUCCESS);
 
-    roc_shmem_g_init(B->heap_bases[my_pe],
-                     &B->current_heap_offset,
-                     B->MAX_WG_SIZE,
+    roc_shmem_g_init(&B->heap,
                      B->thread_comm);
 
     connection->post_wqes();
@@ -505,7 +472,7 @@ NetworkOnImpl::networkHostInit(GPUIBContext *ctx,
                                int buffer_id) {
     int remote_conn = getNumQueuePairs();
 
-    CHECK_HIP(hipMalloc(&ctx->rtn_gpu_handle,
+    CHECK_HIP(hipMalloc(&ctx->device_qp_proxy,
                         remote_conn * sizeof(QueuePair)));
 
     for (int i = 0; i < getNumQueuePairs(); i++) {
@@ -548,12 +515,12 @@ NetworkOnImpl::networkGpuInit(GPUIBContext *ctx,
 }
 
 __device__ __host__ QueuePair*
-NetworkOnImpl::getQueuePair(QueuePair *rtn_gpu_handle,
+NetworkOnImpl::getQueuePair(QueuePair *qp_handle,
                             int pe) {
 #ifdef USE_DC
-    return rtn_gpu_handle;
+    return qp_handle;
 #else
-    return &rtn_gpu_handle[pe];
+    return &qp_handle[pe];
 #endif
 }
 
@@ -565,3 +532,5 @@ NetworkOnImpl::getNumQueuePairs() {
     return num_pes;
 #endif
 }
+
+}  // namespace rocshmem

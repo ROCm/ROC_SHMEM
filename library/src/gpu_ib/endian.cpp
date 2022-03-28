@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2021 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -21,6 +21,8 @@
  *****************************************************************************/
 
 #include "endian.hpp"
+
+namespace rocshmem {
 
 template <typename T>
 __device__ void
@@ -96,3 +98,5 @@ swap_endian_store(int16_t *dst,
     swap_endian_store(reinterpret_cast<uint16_t*>(dst),
                       (const uint16_t) val);
 }
+
+}  // namespace rocshmem

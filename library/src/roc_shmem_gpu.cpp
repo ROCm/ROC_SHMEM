@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -48,8 +48,9 @@
 #include <cstdlib>
 
 
-#include "context.hpp"
-#include "backend.hpp"
+#include "context_incl.hpp"
+#include "backend_bc.hpp"
+#include "team.hpp"
 #include "util.hpp"
 #include "templates.hpp"
 
@@ -60,9 +61,11 @@
  **************************** Device Vars And Init ****************************
  *****************************************************************************/
 
-__constant__ Backend *gpu_handle;
+namespace rocshmem {
 
 __constant__ roc_shmem_ctx_t ROC_SHMEM_CTX_DEFAULT;
+
+__constant__ Backend *device_backend_proxy;
 
 __device__ void
 roc_shmem_wg_init()
@@ -79,8 +82,8 @@ roc_shmem_wg_init()
 __device__ void
 roc_shmem_wg_init_thread(int requested, int *provided)
 {
-    gpu_handle->wait_wg_init_done();
-    gpu_handle->create_wg_state();
+    device_backend_proxy->wait_wg_init_done();
+    device_backend_proxy->create_wg_state();
     roc_shmem_query_thread(provided);
 }
 
@@ -97,7 +100,7 @@ roc_shmem_query_thread(int *provided)
 __device__ void
 roc_shmem_wg_finalize()
 {
-    gpu_handle->finalize_wg_state();
+    device_backend_proxy->finalize_wg_state();
 }
 
 /******************************************************************************
@@ -229,28 +232,34 @@ roc_shmem_atomic_inc(T *dest, int pe)
  ************************* Private Context Interfaces *************************
  *****************************************************************************/
 
+__device__ int
+translate_pe(roc_shmem_ctx_t ctx, int pe)
+{
+    if (ctx.team_opaque) {
+        WGTeamInfo* wg_tinfo = reinterpret_cast<WGTeamInfo*>(ctx.team_opaque);
+        TeamInfo lds_tinfo = wg_tinfo->get();
+        return (lds_tinfo.pe_start + lds_tinfo.stride * pe);
+    } else {
+        return pe;
+    }
+}
+
 __device__ Context *
 get_internal_ctx(roc_shmem_ctx_t ctx)
 {
-    return reinterpret_cast<Context *>(ctx);
-}
-
-__device__ roc_shmem_ctx_t
-get_external_ctx(Context *ctx)
-{
-    return reinterpret_cast<roc_shmem_ctx_t>(ctx);
+    return reinterpret_cast<Context *>(ctx.ctx_opaque);
 }
 
 __device__ void
-roc_shmem_wg_ctx_create(long option, roc_shmem_ctx_t *ctx)
+wg_ctx_create(long option, void **ctx)
 {
-    GPU_DPRINTF("Function: roc_shmem_ctx_create\n");
-
     /*
      * TODO: We don't really create any new contexts here.  Init creates a
      * single wg_private context per WG and a single DEFAULT_CTX for the whole
      * GPU.  We will return the user one of these two to satisfy their request.
      */
+
+    Context* phys_ctx {nullptr};
 
     if (option & (ROC_SHMEM_CTX_WG_PRIVATE | ROC_SHMEM_CTX_PRIVATE)) {
         /*
@@ -265,7 +274,7 @@ roc_shmem_wg_ctx_create(long option, roc_shmem_ctx_t *ctx)
          * we are stuck with the most restrictive performance mode for the
          * given thread policy.
          */
-        *ctx = get_external_ctx(WGState::instance()->get_private_ctx());
+        phys_ctx = WGState::instance()->get_private_ctx();
     } else {
         /*
          * All SHARED contexts satisfied with the DEFAULT_CTX because it is
@@ -274,18 +283,83 @@ roc_shmem_wg_ctx_create(long option, roc_shmem_ctx_t *ctx)
          * SERIALIZED is a missed performance oppurtunity like mentioned for
          * ROC_SHMEM_CTX_WG_PRIVATE, but ignoring it is allowable for correctness.
          */
-        *ctx = ROC_SHMEM_CTX_DEFAULT;
+        phys_ctx = get_internal_ctx(ROC_SHMEM_CTX_DEFAULT);
     }
-    if (option & ROC_SHMEM_CTX_NOSTORE)
-        get_internal_ctx(*ctx)->flush_stores = false;
+
+    phys_ctx->setFence(option);
+
+    *ctx = phys_ctx;
 
     __syncthreads();
+
+}
+
+__device__ void
+roc_shmem_wg_ctx_create(long option, roc_shmem_ctx_t *ctx)
+{
+    GPU_DPRINTF("Function: roc_shmem_ctx_create\n");
+
+    void *phy_ctx;
+
+    wg_ctx_create(option, &phy_ctx);
+
+    /* Set the pointer to the physical ctx */
+    ctx->ctx_opaque = phy_ctx;
+    /* Since this ctx is on TEAM_WORLD, we don't need any PE translation */
+    ctx->team_opaque = nullptr;
+}
+
+__device__ int
+roc_shmem_wg_team_create_ctx(roc_shmem_team_t team,
+                             long options,
+                             roc_shmem_ctx_t *ctx)
+{
+    GPU_DPRINTF("Function: roc_shmem_team_create_ctx\n");
+
+    if (team == ROC_SHMEM_TEAM_INVALID) {
+        return -1;
+    }
+
+    /* Get a physical ctx */
+    void* phy_ctx;
+    wg_ctx_create(options, &phy_ctx);
+    ctx->ctx_opaque = phy_ctx;
+
+    /**
+     * As of ROCm 4.5, support for __managed__ is under development.
+     * Hence, users cannot access ROC_SHMEM_TEAM_WORLD in device code
+     * and so we do not check for it here.
+     * TODO: When __managed__ is supported, we need to declare
+     * ROC_SHMEM_TEAM_WORLD with __managed__ and then we need to
+     * check for team equaling ROC_SHMEM_TEAM_WORLD, in which case we
+     * need to set ctx->team_opaque to nullptr.
+     *
+     * For now, directly get the info stored about this team on LDS.
+     */
+    Team* team_obj {get_internal_team(team)};
+    WGState* wg_state_p {WGState::instance()};
+    WGTeamCtxsPolicy& team_ctxs_pol_ref {wg_state_p->team_ctxs_policy};
+    WGTeamInfo* info_wrt_world {team_ctxs_pol_ref.get_team_info(team_obj)};
+    if (is_thread_zero_in_block()) {
+        ctx->team_opaque = info_wrt_world;
+        __syncthreads();
+    }
+
+    return 0;
 }
 
 __device__ void
 roc_shmem_wg_ctx_destroy(roc_shmem_ctx_t ctx)
 {
     GPU_DPRINTF("Function: roc_shmem_ctx_destroy\n");
+
+    /**
+     * If this was allocated on a team then return the team info
+     * slot on the LDS pool.
+     */
+    if (ctx.team_opaque) {
+        WGState::instance()->team_ctxs_policy.remove_team_info(reinterpret_cast<WGTeamInfo *>(ctx.team_opaque));
+    }
 
     /*
      * Delay destroying contexts until the work-group indicates that it is
@@ -309,7 +383,9 @@ roc_shmem_ctx_putmem(roc_shmem_ctx_t ctx, void *dest, const void *source,
 {
     GPU_DPRINTF("Function: roc_shmem_ctx_putmem\n");
 
-    get_internal_ctx(ctx)->putmem(dest, source, nelems, pe);
+    int pe_in_world = translate_pe(ctx, pe);
+
+    get_internal_ctx(ctx)->putmem(dest, source, nelems, pe_in_world);
 }
 
 template <typename T> __device__ void
@@ -318,7 +394,9 @@ roc_shmem_put(roc_shmem_ctx_t ctx, T *dest, const T *source,
 {
     GPU_DPRINTF(("Function: roc_shmem_put\n"));
 
-    get_internal_ctx(ctx)->put(dest, source, nelems, pe);
+    int pe_in_world = translate_pe(ctx, pe);
+
+    get_internal_ctx(ctx)->put(dest, source, nelems, pe_in_world);
 }
 
 template <typename T> __device__ void
@@ -326,7 +404,9 @@ roc_shmem_p(roc_shmem_ctx_t ctx, T *dest, T value, int pe)
 {
     GPU_DPRINTF("Function: roc_shmem_p\n");
 
-    get_internal_ctx(ctx)->p(dest, value, pe);
+    int pe_in_world = translate_pe(ctx, pe);
+
+    get_internal_ctx(ctx)->p(dest, value, pe_in_world);
 }
 
 template <typename T> __device__ T
@@ -334,7 +414,9 @@ roc_shmem_g(roc_shmem_ctx_t ctx, const T *source, int pe)
 {
     GPU_DPRINTF("Function: roc_shmem_g\n");
 
-    return get_internal_ctx(ctx)->g(source, pe);
+    int pe_in_world = translate_pe(ctx, pe);
+
+    return get_internal_ctx(ctx)->g(source, pe_in_world);
 }
 
 __device__ void
@@ -343,7 +425,9 @@ roc_shmem_ctx_getmem(roc_shmem_ctx_t ctx, void *dest, const void *source,
 {
     GPU_DPRINTF("Function: roc_shmem_ctx_getmem\n");
 
-    get_internal_ctx(ctx)->getmem(dest, source, nelems, pe);
+    int pe_in_world = translate_pe(ctx, pe);
+
+    get_internal_ctx(ctx)->getmem(dest, source, nelems, pe_in_world);
 }
 
 template <typename T> __device__ void
@@ -352,7 +436,9 @@ roc_shmem_get(roc_shmem_ctx_t ctx, T *dest, const T *source, size_t nelems,
 {
     GPU_DPRINTF(("Function: roc_shmem_get\n"));
 
-    get_internal_ctx(ctx)->get(dest, source, nelems, pe);
+    int pe_in_world = translate_pe(ctx, pe);
+
+    get_internal_ctx(ctx)->get(dest, source, nelems, pe_in_world);
 }
 
 __device__ void
@@ -361,7 +447,9 @@ roc_shmem_ctx_putmem_nbi(roc_shmem_ctx_t ctx, void *dest, const void *source,
 {
     GPU_DPRINTF("Function: roc_shmem_ctx_putmem_nbi\n");
 
-    get_internal_ctx(ctx)->putmem_nbi(dest, source, nelems, pe);
+    int pe_in_world = translate_pe(ctx, pe);
+
+    get_internal_ctx(ctx)->putmem_nbi(dest, source, nelems, pe_in_world);
 }
 
 template <typename T> __device__ void
@@ -370,7 +458,9 @@ roc_shmem_put_nbi(roc_shmem_ctx_t ctx, T *dest, const T *source,
 {
     GPU_DPRINTF(("Function: roc_shmem_put_nbi\n"));
 
-    get_internal_ctx(ctx)->put_nbi(dest, source, nelems, pe);
+    int pe_in_world = translate_pe(ctx, pe);
+
+    get_internal_ctx(ctx)->put_nbi(dest, source, nelems, pe_in_world);
 }
 
 __device__ void
@@ -379,7 +469,9 @@ roc_shmem_ctx_getmem_nbi(roc_shmem_ctx_t ctx, void *dest, const void *source,
 {
     GPU_DPRINTF("Function: roc_shmem_ctx_getmem_nbi\n");
 
-    get_internal_ctx(ctx)->getmem_nbi(dest, source, nelems, pe);
+    int pe_in_world = translate_pe(ctx, pe);
+
+    get_internal_ctx(ctx)->getmem_nbi(dest, source, nelems, pe_in_world);
 }
 
 template <typename T>
@@ -389,7 +481,9 @@ roc_shmem_get_nbi(roc_shmem_ctx_t ctx, T *dest, const T *source,
 {
     GPU_DPRINTF(("Function: roc_shmem_get_nbi\n"));
 
-    get_internal_ctx(ctx)->get_nbi(dest, source, nelems, pe);
+    int pe_in_world = translate_pe(ctx, pe);
+
+    get_internal_ctx(ctx)->get_nbi(dest, source, nelems, pe_in_world);
 }
 
 __device__ void
@@ -427,6 +521,15 @@ roc_shmem_wg_to_all(roc_shmem_ctx_t ctx, T *dest, const T *source,
                                          logPE_stride, PE_size, pWrk, pSync);
 }
 
+template <typename T, ROC_SHMEM_OP Op> __device__ void
+roc_shmem_wg_to_all(roc_shmem_ctx_t ctx, roc_shmem_team_t team,
+                    T *dest, const T *source, int nreduce)
+{
+    GPU_DPRINTF("Function: roc_shmem_to_all\n");
+
+    get_internal_ctx(ctx)->to_all<T, Op>(team, dest, source, nreduce);
+}
+
 template <typename T>
 __device__ void
 roc_shmem_wg_broadcast(roc_shmem_ctx_t ctx,
@@ -449,6 +552,24 @@ roc_shmem_wg_broadcast(roc_shmem_ctx_t ctx,
                                         log_pe_stride,
                                         pe_size,
                                         p_sync);
+}
+
+template <typename T>
+__device__ void
+roc_shmem_wg_broadcast(roc_shmem_ctx_t ctx,
+                       roc_shmem_team_t team,
+                       T *dest,
+                       const T *source,
+                       int nelem,
+                       int pe_root)
+{
+    GPU_DPRINTF("Function: Team-based roc_shmem_broadcast\n");
+
+    get_internal_ctx(ctx)->broadcast<T>(team,
+                                        dest,
+                                        source,
+                                        nelem,
+                                        pe_root);
 }
 
 template <typename T>
@@ -738,6 +859,17 @@ roc_shmemx_get_nbi_wave(roc_shmem_ctx_t ctx, T *dest, const T *source,
     get_internal_ctx(ctx)->get_nbi_wave(dest, source, nelems, pe);
 }
 
+/******************************************************************************
+ ****************************** Teams Interface *******************************
+ *****************************************************************************/
+
+__device__ int
+roc_shmem_team_translate_pe(roc_shmem_team_t src_team,
+                            int src_pe,
+                            roc_shmem_team_t dst_team)
+{
+    return team_translate_pe(src_team, src_pe, dst_team);
+}
 
 /******************************************************************************
  ************************* Template Generation Macros *************************
@@ -750,7 +882,10 @@ roc_shmemx_get_nbi_wave(roc_shmem_ctx_t ctx, T *dest, const T *source,
     template __device__ void \
     roc_shmem_wg_to_all<T, Op>(roc_shmem_ctx_t ctx, T *dest, const T *source, \
                                int nreduce, int PE_start, int logPE_stride, \
-                               int PE_size, T *pWrk, long *pSync);
+                               int PE_size, T *pWrk, long *pSync); \
+    template __device__ void \
+    roc_shmem_wg_to_all<T, Op>(roc_shmem_ctx_t ctx, roc_shmem_team_t team, \
+                               T *dest, const T *source, int nreduce);
 
 /**
  * Declare templates for the required datatypes (for the compiler)
@@ -771,6 +906,8 @@ roc_shmemx_get_nbi_wave(roc_shmem_ctx_t ctx, T *dest, const T *source,
     template __device__ void \
     roc_shmem_get_nbi<T>(roc_shmem_ctx_t ctx, T *dest, const T *source, \
                          size_t nelems, int pe); \
+    template __device__ T \
+    roc_shmem_g<T>(roc_shmem_ctx_t ctx, const T *source, int pe); \
     template __device__ void \
     roc_shmem_put<T>(T *dest, const T *source, size_t nelems, int pe); \
     template __device__ void \
@@ -781,6 +918,8 @@ roc_shmemx_get_nbi_wave(roc_shmem_ctx_t ctx, T *dest, const T *source,
     roc_shmem_get<T>(T *dest, const T *source, size_t nelems, int pe); \
     template __device__ void \
     roc_shmem_get_nbi<T>(T *dest, const T *source, size_t nelems, int pe); \
+    template __device__ T \
+    roc_shmem_g<T>(const T *source, int pe); \
     template __device__ void \
     roc_shmem_wg_broadcast<T>(roc_shmem_ctx_t ctx, \
                               T *dest, \
@@ -791,6 +930,13 @@ roc_shmemx_get_nbi_wave(roc_shmem_ctx_t ctx, T *dest, const T *source,
                               int log_pe_stride, \
                               int pe_size, \
                               long *p_sync);\
+    template __device__ void \
+    roc_shmem_wg_broadcast<T>(roc_shmem_ctx_t ctx, \
+                              roc_shmem_team_t team, \
+                              T *dest, \
+                              const T *source, \
+                              int nelem, \
+                              int pe_root); \
     template __device__ void \
     roc_shmemx_put_wave<T>(roc_shmem_ctx_t ctx, T *dest, const T *source, \
                            size_t nelems, int pe); \
@@ -900,6 +1046,12 @@ roc_shmemx_get_nbi_wave(roc_shmem_ctx_t ctx, T *dest, const T *source,
     { \
         roc_shmem_wg_to_all<T, Op>(ctx, dest, source, nreduce, PE_start, \
                                    logPE_stride, PE_size, pWrk, pSync); \
+    } \
+    __device__ void \
+    roc_shmem_ctx_##TNAME##_##Op_API##_wg_to_all(roc_shmem_ctx_t ctx, roc_shmem_team_t team, \
+                                                 T *dest, const T *source, int nreduce) \
+    { \
+        roc_shmem_wg_to_all<T, Op>(ctx, team, dest, source, nreduce); \
     }
 
 #define ARITH_REDUCTION_DEF_GEN(T, TNAME) \
@@ -944,6 +1096,11 @@ roc_shmemx_get_nbi_wave(roc_shmem_ctx_t ctx, T *dest, const T *source,
     { \
         roc_shmem_get<T>(ctx, dest, source, nelems, pe); \
     } \
+     __device__ T \
+    roc_shmem_ctx_##TNAME##_g(roc_shmem_ctx_t ctx, const T *source, int pe) \
+    { \
+        return roc_shmem_g<T>(ctx, source, pe); \
+    } \
     __device__ void \
     roc_shmem_ctx_##TNAME##_get_nbi(roc_shmem_ctx_t ctx, T *dest, const T *source, \
                                     size_t nelems, int pe) \
@@ -974,6 +1131,11 @@ roc_shmemx_get_nbi_wave(roc_shmem_ctx_t ctx, T *dest, const T *source,
     roc_shmem_##TNAME##_get_nbi(T *dest, const T *source, size_t nelems, int pe) \
     { \
         roc_shmem_get_nbi<T>(dest, source, nelems, pe); \
+    } \
+     __device__ T \
+    roc_shmem_##TNAME##_g(const T *source, int pe) \
+    { \
+        return roc_shmem_g<T>(source, pe); \
     } \
     __device__ void \
     roc_shmemx_ctx_##TNAME##_put_wave(roc_shmem_ctx_t ctx, T *dest, const T *source, \
@@ -1076,6 +1238,16 @@ roc_shmemx_get_nbi_wave(roc_shmem_ctx_t ctx, T *dest, const T *source,
     { \
         roc_shmem_wg_broadcast<T>(ctx, dest, source, nelem, pe_root, pe_start, \
                                   log_pe_stride, pe_size, p_sync); \
+    } \
+    __device__ void \
+    roc_shmem_ctx_##TNAME##_wg_broadcast(roc_shmem_ctx_t ctx, \
+                                         roc_shmem_team_t team, \
+                                         T *dest, \
+                                         const T *source, \
+                                         int nelem, \
+                                         int pe_root) \
+    { \
+        roc_shmem_wg_broadcast<T>(ctx, team, dest, source, nelem, pe_root); \
     }
 
 #define AMO_DEF_GEN(T, TNAME) \
@@ -1235,3 +1407,5 @@ WAIT_DEF_GEN(long long, longlong)
 WAIT_DEF_GEN(unsigned int, uint)
 WAIT_DEF_GEN(unsigned long, ulong)
 WAIT_DEF_GEN(unsigned long long, ulonglong)
+
+}  // namespace rocshmem

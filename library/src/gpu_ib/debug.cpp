@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2021 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -24,6 +24,8 @@
 
 #include "qe_dumper.hpp"
 
+namespace rocshmem {
+
 void
 debug_print_cq(int dest_pe,
                int src_wg,
@@ -39,3 +41,5 @@ debug_print_sq(int dest_pe,
     QeDumper dumper(dest_pe, src_wg, wqe_index);
     dumper.dump_sq();
 }
+
+}  // namespace rocshmem

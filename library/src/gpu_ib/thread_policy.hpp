@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2021 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -20,12 +20,14 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef LIBRARY_SRC_GPU_IB_THREAD_POLICY_HPP_
-#define LIBRARY_SRC_GPU_IB_THREAD_POLICY_HPP_
+#ifndef ROCSHMEM_LIBRARY_SRC_GPU_IB_THREAD_POLICY_HPP
+#define ROCSHMEM_LIBRARY_SRC_GPU_IB_THREAD_POLICY_HPP
 
 #include "config.h"  // NOLINT(build/include_subdir)
 
 #include "util.hpp"
+
+namespace rocshmem {
 
 class QueuePair;
 
@@ -252,4 +254,6 @@ class WG {
                     T value = 1);
 };
 
-#endif  // LIBRARY_SRC_GPU_IB_THREAD_POLICY_HPP_
+}  // namespace rocshmem
+
+#endif  // ROCSHMEM_LIBRARY_SRC_GPU_IB_THREAD_POLICY_HPP

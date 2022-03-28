@@ -5,3 +5,4 @@
 #cmakedefine USE_IPC
 #cmakedefine USE_THREADS
 #cmakedefine USE_WF_COAL
+#cmakedefine USE_CACHED

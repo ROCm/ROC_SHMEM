@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2021 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -22,11 +22,13 @@
 
 #include <mpi.h>
 
+#include "backend_ib.hpp"
+#include "backend_type.hpp"
 #include "config.h"  // NOLINT(build/include_subdir)
-#include "context.hpp"
-#include "backend.hpp"
+#include "context_incl.hpp"
 #include "host.hpp"
-#include "util.hpp"
+
+namespace rocshmem {
 
 __host__
 GPUIBHostContext::GPUIBHostContext(const Backend &backend,
@@ -34,17 +36,11 @@ GPUIBHostContext::GPUIBHostContext(const Backend &backend,
     : Context(backend, true) {
     type = BackendType::GPU_IB_BACKEND;
 
-    const GPUIBBackend *b = static_cast<const GPUIBBackend*>(&backend);
+    GPUIBBackend *b = static_cast<GPUIBBackend*>(const_cast<Backend*>(&backend));
 
     host_interface = b->host_interface;
 
-    /*
-     * We have only one context now. So, here we are just pointing to the
-     * default host context.
-     * TODO(rozambre): when we have multiple contexts, replace
-     * this with `new WindowInfo(...)`
-     */
-    context_window_info = b->heap_window_info;
+    context_window_info = b->heap.get_window_info();
 }
 
 __host__
@@ -148,3 +144,5 @@ __host__ void
 GPUIBHostContext::barrier_all() {
     host_interface->barrier_all(context_window_info);
 }
+
+}  // namespace rocshmem
