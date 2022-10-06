@@ -53,12 +53,12 @@ GPUIBContext::getNumDest() {
 }
 
 __host__
-GPUIBContext::GPUIBContext(const Backend &backend,
+GPUIBContext::GPUIBContext(Backend *backend,
                            int64_t options)
     : Context(backend, true) {
     type = BackendType::GPU_IB_BACKEND;
 
-    GPUIBBackend* b = static_cast<GPUIBBackend*>(const_cast<Backend*>(&backend));
+    GPUIBBackend *b {static_cast<GPUIBBackend*>(backend)};
     int buffer_id = b->num_wg - 1;
     b->bufferTokens[buffer_id] = 1;
     networkImpl = b->networkImpl;
@@ -70,7 +70,7 @@ GPUIBContext::GPUIBContext(const Backend &backend,
 }
 
 __device__
-GPUIBContext::GPUIBContext(const Backend &b,
+GPUIBContext::GPUIBContext(Backend *b,
                            int64_t option)
     : Context(b, false) {
     int thread_id = get_flat_block_id();
@@ -118,6 +118,12 @@ GPUIBContext::GPUIBContext(const Backend &b,
 }
 
 __device__ void
+GPUIBContext::ctx_create() {
+    /* Nothing to do in the GPU_IB backend */
+    return;
+}
+
+__device__ void
 GPUIBContext::ctx_destroy() {
     int thread_id = get_flat_block_id();
     int block_size = get_flat_block_size();
@@ -139,8 +145,19 @@ GPUIBContext::~GPUIBContext() {
 
 __device__ void
 GPUIBContext::fence() {
+    for (int k = 0; k < getNumDest(); k++) {
+        getQueuePair(k)->fence(k);
+    }
+
     fence_.flush();
 }
+
+__device__ void
+GPUIBContext::fence(int pe) {
+    getQueuePair(pe)->fence(pe);
+    fence_.flush();
+}
+
 
 __device__ void
 GPUIBContext::putmem_nbi(void *dest,
@@ -451,7 +468,7 @@ GPUIBContext::putmem_wg(void *dest,
                                 pe,
                                 true);
         }
-    qp->quiet_single<WG>();
+        qp->quiet_single<WG>();
     }
     __syncthreads();
     fence_.flush();
@@ -476,7 +493,7 @@ GPUIBContext::putmem_wave(void *dest,
                                   pe,
                                   true);
         }
-    qp->quiet_single<WAVE>();
+        qp->quiet_single<WAVE>();
     }
     fence_.flush();
 }
@@ -501,7 +518,7 @@ GPUIBContext::getmem_wg(void *dest,
                                 pe,
                                 true);
         }
-    qp->quiet_single<WG>();
+        qp->quiet_single<WG>();
     }
     __syncthreads();
     fence_.flush();
@@ -527,7 +544,7 @@ GPUIBContext::getmem_wave(void *dest,
                                   pe,
                                   true);
         }
-    qp->quiet_single<WAVE>();
+        qp->quiet_single<WAVE>();
     }
     fence_.flush();
 }

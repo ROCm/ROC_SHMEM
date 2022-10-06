@@ -31,119 +31,77 @@
 
 namespace rocshmem {
 
-/*
- * Base class for HDP policies.
- */
-class HdpBasePolicy {
- protected:
-    unsigned int *cpu_hdp_flush = nullptr;
-    unsigned int *gpu_hdp_flush = nullptr;
-
- public:
-    static const int HDP_FLUSH_VAL = 0x01;
-
-    __device__
-    void hdp_flush() {
-        STORE(gpu_hdp_flush, HDP_FLUSH_VAL);
+class HdpRocmPolicy {
+  public:
+    HdpRocmPolicy() {
+        set_hdp_flush_ptr();
     }
 
     __host__ void
     hdp_flush() {
-        *cpu_hdp_flush =  HDP_FLUSH_VAL;
+        *hdp_flush_ptr_ = HDP_FLUSH_VAL;
     }
 
     __host__ unsigned int*
-    get_hdp_flush_addr() const {
-        return cpu_hdp_flush;
+    get_hdp_flush_ptr() const {
+        return hdp_flush_ptr_;
     }
+
     __device__ void
-    flushCoherency(){
+    hdp_flush() {
+        STORE(hdp_flush_ptr_, HDP_FLUSH_VAL);
+    }
+
+    __device__ void
+    flushCoherency() {
         hdp_flush();
     }
+
+    static const int HDP_FLUSH_VAL {0x01};
+
+ private:
+    void
+    set_hdp_flush_ptr() {
+        int hip_dev_id {};
+        CHECK_HIP(hipGetDevice(&hip_dev_id));
+        CHECK_HIP(hipDeviceGetAttribute(reinterpret_cast<int*>(&hdp_flush_ptr_),
+                                        hipDeviceAttributeHdpMemFlushCntl,
+                                        hip_dev_id));
+    }
+
+    unsigned int *hdp_flush_ptr_ {nullptr};
 };
 
-/*
- * No HDP management is needed
- * */
-class NoHdpPolicy : public HdpBasePolicy{
-   public:
-    __device__
-    void hdp_flush() {
-    }
+class NoHdpPolicy {
+  public:
+    NoHdpPolicy() = default;
 
     __host__ void
     hdp_flush() {
     }
 
     __host__ unsigned int*
-    get_hdp_flush_addr() const {
-        return 0;
+    get_hdp_flush_ptr() const {
+        return nullptr;
+    }
+
+    __device__
+    void hdp_flush() {
     }
 
     __device__ void
-    flushCoherency(){
+    flushCoherency() {
         __roc_flush();
     }
-
-    __device__
-    NoHdpPolicy() {
-    }
-
-    NoHdpPolicy();
-
-};
-
-/*
- * HDP management via the hdp_umap kernel module.
- */
-class HdpMapPolicy : public HdpBasePolicy {
-    const int FIJI_HDP_FLUSH = 0x5480;
-    const int FIJI_HDP_READ = 0x2f4c;
-    const int VEGA10_HDP_FLUSH = 0x385c;
-    const int VEGA10_HDP_READ = 0x3fc4;
-
-    const int HDP_FLUSH = VEGA10_HDP_FLUSH;
-    const int HDP_READ = VEGA10_HDP_READ;
-
-    int fd = -1;
-    int hdp_flush_off = 0;
-    int hdp_flush_pa_off = 0;
-    int hdp_read_off = 0;
-    int hdp_read_pa_off = 0;
-
- public:
-    __device__
-    HdpMapPolicy() {
-    }
-
-    HdpMapPolicy();
-};
-
-/*
- * HDP management via ROCm HDP APIs.
- */
-class HdpRocmPolicy : public HdpBasePolicy {
- public:
-    __device__
-    HdpRocmPolicy() {
-    }
-
-    HdpRocmPolicy();
-
-    hsa_amd_hdp_flush_t *hdp = nullptr;
 };
 
 /*
  * Select which one of our HDP policies to use at compile time.
  */
-#ifdef USE_CACHED
+#ifdef USE_COHERENT_HEAP
 typedef NoHdpPolicy HdpPolicy;
 #else
-#ifdef USE_HDP_MAP
-typedef HdpMapPolicy HdpPolicy;
-#else
 typedef HdpRocmPolicy HdpPolicy;
-#endif
 #endif
 
 } // namespace rocshmem

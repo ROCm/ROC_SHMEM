@@ -25,6 +25,7 @@
 #include <cmath>
 #include <roc_shmem.hpp>
 
+#include "backend_bc.hpp"
 #include "util.hpp"
 
 namespace rocshmem {
@@ -76,14 +77,14 @@ TeamInfo::TeamInfo(Team* _parent_team,
 }
 
 __host__
-Team::Team(const Backend &handle,
+Team::Team(Backend *handle,
            TeamInfo* team_info_wrt_parent,
            TeamInfo* team_info_wrt_world,
            int _num_pes,
            int _my_pe,
            MPI_Comm _mpi_comm)
-    : world_size(handle.getNumPEs()),
-      my_pe_in_world(handle.getMyPE()),
+    : world_size(handle->getNumPEs()),
+      my_pe_in_world(handle->getMyPE()),
       tinfo_wrt_parent(team_info_wrt_parent),
       tinfo_wrt_world(team_info_wrt_world),
       num_pes(_num_pes),
@@ -122,12 +123,6 @@ Team::get_pe_in_my_team(int pe_in_world) {
 
 __host__
 Team::~Team() {
-    tinfo_wrt_world->~TeamInfo();
-    tinfo_wrt_parent->~TeamInfo();
-    CHECK_HIP(hipFree(tinfo_wrt_world));
-    CHECK_HIP(hipFree(tinfo_wrt_parent));
-
-    MPI_Comm_free(&mpi_comm);
 }
 
 }  // namespace rocshmem

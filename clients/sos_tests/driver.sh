@@ -58,6 +58,8 @@ case $2 in
         check shmem_team_translate
         mpirun -np 4 -bind-to core $1/shmem_team_b2b_collectives
         check shmem_team_b2b_collectives
+        mpirun -np 2 -env MPIR_CVAR_CH4_NUM_VCIS 32 -bind-to core $1/many-ctx
+        check many-ctx
         ;;
     *"all")
         mpirun -np 2 -bind-to core $1/hello

@@ -178,7 +178,7 @@ BroadcastTester<T1>::launchKernel(dim3 gridSize,
 
 template<typename T1>
 void
-BroadcastTester<T1>::resetBuffers()
+BroadcastTester<T1>::resetBuffers(uint64_t size)
 {
     for (int i = 0; i < args.max_msg_size; i++) {
         init_buf(source_buf[i], dest_buf[i]);

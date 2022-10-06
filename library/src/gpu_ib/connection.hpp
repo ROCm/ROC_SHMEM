@@ -53,6 +53,7 @@ class Connection {
         int lid;
         int qpn;
         int psn;
+        union ibv_gid gid;
     } dest_info_t;
 
     typedef struct heap_info {
@@ -148,7 +149,8 @@ class Connection {
     Status
     reg_mr(void* ptr,
            size_t size,
-           ibv_mr** mr);
+           ibv_mr** mr,
+           bool is_managed);
 
     virtual Status
     get_remote_conn(int* remote_conn) = 0;
@@ -321,9 +323,9 @@ class Connection {
 
     static int coherent_cq;
 
-    int cq_use_gpu_mem {0};
+    int cq_use_gpu_mem {1};
 
-    int sq_use_gpu_mem {0};
+    int sq_use_gpu_mem {1};
 
  private:
     Status

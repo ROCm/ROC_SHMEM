@@ -181,7 +181,7 @@ __roc_inv() {
 
 __device__ void
 __roc_flush() {
-#ifdef USE_CACHED
+#if defined USE_COHERENT_HEAP || defined USE_CACHED_HEAP
 #if __gfx90a__
     asm volatile("s_dcache_wb;");
     asm volatile("buffer_wbl2;");

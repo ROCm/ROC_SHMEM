@@ -33,11 +33,25 @@
 namespace rocshmem {
 
 __host__ uint32_t
-IpcOnImpl::ipcDynamicShared() {
-    while (ipc_init_done.load(std::memory_order_seq_cst)==false) {
-    }
+ipc_get_DynamicShared() {
+#ifdef USE_IPC
+    MPI_Comm shmcomm;
+    MPI_Comm_split_type(MPI_COMM_WORLD,
+                        MPI_COMM_TYPE_SHARED,
+                        0,
+                        MPI_INFO_NULL,
+                        &shmcomm);
 
-    return shm_size * sizeof(uintptr_t);
+    /*
+     * Figure out how many local process there are.
+     */
+    int Shm_size;
+    MPI_Comm_size(shmcomm, &Shm_size);
+
+    return Shm_size * sizeof(uintptr_t);
+#else
+    return 0;
+#endif
 }
 
 __host__ void
@@ -60,7 +74,6 @@ IpcOnImpl::ipcHostInit(int my_pe,
     int Shm_size;
     MPI_Comm_size(shmcomm, &Shm_size);
     shm_size = Shm_size;
-    ipc_init_done.store(true, std::memory_order_seq_cst);
 
     /*
      * Figure out how this process' rank among local processes.

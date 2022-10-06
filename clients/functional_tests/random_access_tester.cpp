@@ -186,7 +186,7 @@ RandomAccessTester::~RandomAccessTester()
 
 
 void
-RandomAccessTester::resetBuffers()
+RandomAccessTester::resetBuffers(uint64_t size)
 {
     for(int i=0; i < args.max_msg_size/sizeof(int) * args.wg_size * space; i++){
         s_buf[i] =1;

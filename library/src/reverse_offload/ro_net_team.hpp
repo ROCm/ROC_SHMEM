@@ -24,12 +24,15 @@
 #define ROCSHMEM_LIBRARY_SRC_GPU_IB_RO_NET_TEAM_HPP
 
 #include "team.hpp"
+#define MAX_ATA_BUFF_SIZE (1024 * 1024 * 128)
 
 namespace rocshmem {
 
+class Backend;
+
 class ROTeam : public Team {
  public:
-    ROTeam(const Backend &handle,
+    ROTeam(Backend* handle,
            TeamInfo* team_info_wrt_parent,
            TeamInfo* team_info_wrt_world,
            int num_pes,
@@ -37,6 +40,8 @@ class ROTeam : public Team {
            MPI_Comm team_comm);
 
     virtual ~ROTeam();
+
+    void *ata_buffer;
 };
 
 }  // namespace rocshmem

@@ -105,6 +105,36 @@ Backend::Backend(size_t num_wgs) {
     *done_init = 0;
 }
 
+void
+Backend::track_ctx(Context *ctx, int64_t options) {
+    /**
+     * TODO: Don't track CTX_PRIVATE when we support it
+     * since destroying CTX_PRIVATE is the user's
+     * responsibility.
+     */
+    list_of_ctxs.push_back(ctx);
+}
+
+void
+Backend::untrack_ctx(Context *ctx) {
+    /* Get an iterator to this ctx in the vector */
+    std::vector<Context *>::iterator it = std::find(list_of_ctxs.begin(),
+                                                    list_of_ctxs.end(),
+                                                    ctx);
+    assert(it != list_of_ctxs.end());
+
+    /* Remove the ctx from the vector */
+    list_of_ctxs.erase(it);
+}
+
+void
+Backend::destroy_remaining_ctxs() {
+    while(!list_of_ctxs.empty()) {
+        ctx_destroy(list_of_ctxs.back());
+        list_of_ctxs.pop_back();
+    }
+}
+
 Backend::~Backend() {
     CHECK_HIP(hipFree(print_lock));
     CHECK_HIP(hipFree(bufferTokens));
@@ -225,12 +255,12 @@ Backend::create_wg_state() {
         case BackendType::RO_BACKEND:
             ctx = reinterpret_cast<Context*>(
                       wg_state->allocateDynamicShared(sizeof(ROContext)));
-            new (ctx) ROContext(*this, ROC_SHMEM_CTX_WG_PRIVATE);
+            new (ctx) ROContext(this, ROC_SHMEM_CTX_WG_PRIVATE);
             break;
         case BackendType::GPU_IB_BACKEND:
             ctx = reinterpret_cast<Context*>(
                       wg_state->allocateDynamicShared(sizeof(GPUIBContext)));
-            new (ctx) GPUIBContext(*this, ROC_SHMEM_CTX_WG_PRIVATE);
+            new (ctx) GPUIBContext(this, ROC_SHMEM_CTX_WG_PRIVATE);
             break;
         //default:
             //assert(false);

@@ -25,9 +25,14 @@
 
 #include "backend_bc.hpp"
 #include "network_policy.hpp"
+#include "hip_allocator.hpp"
 #include "hdp_policy.hpp"
+#include "hdp_proxy.hpp"
 
 namespace rocshmem {
+Status
+gpu_ib_get_dynamic_shared(size_t *shared_bytes, int num_pes);
+
 
 class HostInterface;
 
@@ -79,10 +84,16 @@ class GPUIBBackend : public Backend {
      */
     Status team_destroy(roc_shmem_team_t team) override;
 
+
     /**
-     * @copydoc Backend::dynamic_shared(size_t*)
+     * @copydoc Backend::ctx_create
      */
-    Status dynamic_shared(size_t *shared_bytes) override;
+    void ctx_create(int64_t options, void **ctx) override;
+
+    /**
+     * @copydoc Backend::ctx_destroy
+     */
+    void ctx_destroy(Context *ctx) override;
 
  protected:
     /**
@@ -118,11 +129,6 @@ class GPUIBBackend : public Backend {
      * to OpenSHMEM to have support for both CPU and GPU
      */
     Status init_mpi_once();
-
-    /**
-     * @brief find and init the HDP information
-     */
-    Status initialize_hdp();
 
     /**
      * @brief init the network support
@@ -214,9 +220,19 @@ class GPUIBBackend : public Backend {
     long *bcast_pSync_pool {nullptr};
 
     /**
+     * @brief Handle for raw memory for alltoall sync
+     */
+    long *alltoall_pSync_pool {nullptr};
+
+    /**
      * @brief Handle for raw memory for work
      */
     void *pWrk_pool {nullptr};
+
+    /**
+     * @brief Handle for raw memory for alltoall
+     */
+    void *pAta_pool {nullptr};
 
     /**
      * @brief ROC_SHMEM's copy of MPI_COMM_WORLD (for interoperability
@@ -224,20 +240,24 @@ class GPUIBBackend : public Backend {
      */
     MPI_Comm gpu_ib_comm_world {};
 
+  private:
+    /**
+     * @brief Allocates cacheable, device memory for the hdp policy.
+     *
+     * @note Internal data ownership is managed by the proxy
+     */
+    HdpProxy<HIPAllocator> hdp_proxy_ {};
+
+  public:
     /**
      * @brief Policy choice for two HDP implementations.
-     *
-     * The hdp_policy member is a policy class object. The policy class
-     * is determined at compile time with the CMake configuration option,
-     * "USE_HDP_MAP". This option chooses between an custom kernel module
-     * (available internally at AMD) or the default ROCM HDP API.
      *
      * @todo Combine HDP related stuff together into a class with a
      * reasonable interface. The functionality does not need to exist in
      * multiple pieces in the Backend and QueuePair classes. The hdp_rkey,
      * hdp_addresses, and hdp_policy fields should all live in the class.
      */
-    HdpPolicy *hdp_policy {nullptr};
+    HdpPolicy *hdp_policy {hdp_proxy_.get()};
 
     /**
      * @brief Scratchpad for the internal barrier algorithms.

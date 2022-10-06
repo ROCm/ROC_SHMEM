@@ -32,54 +32,54 @@ template <typename T>
 __host__ void
 ROHostContext::p(T *dest, T value, int pe)
 {
-    DPRINTF(("Function: gpu_ib_host_p\n"));
+    DPRINTF("Function: gpu_ib_host_p\n");
 
-    host_interface->p<T>(dest, value, pe, get_window_info());
+    host_interface->p<T>(dest, value, pe, context_window_info);
 }
 
 template <typename T>
 __host__ T
 ROHostContext::g(const T *source, int pe)
 {
-    DPRINTF(("Function: gpu_ib_host_g\n"));
+    DPRINTF("Function: gpu_ib_host_g\n");
 
-    return host_interface->g<T>(source, pe, get_window_info());
+    return host_interface->g<T>(source, pe, context_window_info);
 }
 
 template <typename T>
 __host__ void
 ROHostContext::put(T *dest, const T *source, size_t nelems, int pe)
 {
-    DPRINTF(("Function: gpu_ib_host_put\n"));
+    DPRINTF("Function: gpu_ib_host_put\n");
 
-    host_interface->put<T>(dest, source, nelems, pe, get_window_info());
+    host_interface->put<T>(dest, source, nelems, pe, context_window_info);
 }
 
 template <typename T>
 __host__ void
 ROHostContext::get(T *dest, const T *source, size_t nelems, int pe)
 {
-    DPRINTF(("Function: gpu_ib_host_get\n"));
+    DPRINTF("Function: gpu_ib_host_get\n");
 
-    host_interface->get<T>(dest, source, nelems, pe, get_window_info());
+    host_interface->get<T>(dest, source, nelems, pe, context_window_info);
 }
 
 template <typename T>
 __host__ void
 ROHostContext::put_nbi(T *dest, const T *source, size_t nelems, int pe)
 {
-    DPRINTF(("Function: gpu_ib_host_put_nbi\n"));
+    DPRINTF("Function: gpu_ib_host_put_nbi\n");
 
-    host_interface->put_nbi<T>(dest, source, nelems, pe, get_window_info());
+    host_interface->put_nbi<T>(dest, source, nelems, pe, context_window_info);
 }
 
 template <typename T>
 __host__ void
 ROHostContext::get_nbi(T *dest, const T *source, size_t nelems, int pe)
 {
-    DPRINTF(("Function: gpu_ib_host_get_nbi\n"));
+    DPRINTF("Function: gpu_ib_host_get_nbi\n");
 
-    host_interface->get_nbi<T>(dest, source, nelems, pe, get_window_info());
+    host_interface->get_nbi<T>(dest, source, nelems, pe, context_window_info);
 }
 
 template <typename T>
@@ -93,7 +93,7 @@ ROHostContext::broadcast(T *dest,
                          int pe_size,
                          long *p_sync)
 {
-    DPRINTF(("Function: gpu_ib_host_broadcast\n"));
+    DPRINTF("Function: gpu_ib_host_broadcast\n");
 
     host_interface->broadcast<T>(dest, source, nelems, pe_root, pe_start, log_pe_stride, pe_size, p_sync);
 }
@@ -106,7 +106,7 @@ ROHostContext::broadcast(roc_shmem_team_t team,
                          int nelems,
                          int pe_root)
 {
-    DPRINTF(("Function: Team-based ro_net_host_broadcast\n"));
+    DPRINTF("Function: Team-based ro_net_host_broadcast\n");
 
     host_interface->broadcast<T>(team, dest, source, nelems, pe_root);
 }
@@ -122,7 +122,7 @@ ROHostContext::to_all(T *dest,
                       T *p_wrk,
                       long *p_sync)
 {
-    DPRINTF(("Function: gpu_ib_host_to_all\n"));
+    DPRINTF("Function: gpu_ib_host_to_all\n");
 
     host_interface->to_all<T, Op>(dest, source, nreduce, pe_start, log_pe_stride, pe_size, p_wrk, p_sync);
 }
@@ -134,7 +134,7 @@ ROHostContext::to_all(roc_shmem_team_t team,
                       const T *source,
                       int nreduce)
 {
-    DPRINTF(("Function: Team-based ro_net_host_to_all\n"));
+    DPRINTF("Function: Team-based ro_net_host_to_all\n");
 
     host_interface->to_all<T, Op>(team, dest, source, nreduce);
 }
@@ -142,17 +142,17 @@ ROHostContext::to_all(roc_shmem_team_t team,
 template <typename T> __host__ void
 ROHostContext::wait_until(T *ptr, roc_shmem_cmps cmp, T val)
 {
-    DPRINTF(("Function: gpu_ib_host_wait_until\n"));
+    DPRINTF("Function: gpu_ib_host_wait_until\n");
 
-    host_interface->wait_until<T>(ptr, cmp, val, get_window_info());
+    host_interface->wait_until<T>(ptr, cmp, val, context_window_info);
 }
 
 template <typename T> __host__ int
 ROHostContext::test(T *ptr, roc_shmem_cmps cmp, T val)
 {
-    DPRINTF(("Function: gpu_ib_host_test\n"));
+    DPRINTF("Function: gpu_ib_host_test\n");
 
-    return host_interface->test<T>(ptr, cmp, val, get_window_info());
+    return host_interface->test<T>(ptr, cmp, val, context_window_info);
 }
 
 }  // namespace rocshmem

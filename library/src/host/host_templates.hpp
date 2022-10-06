@@ -35,7 +35,7 @@ HostInterface::p(T* dest,
                  T value,
                  int pe,
                  WindowInfo* window_info) {
-    DPRINTF(("Function: host_p\n"));
+    DPRINTF("Function: host_p\n");
     putmem(dest,
            &value,
            sizeof(T),
@@ -50,7 +50,7 @@ HostInterface::put(T* dest,
                    size_t nelems,
                    int pe,
                    WindowInfo* window_info) {
-    DPRINTF(("Function: host_put\n"));
+    DPRINTF("Function: host_put\n");
     putmem(dest,
            source,
            sizeof(T) * nelems,
@@ -65,7 +65,7 @@ HostInterface::put_nbi(T* dest,
                        size_t nelems,
                        int pe,
                        WindowInfo* window_info) {
-    DPRINTF(("Function: host_put_nbi\n"));
+    DPRINTF("Function: host_put_nbi\n");
     putmem_nbi(dest,
                source,
                sizeof(T) * nelems,
@@ -78,7 +78,7 @@ __host__ T
 HostInterface::g(const T* source,
                  int pe,
                  WindowInfo* window_info) {
-    DPRINTF(("Function: host_g\n"));
+    DPRINTF("Function: host_g\n");
 
     T ret {};
 
@@ -106,7 +106,7 @@ HostInterface::get(T* dest,
                    size_t nelems,
                    int pe,
                    WindowInfo* window_info) {
-    DPRINTF(("Function: host_get\n"));
+    DPRINTF("Function: host_get\n");
     getmem(dest,
            source,
            sizeof(T) * nelems,
@@ -121,7 +121,7 @@ HostInterface::get_nbi(T* dest,
                        size_t nelems,
                        int pe,
                        WindowInfo* window_info) {
-    DPRINTF(("Function: host_get_nbi\n"));
+    DPRINTF("Function: host_get_nbi\n");
     getmem_nbi(dest,
                source,
                sizeof(T) * nelems,
@@ -161,7 +161,7 @@ HostInterface::get_mpi_comm(int pe_start,
 
     auto it {comm_map.find(key)};
     if (it != comm_map.end()) {
-        DPRINTF(("Using cached communicator\n"));
+        DPRINTF("Using cached communicator\n");
         return it->second;
     }
 
@@ -194,7 +194,7 @@ HostInterface::get_mpi_comm(int pe_start,
     /*
      * Cache the new communicator
      */
-    DPRINTF(("Created a new communicator. Now caching it\n"));
+    DPRINTF("Created a new communicator. Now caching it\n");
     comm_map.insert(std::pair<ActiveSetKey, MPI_Comm>(key, active_set_comm));
 
     return active_set_comm;
@@ -207,7 +207,7 @@ HostInterface::broadcast_internal(MPI_Comm mpi_comm,
                                   const T* source,
                                   int nelems,
                                   int pe_root) {
-    DPRINTF(("Function: host_broadcast_internal\n"));
+    DPRINTF("Function: host_broadcast_internal\n");
 
     /*
      * Choose the right pointer for my buffer depending
@@ -249,7 +249,7 @@ HostInterface::broadcast(T* dest,
                          int log_pe_stride,
                          int pe_size,
                          long* p_sync) {
-    DPRINTF(("Function: host_broadcast\n"));
+    DPRINTF("Function: host_broadcast\n");
 
     /*
      * Get an MPI communicator for active set of PEs
@@ -276,7 +276,7 @@ HostInterface::broadcast(roc_shmem_team_t team,
                          const T* source,
                          int nelems,
                          int pe_root) {
-    DPRINTF(("Function: Team-based host_broadcast\n"));
+    DPRINTF("Function: Team-based host_broadcast\n");
 
     /*
      * Get the MPI communicator of this team
@@ -351,7 +351,7 @@ HostInterface::to_all_internal(MPI_Comm mpi_comm,
                                T* dest,
                                const T* source,
                                int nreduce) {
-    DPRINTF(("Function: host_to_all_internal\n"));
+    DPRINTF("Function: host_to_all_internal\n");
 
     MPI_Op mpi_op {get_mpi_op(Op)};
 
@@ -388,7 +388,7 @@ HostInterface::to_all(T* dest,
                       int pe_size,
                       T* p_wrk,
                       long* p_sync) {
-    DPRINTF(("Function: host_to_all\n"));
+    DPRINTF("Function: host_to_all\n");
 
     /*
      * Get an MPI communicator for active set of PEs
@@ -413,7 +413,7 @@ HostInterface::to_all(roc_shmem_team_t team,
                       T* dest,
                       const T* source,
                       int nreduce) {
-    DPRINTF(("Function: Team-based host_to_all\n"));
+    DPRINTF("Function: Team-based host_to_all\n");
 
     /*
      * Get the MPI communicator of this team
@@ -498,7 +498,7 @@ HostInterface::wait_until(T* ptr,
                           roc_shmem_cmps cmp,
                           T val,
                           WindowInfo* window_info) {
-    DPRINTF(("Function: host_wait_until\n"));
+    DPRINTF("Function: host_wait_until\n");
 
     /*
      * Find the offset of this memory in the window
@@ -531,7 +531,7 @@ HostInterface::test(T* ptr,
                     roc_shmem_cmps cmp,
                     T val,
                     WindowInfo* window_info) {
-    DPRINTF(("Function: host_test\n"));
+    DPRINTF("Function: host_test\n");
 
     /*
      * Find the offset of this memory in the window

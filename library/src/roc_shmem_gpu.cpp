@@ -178,6 +178,12 @@ roc_shmem_fence()
 {
     roc_shmem_ctx_fence(ROC_SHMEM_CTX_DEFAULT);
 }
+__device__ void
+roc_shmem_fence(int pe)
+{
+    roc_shmem_ctx_fence(ROC_SHMEM_CTX_DEFAULT, pe);
+}
+
 
 __device__ void
 roc_shmem_quiet()
@@ -307,6 +313,9 @@ roc_shmem_wg_ctx_create(long option, roc_shmem_ctx_t *ctx)
     ctx->ctx_opaque = phy_ctx;
     /* Since this ctx is on TEAM_WORLD, we don't need any PE translation */
     ctx->team_opaque = nullptr;
+
+    /* Perform backend-specific allocation */
+    get_internal_ctx((*ctx))->ctx_create();
 }
 
 __device__ int
@@ -392,7 +401,7 @@ template <typename T> __device__ void
 roc_shmem_put(roc_shmem_ctx_t ctx, T *dest, const T *source,
               size_t nelems, int pe)
 {
-    GPU_DPRINTF(("Function: roc_shmem_put\n"));
+    GPU_DPRINTF("Function: roc_shmem_put\n");
 
     int pe_in_world = translate_pe(ctx, pe);
 
@@ -434,7 +443,7 @@ template <typename T> __device__ void
 roc_shmem_get(roc_shmem_ctx_t ctx, T *dest, const T *source, size_t nelems,
               int pe)
 {
-    GPU_DPRINTF(("Function: roc_shmem_get\n"));
+    GPU_DPRINTF("Function: roc_shmem_get\n");
 
     int pe_in_world = translate_pe(ctx, pe);
 
@@ -456,7 +465,7 @@ template <typename T> __device__ void
 roc_shmem_put_nbi(roc_shmem_ctx_t ctx, T *dest, const T *source,
                   size_t nelems, int pe)
 {
-    GPU_DPRINTF(("Function: roc_shmem_put_nbi\n"));
+    GPU_DPRINTF("Function: roc_shmem_put_nbi\n");
 
     int pe_in_world = translate_pe(ctx, pe);
 
@@ -479,7 +488,7 @@ __device__ void
 roc_shmem_get_nbi(roc_shmem_ctx_t ctx, T *dest, const T *source,
                   size_t nelems, int pe)
 {
-    GPU_DPRINTF(("Function: roc_shmem_get_nbi\n"));
+    GPU_DPRINTF("Function: roc_shmem_get_nbi\n");
 
     int pe_in_world = translate_pe(ctx, pe);
 
@@ -493,6 +502,15 @@ roc_shmem_ctx_fence(roc_shmem_ctx_t ctx)
 
     get_internal_ctx(ctx)->fence();
 }
+
+__device__ void
+roc_shmem_ctx_fence(roc_shmem_ctx_t ctx, int pe)
+{
+    GPU_DPRINTF("Function: roc_shmem_ctx_fence\n");
+
+    get_internal_ctx(ctx)->fence(pe);
+}
+
 
 __device__ void
 roc_shmem_ctx_quiet(roc_shmem_ctx_t ctx)
@@ -574,6 +592,38 @@ roc_shmem_wg_broadcast(roc_shmem_ctx_t ctx,
 
 template <typename T>
 __device__ void
+roc_shmem_wg_alltoall(roc_shmem_ctx_t ctx,
+                      roc_shmem_team_t team,
+                      T *dest,
+                      const T *source,
+                      int nelem)
+{
+    GPU_DPRINTF("Function: roc_shmem_alltoall\n");
+
+    get_internal_ctx(ctx)->alltoall<T>(team,
+                                       dest,
+                                       source,
+                                       nelem);
+}
+
+template <typename T>
+__device__ void
+roc_shmem_wg_fcollect(roc_shmem_ctx_t ctx,
+                      roc_shmem_team_t team,
+                      T *dest,
+                      const T *source,
+                      int nelem)
+{
+    GPU_DPRINTF("Function: roc_shmem_fcollect\n");
+
+    get_internal_ctx(ctx)->fcollect<T>(team,
+                                       dest,
+                                       source,
+                                       nelem);
+}
+
+template <typename T>
+__device__ void
 roc_shmem_wait_until(T *ptr, roc_shmem_cmps cmp, T val)
 {
     GPU_DPRINTF("Function: roc_shmem_wait_until\n");
@@ -624,6 +674,20 @@ roc_shmem_wg_sync_all()
     roc_shmem_ctx_wg_sync_all(ROC_SHMEM_CTX_DEFAULT);
 }
 
+__device__ void
+roc_shmem_ctx_wg_team_sync(roc_shmem_ctx_t ctx, roc_shmem_team_t team)
+{
+    GPU_DPRINTF("Function: roc_shmem_ctx_sync_all\n");
+
+    get_internal_ctx(ctx)->sync(team);
+}
+
+__device__ void
+roc_shmem_wg_team_sync(roc_shmem_team_t team)
+{
+    roc_shmem_ctx_wg_team_sync(ROC_SHMEM_CTX_DEFAULT, team);
+}
+
 __device__ int
 roc_shmem_ctx_n_pes(roc_shmem_ctx_t ctx)
 {
@@ -663,7 +727,7 @@ roc_shmem_timer()
 template <typename T> __device__ T
 roc_shmem_atomic_fetch_add(roc_shmem_ctx_t ctx, T *dest, T val, int pe)
 {
-    GPU_DPRINTF(("Function: roc_shmem_atomic_fetch_add\n"));
+    GPU_DPRINTF("Function: roc_shmem_atomic_fetch_add\n");
 
     return get_internal_ctx(ctx)->amo_fetch_add(dest, val, 0, pe);
 }
@@ -672,7 +736,7 @@ template <typename T> __device__ T
 roc_shmem_atomic_compare_swap(roc_shmem_ctx_t ctx, T *dest, T cond, T val,
                              int pe)
 {
-    GPU_DPRINTF(("Function: roc_shmem_atomic_compare_swap\n"));
+    GPU_DPRINTF("Function: roc_shmem_atomic_compare_swap\n");
 
     return get_internal_ctx(ctx)->amo_fetch_cas(dest, val, cond, pe);
 }
@@ -680,7 +744,7 @@ roc_shmem_atomic_compare_swap(roc_shmem_ctx_t ctx, T *dest, T cond, T val,
 template <typename T> __device__ T
 roc_shmem_atomic_fetch_inc(roc_shmem_ctx_t ctx, T *dest, int pe)
 {
-    GPU_DPRINTF(("Function: roc_shmem_atomic_fetch_inc\n"));
+    GPU_DPRINTF("Function: roc_shmem_atomic_fetch_inc\n");
 
     return get_internal_ctx(ctx)->amo_fetch_add(dest, 1, 0, pe);
 }
@@ -688,7 +752,7 @@ roc_shmem_atomic_fetch_inc(roc_shmem_ctx_t ctx, T *dest, int pe)
 template <typename T> __device__ T
 roc_shmem_atomic_fetch(roc_shmem_ctx_t ctx, T *dest, int pe)
 {
-    GPU_DPRINTF(("Function: roc_shmem_atomic_fetch\n"));
+    GPU_DPRINTF("Function: roc_shmem_atomic_fetch\n");
 
     return get_internal_ctx(ctx)->amo_fetch_add(dest, 0, 0, pe);
 }
@@ -696,7 +760,7 @@ roc_shmem_atomic_fetch(roc_shmem_ctx_t ctx, T *dest, int pe)
 template <typename T> __device__ void
 roc_shmem_atomic_add(roc_shmem_ctx_t ctx, T *dest, T val, int pe)
 {
-    GPU_DPRINTF(("Function: roc_shmem_atomic_add\n"));
+    GPU_DPRINTF("Function: roc_shmem_atomic_add\n");
 
     get_internal_ctx(ctx)->amo_add((void*)dest, val, 0, pe);
 }
@@ -705,7 +769,7 @@ template <typename T>
 __device__ void
 roc_shmem_atomic_inc(roc_shmem_ctx_t ctx, T *dest, int pe)
 {
-    GPU_DPRINTF(("Function: roc_shmem_atomic_inc\n"));
+    GPU_DPRINTF("Function: roc_shmem_atomic_inc\n");
 
     get_internal_ctx(ctx)->amo_add(dest, 1, 0, pe);
 }
@@ -753,7 +817,7 @@ template <typename T> __device__ void
 roc_shmemx_put_wave(roc_shmem_ctx_t ctx, T *dest, const T *source,
               size_t nelems, int pe)
 {
-    GPU_DPRINTF(("Function: roc_shmemx_put_wave\n"));
+    GPU_DPRINTF("Function: roc_shmemx_put_wave\n");
 
     get_internal_ctx(ctx)->put_wave(dest, source, nelems, pe);
 }
@@ -762,7 +826,7 @@ template <typename T> __device__ void
 roc_shmemx_put_wg(roc_shmem_ctx_t ctx, T *dest, const T *source,
               size_t nelems, int pe)
 {
-    GPU_DPRINTF(("Function: roc_shmemx_put_wg\n"));
+    GPU_DPRINTF("Function: roc_shmemx_put_wg\n");
 
     get_internal_ctx(ctx)->put_wg(dest, source, nelems, pe);
 }
@@ -771,7 +835,7 @@ template <typename T> __device__ void
 roc_shmemx_put_nbi_wave(roc_shmem_ctx_t ctx, T *dest, const T *source,
               size_t nelems, int pe)
 {
-    GPU_DPRINTF(("Function: roc_shmemx_put_nbi_wave\n"));
+    GPU_DPRINTF("Function: roc_shmemx_put_nbi_wave\n");
 
     get_internal_ctx(ctx)->put_nbi_wave(dest, source, nelems, pe);
 }
@@ -780,7 +844,7 @@ template <typename T> __device__ void
 roc_shmemx_put_nbi_wg(roc_shmem_ctx_t ctx, T *dest, const T *source,
               size_t nelems, int pe)
 {
-    GPU_DPRINTF(("Function: roc_shmemx_put_nbi_wg\n"));
+    GPU_DPRINTF("Function: roc_shmemx_put_nbi_wg\n");
 
     get_internal_ctx(ctx)->put_nbi_wg(dest, source, nelems, pe);
 }
@@ -807,7 +871,7 @@ template <typename T> __device__ void
 roc_shmemx_get_wg(roc_shmem_ctx_t ctx, T *dest, const T *source, size_t nelems,
               int pe)
 {
-    GPU_DPRINTF(("Function: roc_shmemx_get_wg\n"));
+    GPU_DPRINTF("Function: roc_shmemx_get_wg\n");
 
     get_internal_ctx(ctx)->get_wg(dest, source, nelems, pe);
 }
@@ -816,7 +880,7 @@ template <typename T> __device__ void
 roc_shmemx_get_wave(roc_shmem_ctx_t ctx, T *dest, const T *source, size_t nelems,
               int pe)
 {
-    GPU_DPRINTF(("Function: roc_shmemx_get_wave\n"));
+    GPU_DPRINTF("Function: roc_shmemx_get_wave\n");
 
     get_internal_ctx(ctx)->get_wave(dest, source, nelems, pe);
 }
@@ -835,7 +899,7 @@ __device__ void
 roc_shmemx_get_nbi_wg(roc_shmem_ctx_t ctx, T *dest, const T *source,
                   size_t nelems, int pe)
 {
-    GPU_DPRINTF(("Function: roc_shmemx_get_nbi_wg\n"));
+    GPU_DPRINTF("Function: roc_shmemx_get_nbi_wg\n");
 
     get_internal_ctx(ctx)->get_nbi_wg(dest, source, nelems, pe);
 }
@@ -854,7 +918,7 @@ __device__ void
 roc_shmemx_get_nbi_wave(roc_shmem_ctx_t ctx, T *dest, const T *source,
                   size_t nelems, int pe)
 {
-    GPU_DPRINTF(("Function: roc_shmemx_get_nbi_wave\n"));
+    GPU_DPRINTF("Function: roc_shmemx_get_nbi_wave\n");
 
     get_internal_ctx(ctx)->get_nbi_wave(dest, source, nelems, pe);
 }
@@ -937,6 +1001,18 @@ roc_shmem_team_translate_pe(roc_shmem_team_t src_team,
                               const T *source, \
                               int nelem, \
                               int pe_root); \
+    template __device__ void \
+    roc_shmem_wg_alltoall<T>(roc_shmem_ctx_t ctx, \
+                             roc_shmem_team_t team, \
+                             T *dest, \
+                             const T *source, \
+                             int nelem); \
+    template __device__ void \
+    roc_shmem_wg_fcollect<T>(roc_shmem_ctx_t ctx, \
+                             roc_shmem_team_t team, \
+                             T *dest, \
+                             const T *source, \
+                             int nelem); \
     template __device__ void \
     roc_shmemx_put_wave<T>(roc_shmem_ctx_t ctx, T *dest, const T *source, \
                            size_t nelems, int pe); \
@@ -1248,6 +1324,24 @@ roc_shmem_team_translate_pe(roc_shmem_team_t src_team,
                                          int pe_root) \
     { \
         roc_shmem_wg_broadcast<T>(ctx, team, dest, source, nelem, pe_root); \
+    } \
+    __device__ void \
+    roc_shmem_ctx_##TNAME##_wg_alltoall(roc_shmem_ctx_t ctx, \
+                                         roc_shmem_team_t team, \
+                                         T *dest, \
+                                         const T *source, \
+                                         int nelem) \
+    { \
+        roc_shmem_wg_alltoall<T>(ctx, team, dest, source, nelem); \
+    } \
+    __device__ void \
+    roc_shmem_ctx_##TNAME##_wg_fcollect(roc_shmem_ctx_t ctx, \
+                                         roc_shmem_team_t team, \
+                                         T *dest, \
+                                         const T *source, \
+                                         int nelem) \
+    { \
+        roc_shmem_wg_fcollect<T>(ctx, team, dest, source, nelem); \
     }
 
 #define AMO_DEF_GEN(T, TNAME) \

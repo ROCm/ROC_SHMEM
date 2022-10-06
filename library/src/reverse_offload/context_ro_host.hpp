@@ -27,10 +27,48 @@
 
 namespace rocshmem {
 
+class ROContextWindowInfo
+{
+  public:
+    /**
+     * @brief Constructor with default members
+     */
+    ROContextWindowInfo() = default;
+
+    /**
+     * @brief Constructor with initialized members
+     *
+     * @param[in] team pointer used to track team info
+     * @param[in] team_info information about participating PEs
+     */
+    ROContextWindowInfo(MPI_Comm comm_world,
+                        SymmetricHeap *heap);
+
+    /**
+     * @brief Destructor
+     */
+    __host__
+    ~ROContextWindowInfo();
+
+    /**
+     * @brief Retrieve a pointer to the internal WindowInfo
+     *
+     * @return WindowInfo pointer
+     */
+    WindowInfo*
+    get() {
+        return window_info_;
+    }
+
+  private:
+    /**
+     * @brief Pointer to the WindowInfo object that manages the MPI Window for this context
+     */
+    WindowInfo *window_info_ {nullptr};
+};
+
 class ROHostContext : public Context {
  public:
-    Backend *backend_handle = nullptr;
-
     __host__ void
     register_memory(void *ptr,
                     size_t size);
@@ -38,14 +76,9 @@ class ROHostContext : public Context {
     __host__ void
     deregister_memory(void *ptr);
 
- private:
-    __host__
-    WindowInfo*
-    get_window_info();
-
  public:
     __host__
-    ROHostContext(const Backend &b,
+    ROHostContext(Backend *b,
                   int64_t options);
 
     __host__
@@ -53,6 +86,9 @@ class ROHostContext : public Context {
 
     /* Pointer to the backend's host interface */
     HostInterface *host_interface = nullptr;
+
+    /* An MPI Window implements a context */
+    WindowInfo *context_window_info = nullptr;
 
     /**************************************************************************
      ****************************** HOST METHODS ******************************

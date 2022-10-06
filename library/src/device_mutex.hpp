@@ -30,14 +30,62 @@ namespace rocshmem {
 class DeviceMutex {
   public:
     /**
+     * @brief locks the device mutex
+     *
+     * @return void
+     */
+    __device__ void
+    lock();
+
+    /**
+     * @brief unlocks the device mutex
+     *
+     * @return void
+     */
+    __device__ void
+    unlock();
+
+  private:
+    /**
+     * @brief used as a boolean to denote lock ownership
+     *
+     * '0' is unlocked
+     * '1' is locked
+     */
+    volatile int lock_ {0};
+
+    /**
+     * @brief maximum number of threads within a block
+     */
+    static constexpr int max_threads_per_block {1024};
+
+    /**
+     * @brief maximum number of warps within a block
+     */
+    static constexpr int max_warps_per_block {max_threads_per_block / warpSize};
+
+    /**
+     * @brief used to track warp progress through mutex
+     */
+    volatile int per_warp_ticket[max_warps_per_block] {0};
+
+    /**
+     * @brief prevents divergent warps from concurrently accessing lock
+     */
+    volatile int per_warp_ticket_lock[max_warps_per_block] {0};
+};
+
+class OldDeviceMutex {
+  public:
+    /**
      * @brief Secondary constructor
      */
-    DeviceMutex() = default;
+    OldDeviceMutex() = default;
 
     /**
      * @brief Primary constructor
      */
-    DeviceMutex(bool shareable);
+    OldDeviceMutex(bool shareable);
 
     /**
      * @brief locks the device mutex
@@ -64,7 +112,7 @@ class DeviceMutex {
     /**
      * @brief Shareable context lock.
      */
-    int ctx_lock_ {0};
+    volatile int ctx_lock_ {0};
 
     /**
      * @brief Shareable context owner.

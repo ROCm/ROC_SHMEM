@@ -55,11 +55,11 @@ class Backend;
 class Context {
  public:
     __host__
-    Context(const Backend &handle,
+    Context(Backend *handle,
             bool shareable);
 
     __device__
-    Context(const Backend &handle,
+    Context(Backend *handle,
             bool shareable);
 
     /*
@@ -93,6 +93,9 @@ class Context {
     threadfence_system();
 
     __device__ void
+    ctx_create();
+
+    __device__ void
     ctx_destroy();
 
     __device__ void
@@ -123,6 +126,9 @@ class Context {
     fence();
 
     __device__ void
+    fence(int pe);
+
+    __device__ void
     quiet();
 
     __device__ void*
@@ -132,15 +138,18 @@ class Context {
     __device__ void
     barrier_all();
 
+    __device__ void
+    sync_all();
+
+    __device__ void
+    sync(roc_shmem_team_t team);
+
     __device__ int64_t
     amo_fetch(void* dst,
               int64_t value,
               int64_t cond,
               int pe,
               uint8_t atomic_op);
-
-    __device__ void
-    sync_all();
 
     __device__ void
     amo_add(void* dst,
@@ -222,6 +231,20 @@ class Context {
             const T* source,
             size_t nelems,
             int pe);
+
+    template <typename T>
+    __device__ void
+    alltoall(roc_shmem_team_t team,
+              T* dest,
+              const T* source,
+              int nelems);
+
+    template <typename T>
+    __device__ void
+    fcollect(roc_shmem_team_t team,
+              T* dest,
+              const T* source,
+              int nelems);
 
     template <typename T>
     __device__ void
@@ -547,7 +570,7 @@ class Context {
     /**
      * @brief Lock to prevent data races on shared data
      */
-    DeviceMutex dev_mtx_ {};
+    OldDeviceMutex dev_mtx_ {};
 
     /**
      * @brief Coalesce policy for 'multi' configuration builds

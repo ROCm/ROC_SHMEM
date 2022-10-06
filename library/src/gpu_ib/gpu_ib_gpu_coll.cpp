@@ -30,55 +30,69 @@ namespace rocshmem {
 
 __device__ void
 GPUIBContext::internal_direct_barrier(int pe,
+                                      int PE_start,
+                                      int stride,
                                       int n_pes,
                                       int64_t *pSync) {
     int64_t flag_val = 1;
-    if (pe == 0) {
+    if (pe == PE_start) {
+        // Go through all PE offsets (except current offset = 0)
+        // and wait until they all reach
         for (size_t i = 1; i < n_pes; i++) {
             wait_until(&pSync[i], ROC_SHMEM_CMP_EQ, flag_val);
             pSync[i] = ROC_SHMEM_SYNC_VALUE;
         }
-        for (size_t i = 1; i < n_pes; i++) {
-            put_nbi(&pSync[0], &flag_val, 1, i);
+        threadfence_system();
+        // Announce to other PEs that all have reached
+        for (size_t i = 1, j = PE_start + stride; i < n_pes; ++i,j += stride) {
+            put_nbi(&pSync[0], &flag_val, 1, j);
         }
 
     } else {
-        put_nbi(&pSync[pe], &flag_val, 1, 0);
+        // Mark current PE offset as reached
+        size_t pe_offset = (pe - PE_start) / stride;
+        put_nbi(&pSync[pe_offset], &flag_val, 1, PE_start);
         wait_until(&pSync[0], ROC_SHMEM_CMP_EQ, flag_val);
         pSync[0] = ROC_SHMEM_SYNC_VALUE;
+        threadfence_system();
     }
 }
 
 __device__ void
 GPUIBContext::internal_atomic_barrier(int pe,
+                                      int PE_start,
+                                      int stride,
                                       int n_pes,
                                       int64_t *pSync) {
     int64_t flag_val = 1;
-    if (pe == 0) {
+    if (pe == PE_start) {
         wait_until(&pSync[0], ROC_SHMEM_CMP_EQ, (int64_t)(n_pes - 1));
         pSync[0] = ROC_SHMEM_SYNC_VALUE;
-
-        for (size_t i = 1; i < n_pes; i++) {
-            put_nbi(&pSync[0], &flag_val, 1, i);
+        threadfence_system();
+        for (size_t i = 1, j = PE_start + stride; i < n_pes; ++i,j += stride) {
+            put_nbi(&pSync[0], &flag_val, 1, j);
         }
     } else {
-        amo_add(&pSync[0], flag_val, 0, 0);
+        amo_add(&pSync[0], flag_val, 0, PE_start);
         wait_until(&pSync[0], ROC_SHMEM_CMP_EQ, flag_val);
         pSync[0] = ROC_SHMEM_SYNC_VALUE;
+        threadfence_system();
     }
 }
 
+// Uses PE values that are relative to world
 __device__ void
-GPUIBContext::sync_all() {
+GPUIBContext::internal_sync(int pe,
+                            int PE_start,
+                            int stride,
+                            int PE_size,
+                            int64_t *pSync) {
     __syncthreads();
     if (is_thread_zero_in_block()) {
-        int n_pes = num_pes;
-        int pe = my_pe;
-
-        if (n_pes < 64) {
-            internal_direct_barrier(pe, n_pes, barrier_sync);
+        if (PE_size < 64) {
+            internal_direct_barrier(pe, PE_start, stride, PE_size, pSync);
         } else {
-            internal_atomic_barrier(pe, n_pes, barrier_sync);
+            internal_atomic_barrier(pe, PE_start, stride, PE_size, pSync);
         }
     }
     __threadfence();
@@ -86,11 +100,36 @@ GPUIBContext::sync_all() {
 }
 
 __device__ void
+GPUIBContext::sync(roc_shmem_team_t team) {
+    GPUIBTeam *team_obj = reinterpret_cast<GPUIBTeam *>(team);
+
+    double dbl_log_pe_stride = team_obj->tinfo_wrt_world->log_stride;
+    int log_pe_stride        = static_cast<int>(dbl_log_pe_stride);
+    /**
+     * Ensure that the stride is a multiple of 2 for GPU_IB.
+     * TODO: enable GPU_IB to work with non-powers-of-2 strides
+     * and remove this assert.
+     */
+    assert((dbl_log_pe_stride - log_pe_stride) == 0);
+
+    int pe        = team_obj->my_pe_in_world;
+    int pe_start  = team_obj->tinfo_wrt_world->pe_start;
+    int pe_stride = (1 << log_pe_stride);
+    int pe_size   = team_obj->num_pes;
+    internal_sync(pe, pe_start, pe_stride, pe_size, barrier_sync);
+}
+
+__device__ void
+GPUIBContext::sync_all() {
+    internal_sync(my_pe, 0, 1, num_pes, barrier_sync);
+}
+
+__device__ void
 GPUIBContext::barrier_all() {
-    sync_all();
     if (is_thread_zero_in_block()) {
         quiet();
     }
+    sync_all();
     __syncthreads();
 }
 

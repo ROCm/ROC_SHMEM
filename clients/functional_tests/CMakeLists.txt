@@ -66,11 +66,13 @@ target_sources(
   ${PROJECT_NAME}
   PRIVATE
     barrier_all_tester.cpp
+    sync_tester.cpp
     test_driver.cpp
     tester.cpp
     tester_arguments.cpp
     ping_pong_tester.cpp
     primitive_tester.cpp
+    primitive_mr_tester.cpp
     team_ctx_primitive_tester.cpp
     team_ctx_infra_tester.cpp
     primitive_amo_tester.cpp
@@ -99,4 +101,7 @@ target_link_libraries(
     rocshmem::rocshmem
     hip::host
     -fgpu-rdc
+#   xnack allows address translation fault recovery
+#   required option for managed heap configs
+#    -mxnack
 )

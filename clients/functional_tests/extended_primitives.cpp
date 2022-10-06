@@ -94,7 +94,7 @@ ExtendedPrimitiveTester::~ExtendedPrimitiveTester()
 }
 
 void
-ExtendedPrimitiveTester::resetBuffers()
+ExtendedPrimitiveTester::resetBuffers(uint64_t size)
 {
     memset(s_buf, '0', args.max_msg_size * args.wg_size);
     memset(r_buf, '1', args.max_msg_size * args.wg_size);
@@ -124,7 +124,7 @@ ExtendedPrimitiveTester::launchKernel(dim3 gridSize,
                        _shmem_context);
 
     num_msgs = (loop + args.skip) * gridSize.x;
-    num_timed_msgs = loop * gridSize.x;
+    num_timed_msgs = loop;
 }
 
 void

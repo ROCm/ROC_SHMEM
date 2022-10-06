@@ -49,7 +49,7 @@ enum TestType
     AMO_CswapTestType       = 12,
     InitTestType            = 13,
     PingPongTestType        = 14,
-    BarrierTestType         = 15,
+//    BarrierTestType         = 15, // Deprecated in OpenSHMEM 1.5
     RandomAccessTestType    = 16,
     BarrierAllTestType      = 17,
     SyncAllTestType         = 18,
@@ -57,7 +57,7 @@ enum TestType
     BroadcastTestType       = 20,
     CollectTestType         = 21,
     FCollectTestType        = 22,
-    AllToAll                = 23,
+    AllToAllTestType        = 23,
     AllToAllsTestType       = 24,
     ShmemPtrTestType        = 25,
     PTestType               = 26,
@@ -76,7 +76,8 @@ enum TestType
     TeamCtxGetNBITestType   = 39,
     TeamCtxPutTestType      = 40,
     TeamCtxPutNBITestType   = 41,
-    TeamCtxInfraTestType    = 42
+    TeamCtxInfraTestType    = 42,
+    PutNBIMRTestType        = 43
 };
 
 enum OpType
@@ -104,7 +105,7 @@ class Tester
 
   protected:
     virtual void
-    resetBuffers() = 0;
+    resetBuffers(uint64_t size) = 0;
 
     virtual void
     preLaunchKernel() {}
@@ -123,6 +124,7 @@ class Tester
 
     int num_msgs = 0;
     int num_timed_msgs = 0;
+    int bw_factor = 1;
 
     TesterArguments args;
 

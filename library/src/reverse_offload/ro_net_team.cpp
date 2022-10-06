@@ -27,7 +27,7 @@
 
 namespace rocshmem {
 
-ROTeam::ROTeam(const Backend &backend,
+ROTeam::ROTeam(Backend* backend,
                TeamInfo* team_info_wrt_parent,
                TeamInfo* team_info_wrt_world,
                int num_pes,
@@ -40,9 +40,15 @@ ROTeam::ROTeam(const Backend &backend,
            my_pe,
            mpi_comm) {
     type = BackendType::RO_BACKEND;
+
+    ata_buffer = malloc(MAX_ATA_BUFF_SIZE);
 }
 
 ROTeam::~ROTeam() {
+    if(ata_buffer != NULL) {
+        free(ata_buffer);
+        ata_buffer = NULL;
+    }
 }
 
 }  // namespace rocshmem

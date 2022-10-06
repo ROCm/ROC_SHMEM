@@ -27,10 +27,10 @@ target_sources(
   ${PROJECT_NAME}
   PRIVATE
     backend_ro.cpp
-    ro_net_gpu.cpp
-    ro_net_host.cpp
+    context_ro_device.cpp
+    context_ro_host.cpp
     ro_net_team.cpp
-    transport.cpp
+    mpi_transport.cpp
 )
 
 target_include_directories(

@@ -56,8 +56,15 @@ ReliableConnection::rtr(dest_info_t* dest,
 
     rtr.exp_qp_attr.dest_qp_num = dest->qpn;
     rtr.exp_qp_attr.rq_psn = dest->psn;
-    rtr.exp_qp_attr.ah_attr.dlid = dest->lid;
     rtr.exp_qp_attr.ah_attr.port_num = port;
+    if (ib_state->portinfo.link_layer== IBV_LINK_LAYER_INFINIBAND) {
+        rtr.exp_qp_attr.ah_attr.dlid = dest->lid;
+    } else {
+        rtr.exp_qp_attr.ah_attr.is_global = 1;
+        rtr.exp_qp_attr.ah_attr.grh.dgid = dest->gid;
+        rtr.exp_qp_attr.ah_attr.grh.sgid_index = 0;
+        rtr.exp_qp_attr.ah_attr.grh.hop_limit = 1;
+    }
 
     rtr.exp_attr_mask |= IBV_QP_DEST_QPN |
                          IBV_QP_RQ_PSN |
@@ -107,6 +114,10 @@ ReliableConnection::create_qps_3(int port, ibv_qp* qp, int offset,
     all_qp[offset].lid = ib_port_att->lid;
     all_qp[offset].qpn = qp->qp_num;
     all_qp[offset].psn = 0;
+    union ibv_gid gid;
+    ibv_query_gid(ib_state->context, port, 0, &gid);
+    all_qp[offset].gid = gid;
+
 
     return Status::ROC_SHMEM_SUCCESS;
 }

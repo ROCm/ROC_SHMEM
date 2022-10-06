@@ -66,8 +66,6 @@ namespace rocshmem {
 
 Backend *backend = nullptr;
 
-bool ROC_SHMEM_DEBUG = false;
-
 roc_shmem_ctx_t ROC_SHMEM_HOST_CTX_DEFAULT;
 
 /**
@@ -88,9 +86,6 @@ library_init(unsigned num_wgs)
         printf("No GPU found! \n");
         exit(-1);
     }
-
-    if (getenv("ROC_SHMEM_DEBUG") != nullptr)
-        ROC_SHMEM_DEBUG = true;
 
     rocm_init();
     if (getenv("ROC_SHMEM_RO") != nullptr) {
@@ -198,6 +193,12 @@ roc_shmem_finalize()
     VERIFY_BACKEND();
 
     /*
+     * Destroy all the ctxs that the user
+     * created but did not manually destroy
+     */
+    backend->destroy_remaining_ctxs();
+
+    /*
      * Destroy all the teams that the user
      * created but did not manually destroy
      */
@@ -218,8 +219,12 @@ roc_shmem_finalize()
 __host__ Status
 roc_shmem_dynamic_shared(size_t *shared_bytes)
 {
-    VERIFY_BACKEND();
-    backend->dynamic_shared(shared_bytes);
+    if (getenv("ROC_SHMEM_RO") != nullptr) {
+        ro_net_get_dynamic_shared(shared_bytes);
+    }else{
+        int num_pes = roc_shmem_n_pes();
+        gpu_ib_get_dynamic_shared(shared_bytes, num_pes);
+    }
     return Status::ROC_SHMEM_SUCCESS;
 }
 
@@ -531,71 +536,104 @@ get_internal_ctx(roc_shmem_ctx_t ctx)
     return reinterpret_cast<Context *>(ctx.ctx_opaque);
 }
 
+__host__ int
+roc_shmem_ctx_create(int64_t options,
+                     roc_shmem_ctx_t *ctx)
+{
+    DPRINTF("Host function: roc_shmem_ctx_create\n");
+
+    void *phys_ctx;
+    backend->ctx_create(options, &phys_ctx);
+
+    ctx->ctx_opaque = phys_ctx;
+    /* This team in on TEAM_WORLD, no need for team info */
+    ctx->team_opaque = nullptr;
+
+    /* Track this context, if needed. */
+    backend->track_ctx(reinterpret_cast<Context *>(phys_ctx), options);
+
+    return 0;
+}
+
+__host__ void
+roc_shmem_ctx_destroy(roc_shmem_ctx_t ctx)
+{
+    DPRINTF("Host function: roc_shmem_ctx_destroy\n");
+
+    /* TODO: Implicit quiet on this context */
+
+    Context *phys_ctx = get_internal_ctx(ctx);
+
+    backend->untrack_ctx(phys_ctx);
+
+    backend->ctx_destroy(phys_ctx);
+}
+
 template <typename T> __host__ void
 roc_shmem_put(roc_shmem_ctx_t ctx, T *dest, const T *source,
               size_t nelems, int pe)
 {
-    DPRINTF(("Host function: roc_shmem_put\n"));
+    DPRINTF("Host function: roc_shmem_put\n");
 
-    get_internal_ctx(ROC_SHMEM_HOST_CTX_DEFAULT)->put(dest, source, nelems, pe);
+    get_internal_ctx(ctx)->put(dest, source, nelems, pe);
 }
 
 __host__ void
 roc_shmem_ctx_putmem(roc_shmem_ctx_t ctx, void *dest, const void *source, size_t nelems, int pe)
 {
-    DPRINTF(("Host function: roc_shmem_ctx_putmem\n"));
+    DPRINTF("Host function: roc_shmem_ctx_putmem\n");
 
-    get_internal_ctx(ROC_SHMEM_HOST_CTX_DEFAULT)->putmem(dest, source, nelems, pe);
+    get_internal_ctx(ctx)->putmem(dest, source, nelems, pe);
 }
 
 template <typename T> __host__ void
 roc_shmem_p(roc_shmem_ctx_t ctx, T *dest, T value, int pe)
 {
-    DPRINTF(("Host function: roc_shmem_p\n"));
+    DPRINTF("Host function: roc_shmem_p\n");
 
-    get_internal_ctx(ROC_SHMEM_HOST_CTX_DEFAULT)->p(dest, value, pe);
+    get_internal_ctx(ctx)->p(dest, value, pe);
 }
 
 template <typename T> __host__ void
 roc_shmem_get(roc_shmem_ctx_t ctx, T *dest, const T *source, size_t nelems,
               int pe)
 {
-    DPRINTF(("Host function: roc_shmem_get\n"));
+    DPRINTF("Host function: roc_shmem_get\n");
 
-    get_internal_ctx(ROC_SHMEM_HOST_CTX_DEFAULT)->get(dest, source, nelems, pe);
+    get_internal_ctx(ctx)->get(dest, source, nelems, pe);
 }
 
 __host__ void
 roc_shmem_ctx_getmem(roc_shmem_ctx_t ctx, void *dest, const void *source, size_t nelems, int pe)
 {
-    DPRINTF(("Host function: roc_shmem_ctx_getmem\n"));
+    DPRINTF("Host function: roc_shmem_ctx_getmem\n");
 
-    get_internal_ctx(ROC_SHMEM_HOST_CTX_DEFAULT)->getmem(dest, source, nelems, pe);
+    get_internal_ctx(ctx)->getmem(dest, source, nelems, pe);
 }
 
 template <typename T> __host__ T
 roc_shmem_g(roc_shmem_ctx_t ctx, const T *source, int pe)
 {
-    DPRINTF(("Host function: roc_shmem_g\n"));
+    DPRINTF("Host function: roc_shmem_g\n");
 
-    return get_internal_ctx(ROC_SHMEM_HOST_CTX_DEFAULT)->g(source, pe);
+    return get_internal_ctx(ctx)->g(source, pe);
 }
 
 template <typename T> __host__ void
 roc_shmem_put_nbi(roc_shmem_ctx_t ctx, T *dest, const T *source,
                   size_t nelems, int pe)
 {
-    DPRINTF(("Host function: roc_shmem_put_nbi\n"));
+    DPRINTF("Host function: roc_shmem_put_nbi\n");
 
-    get_internal_ctx(ROC_SHMEM_HOST_CTX_DEFAULT)->put_nbi(dest, source, nelems, pe);
+    get_internal_ctx(ctx)->put_nbi(dest, source, nelems, pe);
 }
 
 __host__ void
 roc_shmem_ctx_putmem_nbi(roc_shmem_ctx_t ctx, void *dest, const void *source, size_t nelems, int pe)
 {
-    DPRINTF(("Host function: roc_shmem_ctx_putmem_nbi\n"));
+    DPRINTF("Host function: roc_shmem_ctx_putmem_nbi\n");
 
-    get_internal_ctx(ROC_SHMEM_HOST_CTX_DEFAULT)->putmem_nbi(dest, source, nelems, pe);
+    get_internal_ctx(ctx)->putmem_nbi(dest, source, nelems, pe);
 }
 
 template <typename T>
@@ -603,89 +641,89 @@ __host__ void
 roc_shmem_get_nbi(roc_shmem_ctx_t ctx, T *dest, const T *source,
                   size_t nelems, int pe)
 {
-    DPRINTF(("Host function: roc_shmem_get_nbi\n"));
+    DPRINTF("Host function: roc_shmem_get_nbi\n");
 
-    get_internal_ctx(ROC_SHMEM_HOST_CTX_DEFAULT)->get_nbi(dest, source, nelems, pe);
+    get_internal_ctx(ctx)->get_nbi(dest, source, nelems, pe);
 }
 
 __host__ void
 roc_shmem_ctx_getmem_nbi(roc_shmem_ctx_t ctx, void *dest, const void *source, size_t nelems, int pe)
 {
-    DPRINTF(("Host function: roc_shmem_ctx_getmem_nbi\n"));
+    DPRINTF("Host function: roc_shmem_ctx_getmem_nbi\n");
 
-    get_internal_ctx(ROC_SHMEM_HOST_CTX_DEFAULT)->getmem_nbi(dest, source, nelems, pe);
+    get_internal_ctx(ctx)->getmem_nbi(dest, source, nelems, pe);
 }
 
 template <typename T> __host__ T
 roc_shmem_atomic_fetch_add(roc_shmem_ctx_t ctx, T *dest, T val, int pe)
 {
-    DPRINTF(("Host function: roc_shmem_atomic_fetch_add\n"));
+    DPRINTF("Host function: roc_shmem_atomic_fetch_add\n");
 
-    return get_internal_ctx(ROC_SHMEM_HOST_CTX_DEFAULT)->amo_fetch_add(dest, val, 0, pe);
+    return get_internal_ctx(ctx)->amo_fetch_add(dest, val, 0, pe);
 }
 
 template <typename T> __host__ T
 roc_shmem_atomic_compare_swap(roc_shmem_ctx_t ctx, T *dest, T cond, T val,
                              int pe)
 {
-    DPRINTF(("Host function: roc_shmem_atomic_compare_swap\n"));
+    DPRINTF("Host function: roc_shmem_atomic_compare_swap\n");
 
-    return get_internal_ctx(ROC_SHMEM_HOST_CTX_DEFAULT)->amo_fetch_cas(dest, val, cond, pe);
+    return get_internal_ctx(ctx)->amo_fetch_cas(dest, val, cond, pe);
 }
 
 template <typename T> __host__ T
 roc_shmem_atomic_fetch_inc(roc_shmem_ctx_t ctx, T *dest, int pe)
 {
-    DPRINTF(("Host function: roc_shmem_atomic_fetch_inc\n"));
+    DPRINTF("Host function: roc_shmem_atomic_fetch_inc\n");
 
-    return get_internal_ctx(ROC_SHMEM_HOST_CTX_DEFAULT)->amo_fetch_add(dest, 1, 0, pe);
+    return get_internal_ctx(ctx)->amo_fetch_add(dest, 1, 0, pe);
 }
 
 template <typename T> __host__ T
 roc_shmem_atomic_fetch(roc_shmem_ctx_t ctx, T *dest, int pe)
 {
-    DPRINTF(("Host function: roc_shmem_atomic_fetch\n"));
+    DPRINTF("Host function: roc_shmem_atomic_fetch\n");
 
-    return get_internal_ctx(ROC_SHMEM_HOST_CTX_DEFAULT)->amo_fetch_add(dest, 0, 0, pe);
+    return get_internal_ctx(ctx)->amo_fetch_add(dest, 0, 0, pe);
 }
 
 template <typename T> __host__ void
 roc_shmem_atomic_add(roc_shmem_ctx_t ctx, T *dest, T val, int pe)
 {
-    DPRINTF(("Host function: roc_shmem_atomic_add\n"));
+    DPRINTF("Host function: roc_shmem_atomic_add\n");
 
-    get_internal_ctx(ROC_SHMEM_HOST_CTX_DEFAULT)->amo_add((void*)dest, val, 0, pe);
+    get_internal_ctx(ctx)->amo_add((void*)dest, val, 0, pe);
 }
 
 template <typename T>
 __host__ void
 roc_shmem_atomic_inc(roc_shmem_ctx_t ctx, T *dest, int pe)
 {
-    DPRINTF(("Host function: roc_shmem_atomic_inc\n"));
+    DPRINTF("Host function: roc_shmem_atomic_inc\n");
 
-    get_internal_ctx(ROC_SHMEM_HOST_CTX_DEFAULT)->amo_add(dest, 1, 0, pe);
+    get_internal_ctx(ctx)->amo_add(dest, 1, 0, pe);
 }
 
 __host__ void
 roc_shmem_ctx_fence(roc_shmem_ctx_t ctx)
 {
-    DPRINTF(("Host function: roc_shmem_ctx_fence\n"));
+    DPRINTF("Host function: roc_shmem_ctx_fence\n");
 
-    get_internal_ctx(ROC_SHMEM_HOST_CTX_DEFAULT)->fence();
+    get_internal_ctx(ctx)->fence();
 }
 
 __host__ void
 roc_shmem_ctx_quiet(roc_shmem_ctx_t ctx)
 {
-    DPRINTF(("Host function: roc_shmem_ctx_quiet\n"));
+    DPRINTF("Host function: roc_shmem_ctx_quiet\n");
 
-    get_internal_ctx(ROC_SHMEM_HOST_CTX_DEFAULT)->quiet();
+    get_internal_ctx(ctx)->quiet();
 }
 
 __host__ void
 roc_shmem_barrier_all()
 {
-    DPRINTF(("Host function: roc_shmem_barrier_all\n"));
+    DPRINTF("Host function: roc_shmem_barrier_all\n");
 
     get_internal_ctx(ROC_SHMEM_HOST_CTX_DEFAULT)->barrier_all();
 }
@@ -693,7 +731,7 @@ roc_shmem_barrier_all()
 __host__ void
 roc_shmem_sync_all()
 {
-    DPRINTF(("Host function: roc_shmem_sync_all\n"));
+    DPRINTF("Host function: roc_shmem_sync_all\n");
 
     get_internal_ctx(ROC_SHMEM_HOST_CTX_DEFAULT)->sync_all();
 }
@@ -710,7 +748,7 @@ roc_shmem_broadcast(roc_shmem_ctx_t ctx,
                     int pe_size,
                     long *p_sync)
 {
-    DPRINTF(("Host function: roc_shmem_broadcast\n"));
+    DPRINTF("Host function: roc_shmem_broadcast\n");
 
     get_internal_ctx(ROC_SHMEM_HOST_CTX_DEFAULT)->broadcast<T>(dest,
                                              source,
@@ -731,7 +769,7 @@ roc_shmem_broadcast(roc_shmem_ctx_t ctx,
                     int nelem,
                     int pe_root)
 {
-    DPRINTF(("Host function: Team-based roc_shmem_broadcast\n"));
+    DPRINTF("Host function: Team-based roc_shmem_broadcast\n");
 
     get_internal_ctx(ROC_SHMEM_HOST_CTX_DEFAULT)->broadcast<T>(team,
                                                                dest,
@@ -745,7 +783,7 @@ roc_shmem_to_all(roc_shmem_ctx_t ctx, T *dest, const T *source,
                  int nreduce, int PE_start, int logPE_stride,
                  int PE_size, T *pWrk, long *pSync)
 {
-    DPRINTF(("Host function: roc_shmem_to_all\n"));
+    DPRINTF("Host function: roc_shmem_to_all\n");
 
     get_internal_ctx(ROC_SHMEM_HOST_CTX_DEFAULT)->to_all<T, Op>(dest, source, nreduce, PE_start,
                                          logPE_stride, PE_size, pWrk, pSync);
@@ -755,7 +793,7 @@ template <typename T, ROC_SHMEM_OP Op> __host__ void
 roc_shmem_to_all(roc_shmem_ctx_t ctx, roc_shmem_team_t team,
                  T *dest, const T *source, int nreduce)
 {
-    DPRINTF(("Host function: Team-based roc_shmem_to_all\n"));
+    DPRINTF("Host function: Team-based roc_shmem_to_all\n");
 
     get_internal_ctx(ROC_SHMEM_HOST_CTX_DEFAULT)->to_all<T, Op>(team, dest, source, nreduce);
 }
@@ -764,7 +802,7 @@ template <typename T>
 __host__ void
 roc_shmem_wait_until(T *ptr, roc_shmem_cmps cmp, T val)
 {
-    DPRINTF(("Host function: roc_shmem_wait_until\n"));
+    DPRINTF("Host function: roc_shmem_wait_until\n");
 
     get_internal_ctx(ROC_SHMEM_HOST_CTX_DEFAULT)->wait_until(ptr, cmp, val);
 }
@@ -773,7 +811,7 @@ template <typename T>
 __host__ int
 roc_shmem_test(T *ptr, roc_shmem_cmps cmp, T val)
 {
-    DPRINTF(("Host function: roc_shmem_testl\n"));
+    DPRINTF("Host function: roc_shmem_testl\n");
 
     return get_internal_ctx(ROC_SHMEM_HOST_CTX_DEFAULT)->test(ptr, cmp, val);
 }

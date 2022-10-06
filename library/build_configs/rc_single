@@ -16,8 +16,9 @@ cmake \
     -DDEBUG=OFF \
     -DPROFILE=OFF \
     -DUSE_DC=OFF \
-    -DUSE_HDP_MAP=OFF \
     -DUSE_IPC=OFF \
+    -DUSE_COHERENT_HEAP=OFF \
+    -DUSE_CACHED_HEAP=OFF \
     -DUSE_THREADS=OFF \
     -DUSE_WF_COAL=OFF \
     $src_path

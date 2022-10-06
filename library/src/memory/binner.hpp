@@ -41,6 +41,38 @@
 namespace rocshmem {
 
 /**
+ * @brief Helper to choose between clz variants
+ *
+ * @param[in] An input value
+ *
+ * @return __builtin_clz value
+ */
+template <typename T>
+inline int
+clz_fn(T v) {
+    assert(false);
+    return 0;
+}
+
+template <>
+inline int
+clz_fn(unsigned v) {
+    return __builtin_clz(v);
+}
+
+template <>
+inline int
+clz_fn(unsigned long v) {
+    return __builtin_clzl(v);
+}
+
+template <>
+inline int
+clz_fn(unsigned long long v) {
+    return __builtin_clzll(v);
+}
+
+/**
  * @brief Finds the bit position of the first one
  *
  * @param[in] An input value
@@ -50,13 +82,13 @@ namespace rocshmem {
 template <typename T>
 inline unsigned
 find_first_set_one(T v) {
-    auto num_bytes {sizeof(T)};
-    auto num_bits {num_bytes * CHAR_BIT};
-    auto num_leading_zeroes {std::countl_zero(v)};
-    auto last_zero_bit_position {num_bits - num_leading_zeroes};
-    if (!last_zero_bit_position) {
+    if (v == 0) {
         return UINT_MAX;
     }
+    auto num_bytes {sizeof(T)};
+    auto num_bits {num_bytes * CHAR_BIT};
+    auto num_leading_zeroes {clz_fn(v)};
+    auto last_zero_bit_position {num_bits - num_leading_zeroes};
     auto first_one_bit_position {last_zero_bit_position - 1};
     return first_one_bit_position;
 }

@@ -188,7 +188,7 @@ ReductionTester<T1, T2>::launchKernel(dim3 gridSize,
 
 template<typename T1, ROC_SHMEM_OP T2>
 void
-ReductionTester<T1, T2>::resetBuffers()
+ReductionTester<T1, T2>::resetBuffers(uint64_t size)
 {
     for (int i = 0; i < args.max_msg_size; i++) {
         init_buf(s_buf[i], r_buf[i]);

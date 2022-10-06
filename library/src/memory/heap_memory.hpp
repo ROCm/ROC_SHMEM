@@ -23,6 +23,7 @@
 #ifndef ROCSHMEM_LIBRARY_SRC_HEAP_MEMORY_HPP
 #define ROCSHMEM_LIBRARY_SRC_HEAP_MEMORY_HPP
 
+#include <cassert>
 #include <memory>
 
 /**
@@ -56,6 +57,7 @@ class HeapMemory {
     : size_{size} {
         char* temp;
         allocator_.allocate(reinterpret_cast<void**>(&temp), size_);
+        assert(temp);
         std::unique_ptr<char, Deleter> up {temp};
         up_ = std::move(up);
     }
@@ -78,6 +80,16 @@ class HeapMemory {
     size_t
     get_size() {
         return size_;
+    }
+
+    /**
+     * @brief Returns is the heap is allocated with managed memory
+     *
+     * @return bool
+     */
+    bool
+    is_managed() {
+        return allocator_.is_managed();
     }
 
   private:

@@ -33,6 +33,7 @@ PrimitiveAMOTest(int loop,
                  int skip,
                  uint64_t *timer,
                  char *r_buf,
+                 int64_t *s_buf,
                  int64_t *ret_val,
                  TestType type);
 
@@ -47,7 +48,7 @@ class PrimitiveAMOTester : public Tester
 
   protected:
     virtual void
-    resetBuffers() override;
+    resetBuffers(uint64_t size) override;
 
     virtual void
     launchKernel(dim3 gridSize,
@@ -58,8 +59,10 @@ class PrimitiveAMOTester : public Tester
     virtual void
     verifyResults(uint64_t size) override;
 
-    char *r_buf;
+    dim3 _gridSize {};
+    char *_r_buf;
     int64_t *_ret_val;
+    int64_t *_s_buf;
 };
 
 #endif

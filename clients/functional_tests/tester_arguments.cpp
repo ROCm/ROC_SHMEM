@@ -77,7 +77,8 @@ TesterArguments::TesterArguments(int argc, char *argv[])
       case AMO_FIncTestType:
       case AMO_IncTestType:
       case AMO_FetchTestType:
-      case BarrierTestType:
+      case BarrierAllTestType:
+      case SyncTestType:
       case ShmemPtrTestType:
         min_msg_size = 8;
         max_msg_size = 8;
@@ -92,6 +93,9 @@ TesterArguments::TesterArguments(int argc, char *argv[])
       case TeamCtxInfraTestType:
         max_msg_size = min_msg_size;
         break;
+      case PutNBIMRTestType:
+        min_msg_size = max_msg_size;
+	break;
       default:
         break;
     }
@@ -121,12 +125,16 @@ TesterArguments::get_rocshmem_arguments()
     TestType type = (TestType) algorithm;
     if ((type != ReductionTestType) &&
         (type != BarrierAllTestType) &&
+        (type != SyncAllTestType) &&
+        (type != SyncTestType) &&
         (type != BroadcastTestType) &&
+        (type != AllToAllTestType) &&
+        (type != FCollectTestType) &&
         (type != TeamReductionTestType) &&
         (type != TeamBroadcastTestType)) {
         if (numprocs != 2) {
             if (myid == 0) {
-                std::cerr << "This test requires exactly two processes\n";
+                std::cerr << "This test requires exactly two processes, we have " << numprocs << "\n";
             }
             exit(-1);
         }

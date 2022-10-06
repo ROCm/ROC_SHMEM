@@ -51,7 +51,7 @@ class GPUIBContext : public Context {
     /*
      * Temporary scratchpad memory used by internal barrier algorithms.
      */
-    int64_t *barrier_sync = nullptr;
+    int64_t *barrier_sync {nullptr};
 
     template <typename T, ROC_SHMEM_OP Op>
     __device__ void
@@ -99,13 +99,24 @@ class GPUIBContext : public Context {
 
     __device__ void
     internal_direct_barrier(int pe,
+                            int PE_start,
+                            int stride,
                             int n_pes,
                             int64_t *pSync);
 
     __device__ void
     internal_atomic_barrier(int pe,
+                            int PE_start,
+                            int stride,
                             int n_pes,
                             int64_t *pSync);
+
+    __device__ void
+    internal_sync(int pe,
+                  int PE_start,
+                  int stride,
+                  int PE_size,
+                  int64_t *pSync);
 
     __device__ void
     quiet_single(int cq_num);
@@ -115,10 +126,10 @@ class GPUIBContext : public Context {
      * Buffer used to store the results of a *_g operation. These ops do not
      * provide a destination buffer, so the runtime must manage one.
      */
-    char *g_ret = nullptr;
+    char *g_ret {nullptr};
 
 
-    NetworkImpl networkImpl;
+    NetworkImpl networkImpl {};
 
     __device__ __host__ QueuePair*
     getQueuePair(int pe);
@@ -130,11 +141,11 @@ class GPUIBContext : public Context {
     getNumDest();
 
     __device__
-    GPUIBContext(const Backend &b,
+    GPUIBContext(Backend *b,
                  int64_t options);
 
     __host__
-    GPUIBContext(const Backend &b,
+    GPUIBContext(Backend *b,
                  int64_t options);
 
     __device__
@@ -149,6 +160,9 @@ class GPUIBContext : public Context {
      *************************************************************************/
     __device__ void
     threadfence_system();
+
+    __device__ void
+    ctx_create();
 
     __device__ void
     ctx_destroy();
@@ -181,6 +195,9 @@ class GPUIBContext : public Context {
     fence();
 
     __device__ void
+    fence(int pe);
+
+    __device__ void
     quiet();
 
     __device__ void*
@@ -192,6 +209,9 @@ class GPUIBContext : public Context {
 
     __device__ void
     sync_all();
+
+    __device__ void
+    sync(roc_shmem_team_t team);
 
     __device__ void
     amo_add(void *dst,
@@ -292,6 +312,76 @@ class GPUIBContext : public Context {
               int log_pe_stride,
               int pe_size,
               long *p_sync);  // NOLINT(runtime/int)
+
+    template <typename T>
+    __device__ void
+    alltoall(roc_shmem_team_t team,
+             T *dest,
+             const T *source,
+             int nelems);
+
+    template <typename T>
+    __device__ void
+    alltoall_broadcast(roc_shmem_team_t team,
+                   T *dest,
+                   const T *source,
+                   int nelems);
+
+    template <typename T>
+    __device__ void
+    alltoall_brucks(roc_shmem_team_t team,
+                    T *dest,
+                    const T *source,
+                    int nelems);
+
+    template <typename T>
+    __device__ void
+    alltoall_gcen(roc_shmem_team_t team,
+                  T *dest,
+                  const T *source,
+                  int nelems);
+
+    template <typename T>
+    __device__ void
+    alltoall_gcen2(roc_shmem_team_t team,
+                   T *dest,
+                   const T *source,
+                   int nelems);
+
+    template <typename T>
+    __device__ void
+    fcollect(roc_shmem_team_t team,
+             T *dest,
+             const T *source,
+             int nelems);
+
+    template <typename T>
+    __device__ void
+    fcollect_broadcast(roc_shmem_team_t team,
+                   T *dest,
+                   const T *source,
+                   int nelems);
+
+    template <typename T>
+    __device__ void
+    fcollect_brucks(roc_shmem_team_t team,
+                    T *dest,
+                    const T *source,
+                    int nelems);
+
+    template <typename T>
+    __device__ void
+    fcollect_gcen(roc_shmem_team_t team,
+                  T *dest,
+                  const T *source,
+                  int nelems);
+
+    template <typename T>
+    __device__ void
+    fcollect_gcen2(roc_shmem_team_t team,
+                   T *dest,
+                   const T *source,
+                   int nelems);
 
     __device__ void
     putmem_wg(void *dest,

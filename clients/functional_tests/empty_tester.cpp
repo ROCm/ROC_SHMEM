@@ -58,7 +58,7 @@ EmptyTester::~EmptyTester()
 }
 
 void
-EmptyTester::resetBuffers()
+EmptyTester::resetBuffers(uint64_t size)
 {
 }
 

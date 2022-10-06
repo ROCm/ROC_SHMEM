@@ -135,7 +135,7 @@ class TeamTracker {
      * pre-allocate resources (e.g. LDS, working arrays, etc.)
      * for teams.
      */
-    int max_num_teams_ {10};
+    int max_num_teams_ {40};
 
     /**
      * @brief Pointer to implementation of ROC_SHMEM_TEAM_WORLD

@@ -81,20 +81,24 @@ uncached_load(T* src) {
 #define SFENCE() asm volatile("sfence" ::: "memory")
 
 #ifdef DEBUG
-# define DPRINTF(x) if (ROC_SHMEM_DEBUG) printf x
+# define DPRINTF(...) do {\
+    printf(__VA_ARGS__);\
+} while (0);
 #else
-# define DPRINTF(x) do {} while (0)
+# define DPRINTF(...) do {\
+} while (0);
 #endif
 
 #ifdef DEBUG
-#define GPU_DPRINTF(...) gpu_dprintf(__VA_ARGS__);
+#define GPU_DPRINTF(...) do {\
+        gpu_dprintf(__VA_ARGS__);\
+} while (0);
 #else
-#define GPU_DPRINTF(...) do {} while (0)
+#define GPU_DPRINTF(...) do {\
+} while (0);
 #endif
 
 const extern int gpu_clock_freq_mhz;
-
-extern bool ROC_SHMEM_DEBUG;
 
 /* Device-side internal functions */
 __device__ void __roc_inv();

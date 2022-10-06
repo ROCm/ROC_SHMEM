@@ -31,26 +31,21 @@
 namespace rocshmem {
 
 __host__
-GPUIBHostContext::GPUIBHostContext(const Backend &backend,
+GPUIBHostContext::GPUIBHostContext(Backend *backend,
                                    int64_t options)
     : Context(backend, true) {
     type = BackendType::GPU_IB_BACKEND;
 
-    GPUIBBackend *b = static_cast<GPUIBBackend*>(const_cast<Backend*>(&backend));
+    GPUIBBackend *b {static_cast<GPUIBBackend*>(backend)};
 
     host_interface = b->host_interface;
 
-    context_window_info = b->heap.get_window_info();
+    context_window_info = host_interface->acquire_window_context();
 }
 
 __host__
 GPUIBHostContext::~GPUIBHostContext() {
-    /*
-     * Nothing to do here since we haven't allocated any new memory on
-     * this object.
-     * TODO(rozambre): ensure to destroy context_window_info when we
-     * have multiple contexts.
-     */
+    host_interface->release_window_context(context_window_info);
 }
 
 __host__ void

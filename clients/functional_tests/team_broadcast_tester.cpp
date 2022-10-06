@@ -185,7 +185,7 @@ TeamBroadcastTester<T1>::postLaunchKernel()
 
 template<typename T1>
 void
-TeamBroadcastTester<T1>::resetBuffers()
+TeamBroadcastTester<T1>::resetBuffers(uint64_t size)
 {
     for (int i = 0; i < args.max_msg_size; i++) {
         init_buf(source_buf[i], dest_buf[i]);

@@ -31,8 +31,67 @@
 namespace rocshmem {
 
 __host__
+HostContextWindowInfo::HostContextWindowInfo(MPI_Comm comm_world,
+                                             SymmetricHeap *heap) {
+    window_info_ = new WindowInfo(comm_world,
+                                  heap->get_local_heap_base(),
+                                  heap->get_size());
+}
+
+__host__
+HostContextWindowInfo::~HostContextWindowInfo() {
+    delete window_info_;
+}
+
+WindowInfo*
+HostInterface::acquire_window_context() {
+    auto index {find_avail_pool_entry()};
+
+    HostContextWindowInfo *acquired_win_info = host_window_context_pool_[index];
+
+    acquired_win_info->mark_unavail();
+
+    return acquired_win_info->get();
+}
+
+__host__ void
+HostInterface::release_window_context(WindowInfo *window_info) {
+    auto index {find_win_info_in_pool(window_info)};
+
+    host_window_context_pool_[index]->mark_avail();
+}
+
+int
+HostInterface::find_avail_pool_entry() {
+    for (int i {0}; i < max_num_ctxs_; i++) {
+        if (host_window_context_pool_[i]->is_avail()) {
+            return i;
+        }
+    }
+    /* Entry should have been available; consider this as an error. */
+    assert(false);
+    return -1;
+}
+
+int
+HostInterface::find_win_info_in_pool(WindowInfo* window_info) {
+    for (int i {0}; i < max_num_ctxs_; i++) {
+        if (host_window_context_pool_[i]->is_avail()) {
+            continue;
+        }
+        if (window_info == host_window_context_pool_[i]->get()) {
+            return i;
+        }
+    }
+    /* Entry should have been present; consider this as an error. */
+    assert(false);
+    return -1;
+}
+
+__host__
 HostInterface::HostInterface(HdpPolicy* hdp_policy,
-                             MPI_Comm roc_shmem_comm) {
+                             MPI_Comm roc_shmem_comm,
+                             SymmetricHeap *heap) {
     /*
      * Duplicate a communicator from roc_shem's comm
      * world for the host interface
@@ -47,14 +106,28 @@ HostInterface::HostInterface(HdpPolicy* hdp_policy,
      */
     hdp_policy_ = hdp_policy;
 
-    // TODO(rozambre): enable in rocm 4.5
-    // commenting this out until rocm 4.5
-    // MPI_Win_create(hdp_policy->get_hdp_flush_addr(),
-    //                sizeof(unsigned int),        /* size of window */
-    //                sizeof(unsigned int),        /* displacement */
-    //                MPI_INFO_NULL,
-    //                host_comm_world_,
-    //                &hdp_win);
+    /*
+     * Allocate and initialize pool of windows for contexts
+     */
+    char* value {nullptr};
+    if ((value = getenv("ROC_SHMEM_MAX_NUM_HOST_CONTEXTS"))) {
+        max_num_ctxs_ = atoi(value);
+    }
+
+    size_t pool_size = max_num_ctxs_ * sizeof(HostContextWindowInfo*);
+    host_window_context_pool_ = reinterpret_cast<HostContextWindowInfo **>(malloc(pool_size));
+
+    for (int ctx_i = 0; ctx_i < max_num_ctxs_; ctx_i++) {
+        host_window_context_pool_[ctx_i] = new HostContextWindowInfo(host_comm_world_,
+                                                                     heap);
+    }
+
+    MPI_Win_create(hdp_policy->get_hdp_flush_ptr(),
+                   sizeof(unsigned int),        /* size of window */
+                   sizeof(unsigned int),        /* displacement */
+                   MPI_INFO_NULL,
+                   host_comm_world_,
+                   &hdp_win);
 
     /*
      * Start a shared access epoch on windows of all ranks,
@@ -62,16 +135,21 @@ HostInterface::HostInterface(HdpPolicy* hdp_policy,
      * lock exclusivity during operations on this window
      * (MPI_MODE_NOCHECK).
      */
-    // TODO(rozambre): enable in rocm 4.5
-    // MPI_Win_lock_all(MPI_MODE_NOCHECK, hdp_win);
+    MPI_Win_lock_all(MPI_MODE_NOCHECK, hdp_win);
 }
 
 __host__
 HostInterface::~HostInterface() {
-    // TODO(rozambre): enable in rocm 4.5
-    // MPI_Win_unlock_all(hdp_win);
+    MPI_Win_unlock_all(hdp_win);
 
-    // MPI_Win_free(&hdp_win);
+    MPI_Win_free(&hdp_win);
+
+    /* Detroy the pool of contexts */
+    for (int ctx_i = 0; ctx_i < max_num_ctxs_; ctx_i++) {
+        delete host_window_context_pool_[ctx_i];
+    }
+
+    free(host_window_context_pool_);
 
     MPI_Comm_free(&host_comm_world_);
 }
@@ -208,30 +286,28 @@ HostInterface::amo_fetch_cas(void* dst,
 
 __host__ void inline
 HostInterface::flush_remote_hdp(int pe) {
-    unsigned flush_val {HdpBasePolicy::HDP_FLUSH_VAL};
-    // TODO(rozambre): enable for rocm 4.5
-    // MPI_Put(&flush_val, 1, MPI_UNSIGNED, pe, 0, 1, MPI_UNSIGNED, hdp_win);
-    // MPI_Win_flush(pe, hdp_win);
+    unsigned flush_val {HdpRocmPolicy::HDP_FLUSH_VAL};
+     MPI_Put(&flush_val, 1, MPI_UNSIGNED, pe, 0, 1, MPI_UNSIGNED, hdp_win);
+     MPI_Win_flush(pe, hdp_win);
 }
 
 __host__ void inline
 HostInterface::flush_remote_hdps() {
-    unsigned flush_val {HdpBasePolicy::HDP_FLUSH_VAL};
+    unsigned flush_val {HdpRocmPolicy::HDP_FLUSH_VAL};
     for (size_t i {0}; i < num_pes_; i++) {
         if (i == my_pe_) {
             continue;
         }
-        // TODO(rozambre): enable for rocm 4.5
-        // MPI_Put(&flush_val,
-        //         1,
-        //         MPI_UNSIGNED,
-        //         i,
-        //         0,
-        //         1,
-        //         MPI_UNSIGNED,
-        //         hdp_win);
+        MPI_Put(&flush_val,
+                1,
+                MPI_UNSIGNED,
+                i,
+                0,
+                1,
+                MPI_UNSIGNED,
+                hdp_win);
     }
-    // MPI_Win_flush_all(hdp_win);
+    MPI_Win_flush_all(hdp_win);
 }
 
 __host__ void

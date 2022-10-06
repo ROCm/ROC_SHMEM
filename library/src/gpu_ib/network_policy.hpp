@@ -45,6 +45,14 @@ class GPUIBHostContext;
 class Connection;
 class QueuePair;
 
+ /**
+     * @brief calculates the size of the shared (LDS) resources needed
+     * when network is used
+     */
+
+__host__ uint32_t
+network_get_DynamicShared(int num_pes);
+
 class NetworkOnImpl {
  public:
     Status dump_backend_stats(ROCStats *globalStats);
@@ -64,12 +72,6 @@ class NetworkOnImpl {
     __host__ void
     networkHostFinalize();
 
-    /**
-     * @brief calculates the size of the shared (LDS) resources needed
-     * when network is used
-     */
-    __host__ uint32_t
-    networkDynamicShared();
 
     /**
      * @brief initialize the network resources for each context
@@ -114,8 +116,9 @@ class NetworkOnImpl {
 
     Status
     heap_memory_rkey(char *local_heap_base,
-                     int heap_size,
-                     MPI_Comm thread_comm);
+                     size_t heap_size,
+                     MPI_Comm thread_comm,
+                     bool is_managed);
 
     /**
      * @brief Exchange HDP information between all processing elements.
@@ -325,11 +328,6 @@ class NetworkOffImpl {
 
     __host__ void
     networkHostFinalize() {
-    }
-
-    __host__ uint32_t
-    networkDynamicShared() {
-        return 0;
     }
 
     __host__ void

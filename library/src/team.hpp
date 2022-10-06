@@ -23,11 +23,13 @@
 #ifndef ROCSHMEM_LIBRARY_SRC_TEAMS_HPP
 #define ROCSHMEM_LIBRARY_SRC_TEAMS_HPP
 
-#include "backend_bc.hpp"
 #include "backend_type.hpp"
+#include "mpi.h"
+#include "roc_shmem.hpp"
 
 namespace rocshmem {
 
+class Backend;
 class Team;
 class ROTeam;
 class GPUIBTeam;
@@ -87,7 +89,7 @@ class Team {
      * @param _my_pe the index of this PE in the team
      * @param _mpi_comm MPI Communicator representing the team
      */
-    Team(const Backend &handle,
+    Team(Backend *handle,
          TeamInfo* team_info_wrt_parent,
          TeamInfo* team_info_wrt_world,
          int num_pes,

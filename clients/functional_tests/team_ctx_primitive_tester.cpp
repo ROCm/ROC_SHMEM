@@ -97,7 +97,7 @@ TeamCtxPrimitiveTester::~TeamCtxPrimitiveTester()
 }
 
 void
-TeamCtxPrimitiveTester::resetBuffers()
+TeamCtxPrimitiveTester::resetBuffers(uint64_t size)
 {
     memset(s_buf, '0', args.max_msg_size * args.wg_size);
     memset(r_buf, '1', args.max_msg_size * args.wg_size);

@@ -29,6 +29,8 @@
  * @brief Contains HIP wrapper class for memory allocator
  */
 
+#include <cstdlib>
+
 #include <hip/hip_runtime_api.h>
 
 #include "memory_allocator.hpp"
@@ -48,7 +50,53 @@ class HIPAllocatorFinegrained : public MemoryAllocator
 {
   public:
     HIPAllocatorFinegrained()
-        : MemoryAllocator(hipExtMallocWithFlags, hipFree)
+        : MemoryAllocator(hipExtMallocWithFlags,
+                          hipFree,
+                          hipDeviceMallocFinegrained)
+    {
+    }
+};
+
+class HIPAllocatorManaged : public MemoryAllocator
+{
+  public:
+    HIPAllocatorManaged()
+        : MemoryAllocator(hipMallocManaged,
+                          hipFree,
+                          hipMemAttachHost)
+    {
+        _managed = true;
+    }
+};
+
+class HIPHostAllocator : public MemoryAllocator
+{
+  public:
+    HIPHostAllocator()
+        : MemoryAllocator(hipHostMalloc,
+                          hipFree,
+                          hipHostMallocCoherent)
+    {
+    }
+};
+
+class HostAllocator : public MemoryAllocator
+{
+  public:
+    HostAllocator()
+        : MemoryAllocator(std::malloc,
+                          std::free)
+    {
+    }
+};
+
+class PosixAligned64Allocator : public MemoryAllocator
+{
+  public:
+    PosixAligned64Allocator()
+        : MemoryAllocator(posix_memalign,
+                          std::free,
+                          64)
     {
     }
 };

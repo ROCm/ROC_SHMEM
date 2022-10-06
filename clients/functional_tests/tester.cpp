@@ -34,6 +34,7 @@
 #include "empty_tester.hpp"
 #include "team_broadcast_tester.hpp"
 #include "primitive_tester.hpp"
+#include "primitive_mr_tester.hpp"
 #include "team_ctx_primitive_tester.hpp"
 #include "team_ctx_infra_tester.hpp"
 #include "primitive_amo_tester.hpp"
@@ -44,6 +45,9 @@
 #include "random_access_tester.hpp"
 #include "shmem_ptr_tester.hpp"
 #include "extended_primitives.hpp"
+#include "alltoall_tester.hpp"
+#include "fcollect_tester.hpp"
+#include "sync_tester.hpp"
 
 Tester::Tester(TesterArguments args)
     : args(args)
@@ -340,6 +344,65 @@ Tester::create(TesterArguments args)
                 )
             );
             return testers;
+        case AllToAllTestType:
+            if (rank == 0) {
+                std::cout << "Alltoall Test***" << std::endl;
+            }
+            testers.push_back(
+                new AlltoallTester<int64_t>(
+                    args,
+                    [rank](int64_t& f1, int64_t& f2, int64_t dest_pe)
+                    {
+                        const long SRC_SHIFT = 16;
+                        // Make value for each src, dst pair unique
+                        // by shifting src by SRC_SHIFT bits
+                        f1 = (rank << SRC_SHIFT) + dest_pe;
+                        f2 = -1;
+                    },
+                    [rank](int64_t v, int64_t src_pe)
+                    {
+                        const long SRC_SHIFT = 16;
+                        // See if we obtained unique value
+                        long expected_val = (src_pe << SRC_SHIFT) + rank;
+
+                        return (v == expected_val) ?
+                            std::make_pair(true, ""):
+                            std::make_pair(false,
+                                           "Rank " + std::to_string(rank) +
+                                           ", Got " + std::to_string(v) +
+                                           ", Expect " +
+                                           std::to_string(expected_val));
+                    }
+                )
+            );
+            return testers;
+        case FCollectTestType:
+            if (rank == 0) {
+                std::cout << "Fcollect Test***" << std::endl;
+            }
+            testers.push_back(
+                new FcollectTester<int64_t>(
+                    args,
+                    [rank](int64_t& f1, int64_t& f2)
+                    {
+                        f1 = rank;
+                        f2 = -1;
+                    },
+                    [rank](int64_t v, int64_t src_pe)
+                    {
+                        int64_t expected_val = src_pe;
+
+                        return (v == expected_val) ?
+                            std::make_pair(true, ""):
+                            std::make_pair(false,
+                                           "Rank " + std::to_string(rank) +
+                                           ", Got " + std::to_string(v) +
+                                           ", Expect " +
+                                           std::to_string(expected_val));
+                    }
+                )
+            );
+            return testers;
         case AMO_FAddTestType:
             if (rank == 0)
                 std::cout << "AMO Fetch_Add***" << std::endl;
@@ -380,6 +443,16 @@ Tester::create(TesterArguments args)
                 std::cout << "Barrier_All***" << std::endl;
             testers.push_back(new BarrierAllTester(args));
             return testers;
+         case SyncAllTestType:
+            if (rank == 0)
+                std::cout << "SyncAll***" << std::endl;
+            testers.push_back(new SyncTester(args));
+            return testers;
+         case SyncTestType:
+            if (rank == 0)
+                std::cout << "Sync***" << std::endl;
+            testers.push_back(new SyncTester(args));
+            return testers;
          case RandomAccessTestType:
             if (rank == 0)
                 std::cout << "Random_Access***" << std::endl;
@@ -410,6 +483,11 @@ Tester::create(TesterArguments args)
                 std::cout << "Non-Blocking WG level Puts***" << std::endl;
             testers.push_back(new ExtendedPrimitiveTester(args));
             return testers;
+        case PutNBIMRTestType:
+            if (rank == 0)
+                std::cout << "Non-Blocking Put message rate***" << std::endl;
+            testers.push_back(new PrimitiveMRTester(args));
+            return testers;
         default:
             if (rank == 0)
                 std::cout << "Unknown***" << std::endl;
@@ -435,7 +513,7 @@ Tester::execute()
          size <= args.max_msg_size;
          size <<= 1) {
 
-        resetBuffers();
+        resetBuffers(size);
 
         /**
          * Restricts the number of iterations of really large messages.
@@ -478,7 +556,7 @@ Tester::execute()
                 printf("error = %d \n", err);
             }
 
-            roc_shmem_dump_stats();
+//            roc_shmem_dump_stats();
             roc_shmem_reset_stats();
         }
 
@@ -515,8 +593,12 @@ Tester::peLaunchesKernel()
                   (_type == TeamReductionTestType) ||
                   (_type == BroadcastTestType) ||
                   (_type == TeamBroadcastTestType) ||
+                  (_type == AllToAllTestType)  ||
+                  (_type == FCollectTestType)  ||
                   (_type == PingPongTestType)  ||
-                  (_type == BarrierTestType)   ||
+                  (_type == BarrierAllTestType)   ||
+                  (_type == SyncTestType)   ||
+                  (_type == SyncAllTestType)   ||
                   (_type == RandomAccessTestType);
 
     return is_launcher;
@@ -531,24 +613,27 @@ Tester::print(uint64_t size)
 
     uint64_t timer_avg = timerAvgInMicroseconds();
     double latency_avg = static_cast<double>(timer_avg) / num_timed_msgs;
+    double avg_msg_rate = num_timed_msgs / (timer_avg / 1e6);
 
     float total_kern_time_ms;
     hipEventElapsedTime(&total_kern_time_ms, start_event, stop_event);
-    float total_kern_time_us = total_kern_time_ms / 1000;
-    double bandwidth_avg_gbs = num_msgs * size / total_kern_time_us / pow(2, 30);
+    float total_kern_time_s = total_kern_time_ms / 1000;
+    double bandwidth_avg_gbs = num_msgs * size * bw_factor / total_kern_time_s / pow(2, 30);
 
     int field_width = 20;
     int float_precision = 2;
 
     printf("\n##### Message Size %lu #####\n", size);
 
-    printf("%*s%*s\n",
+    printf("%*s%*s%*s\n",
            field_width + 1, "Latency AVG (us)",
-           field_width + 1, "Bandwidth (GB/s)");
+           field_width + 1, "Bandwidth (GB/s)",
+           field_width + 1, "Avg Message rate (Messages/s)");
 
-    printf("%*.*f %*.*f\n",
+    printf("%*.*f %*.*f %*.*f\n",
            field_width, float_precision, latency_avg,
-           field_width, float_precision, bandwidth_avg_gbs);
+           field_width, float_precision, bandwidth_avg_gbs,
+           field_width, float_precision, avg_msg_rate);
 
     fflush(stdout);
 }

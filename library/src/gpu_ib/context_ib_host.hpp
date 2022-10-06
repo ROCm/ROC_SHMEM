@@ -30,13 +30,13 @@ namespace rocshmem {
 class GPUIBHostContext : public Context {
  public:
     /* Pointer to the backend's host interface */
-    HostInterface *host_interface = nullptr;
+    HostInterface *host_interface {nullptr};
 
     /* An MPI Window implements a context */
-    WindowInfo *context_window_info;
+    WindowInfo *context_window_info {nullptr};
 
     __host__
-    GPUIBHostContext(const Backend &b,
+    GPUIBHostContext(Backend *b,
                      int64_t options);
 
     __host__

@@ -27,7 +27,7 @@
 
 namespace rocshmem {
 
-GPUIBTeam::GPUIBTeam(const Backend &backend,
+GPUIBTeam::GPUIBTeam(Backend *backend,
                      TeamInfo *team_info_parent,
                      TeamInfo *team_info_world,
                      int num_pes,
@@ -41,15 +41,23 @@ GPUIBTeam::GPUIBTeam(const Backend &backend,
            my_pe,
            mpi_comm) {
     type = BackendType::GPU_IB_BACKEND;
-    const GPUIBBackend* b = static_cast<const GPUIBBackend*>(&backend);
+    const GPUIBBackend* b = static_cast<const GPUIBBackend*>(backend);
 
     pool_index_ = pool_index;
 
-    barrier_pSync = &(b->barrier_pSync_pool[pool_index * ROC_SHMEM_BARRIER_SYNC_SIZE]);
-    reduce_pSync = &(b->reduce_pSync_pool[pool_index * ROC_SHMEM_REDUCE_SYNC_SIZE]);
-    bcast_pSync = &(b->bcast_pSync_pool[pool_index * ROC_SHMEM_BCAST_SYNC_SIZE]);
+    barrier_pSync = &(b->barrier_pSync_pool[
+       pool_index * ROC_SHMEM_BARRIER_SYNC_SIZE]);
+    reduce_pSync = &(b->reduce_pSync_pool[
+       pool_index * ROC_SHMEM_REDUCE_SYNC_SIZE]);
+    bcast_pSync = &(b->bcast_pSync_pool[
+       pool_index * ROC_SHMEM_BCAST_SYNC_SIZE]);
+    alltoall_pSync = &(b->alltoall_pSync_pool[
+       pool_index * ROC_SHMEM_ALLTOALL_SYNC_SIZE]);
 
-    pWrk = (char *)(b->pWrk_pool) + ROC_SHMEM_REDUCE_MIN_WRKDATA_SIZE * sizeof(double) * pool_index;
+    pWrk = (char *)(b->pWrk_pool) + ROC_SHMEM_REDUCE_MIN_WRKDATA_SIZE * 
+                   sizeof(double) * pool_index;
+    pAta = (char *)(b->pAta_pool) + ROC_SHMEM_ATA_MAX_WRKDATA_SIZE *
+                   sizeof(double) * pool_index;
 }
 
 GPUIBTeam::~GPUIBTeam() {

@@ -76,15 +76,10 @@ GPUIBBackend::GPUIBBackend(size_t num_wgs)
     MPI_Comm_size(gpu_ib_comm_world, &num_pes);
     MPI_Comm_rank(gpu_ib_comm_world, &my_pe);
 
-    /*
-     * Initialize HDP here instead of in the async
-     * thread since host-facing functions may use it.
-     */
-    status = initialize_hdp();
-    assert(status == Status::ROC_SHMEM_SUCCESS);
-
     /* Initialize the host interface */
-    host_interface = new HostInterface(hdp_policy, gpu_ib_comm_world);
+    host_interface = new HostInterface(hdp_proxy_.get(),
+                                       gpu_ib_comm_world,
+                                       &heap);
 
     /*
      * Construct default host context independently of the
@@ -106,11 +101,36 @@ GPUIBBackend::GPUIBBackend(size_t num_wgs)
 
     MPI_Barrier(gpu_ib_comm_world);
 
-    async_thread_ = thread_spawn(this);
+	// commenting out the async  thread as there is some issues with ROCm
+    // this makes the CPU init blocking
+    //async_thread_ = thread_spawn(this);
+	thread_func_internal(this);
+}
+
+void
+GPUIBBackend::ctx_create(int64_t options, void **ctx) {
+    GPUIBHostContext *new_ctx = nullptr;
+
+    new_ctx = new GPUIBHostContext(this, options);
+
+    *ctx = new_ctx;
+}
+
+GPUIBHostContext*
+get_internal_gpu_ib_ctx(Context *ctx)
+{
+    return reinterpret_cast<GPUIBHostContext*>(ctx);
+}
+
+void
+GPUIBBackend::ctx_destroy(Context *ctx) {
+    GPUIBHostContext *gpu_ib_host_ctx = get_internal_gpu_ib_ctx(ctx);
+    delete gpu_ib_host_ctx;
 }
 
 GPUIBBackend::~GPUIBBackend() {
-    async_thread_.join();
+	// need to get thi sback once ROCm is fixed
+    //async_thread_.join();
 
     /**
      * Destroy teams infrastructure
@@ -121,15 +141,13 @@ GPUIBBackend::~GPUIBBackend() {
     team_world->~Team();
     CHECK_HIP(hipFree(team_world));
 
+    delete default_host_ctx_;
+
     MPI_Comm_free(&gpu_ib_comm_world);
 
     CHECK_HIP(hipFree(default_ctx_->device_qp_proxy));
     CHECK_HIP(hipFree(default_ctx_));
     default_ctx_ = nullptr;
-
-    hdp_policy->~HdpPolicy();
-    CHECK_HIP(hipFree(hdp_policy));
-    hdp_policy = nullptr;
 
     delete host_interface;
     host_interface = nullptr;
@@ -179,7 +197,7 @@ GPUIBBackend::create_new_team(Team *parent_team,
      */
     GPUIBTeam *new_team_obj;
     CHECK_HIP(hipMalloc(&new_team_obj, sizeof(GPUIBTeam)));
-    new (new_team_obj) GPUIBTeam(*this,
+    new (new_team_obj) GPUIBTeam(this,
                                  team_info_wrt_parent,
                                  team_info_wrt_world,
                                  num_pes,
@@ -208,11 +226,13 @@ GPUIBBackend::team_destroy(roc_shmem_team_t team) {
 }
 
 Status
-GPUIBBackend::dynamic_shared(size_t *shared_bytes) {
+gpu_ib_get_dynamic_shared(size_t *shared_bytes, int num_pes) {
+
     uint32_t heap_usage = num_pes * sizeof(uint64_t);
-    uint32_t network_usage = networkImpl.networkDynamicShared();
-    uint32_t ipc_usage = ipcImpl.ipcDynamicShared();
-    auto max_num_teams {team_tracker.get_max_num_teams()};
+    uint32_t network_usage = network_get_DynamicShared(num_pes);
+    uint32_t ipc_usage = ipc_get_DynamicShared();
+    TeamTracker tr; ;
+    auto max_num_teams {tr.get_max_num_teams()};
     uint32_t teams_usage = max_num_teams * sizeof(WGTeamInfo);
 
     *shared_bytes = heap_usage +
@@ -225,6 +245,7 @@ GPUIBBackend::dynamic_shared(size_t *shared_bytes) {
     return Status::ROC_SHMEM_SUCCESS;
 }
 
+
 Status
 GPUIBBackend::dump_backend_stats() {
     return networkImpl.dump_backend_stats(&globalStats);
@@ -233,14 +254,6 @@ GPUIBBackend::dump_backend_stats() {
 Status
 GPUIBBackend::reset_backend_stats() {
     return networkImpl.reset_backend_stats();
-}
-
-Status
-GPUIBBackend::initialize_hdp() {
-    CHECK_HIP(hipMalloc(reinterpret_cast<void**>(&hdp_policy),
-                        sizeof(HdpPolicy)));
-    new (hdp_policy) HdpPolicy();
-    return Status::ROC_SHMEM_SUCCESS;
 }
 
 Status
@@ -257,7 +270,7 @@ GPUIBBackend::initialize_network() {
 
 Status
 GPUIBBackend::setup_default_host_ctx() {
-    default_host_ctx_ = new GPUIBHostContext(*this, 0);
+    default_host_ctx_ = new GPUIBHostContext(this, 0);
     ROC_SHMEM_HOST_CTX_DEFAULT.ctx_opaque = default_host_ctx_;
 
     return Status::ROC_SHMEM_SUCCESS;
@@ -270,7 +283,7 @@ GPUIBBackend::setup_default_ctx() {
      * InfiniBand context in it.
      */
     CHECK_HIP(hipMalloc(&default_ctx_, sizeof(GPUIBContext)));
-    new (default_ctx_) GPUIBContext(*this, 0);
+    new (default_ctx_) GPUIBContext(this, 0);
 
     /*
      * Set the ROC_SHMEM_CTX_DEFAULT in constant memory.
@@ -313,7 +326,7 @@ GPUIBBackend::setup_team_world() {
 
     GPUIBTeam* team_world {nullptr};
     CHECK_HIP(hipMalloc(&team_world, sizeof(GPUIBTeam)));
-    new (team_world) GPUIBTeam(*this,
+    new (team_world) GPUIBTeam(this,
                                team_info_wrt_parent,
                                team_info_wrt_world,
                                num_pes,
@@ -383,29 +396,36 @@ GPUIBBackend::teams_init() {
      * Allocate pools for the teams sync and work arrary from the SHEAP.
      */
     auto max_num_teams {team_tracker.get_max_num_teams()};
-    barrier_pSync_pool = reinterpret_cast<long *>(roc_shmem_malloc(sizeof(long) * ROC_SHMEM_BARRIER_SYNC_SIZE * max_num_teams));
-    reduce_pSync_pool  = reinterpret_cast<long *>(roc_shmem_malloc(sizeof(long) * ROC_SHMEM_REDUCE_SYNC_SIZE * max_num_teams));
-    bcast_pSync_pool   = reinterpret_cast<long *>(roc_shmem_malloc(sizeof(long) * ROC_SHMEM_BCAST_SYNC_SIZE * max_num_teams));
+    barrier_pSync_pool  = reinterpret_cast<long *>(roc_shmem_malloc(sizeof(long) * ROC_SHMEM_BARRIER_SYNC_SIZE * max_num_teams));
+    reduce_pSync_pool   = reinterpret_cast<long *>(roc_shmem_malloc(sizeof(long) * ROC_SHMEM_REDUCE_SYNC_SIZE * max_num_teams));
+    bcast_pSync_pool    = reinterpret_cast<long *>(roc_shmem_malloc(sizeof(long) * ROC_SHMEM_BCAST_SYNC_SIZE * max_num_teams));
+    alltoall_pSync_pool = reinterpret_cast<long *>(roc_shmem_malloc(sizeof(long) * ROC_SHMEM_ALLTOALL_SYNC_SIZE * max_num_teams));
 
     /* Accommodating for largest possible data type for pWrk */
-    pWrk_pool          = roc_shmem_malloc(sizeof(double) * ROC_SHMEM_REDUCE_MIN_WRKDATA_SIZE * max_num_teams);
+    pWrk_pool = roc_shmem_malloc(sizeof(double) * ROC_SHMEM_REDUCE_MIN_WRKDATA_SIZE * max_num_teams);
+    pAta_pool = roc_shmem_malloc(sizeof(double) * ROC_SHMEM_ATA_MAX_WRKDATA_SIZE * max_num_teams);
 
     /**
      * Initialize the sync arrays in the pool with default values.
      */
-    long *barrier_pSync, *reduce_pSync, *bcast_pSync;
+    long *barrier_pSync, *reduce_pSync, *bcast_pSync, *alltoall_pSync;
     for (int team_i = 0; team_i < max_num_teams; team_i++) {
         barrier_pSync   = reinterpret_cast<long *>(&barrier_pSync_pool[team_i * ROC_SHMEM_BARRIER_SYNC_SIZE]);
-        reduce_pSync    = reinterpret_cast<long *>(&reduce_pSync_pool[team_i * ROC_SHMEM_BARRIER_SYNC_SIZE]);
-        bcast_pSync     = reinterpret_cast<long *>(&bcast_pSync_pool[team_i * ROC_SHMEM_BARRIER_SYNC_SIZE]);
-        /**
-         * Note: all the sync sizes are the same at the time of writing this code.
-         * If they become different sizes, then the following loop needs to be broken down.
-         */
+        reduce_pSync    = reinterpret_cast<long *>(&reduce_pSync_pool[team_i * ROC_SHMEM_REDUCE_SYNC_SIZE]);
+        bcast_pSync     = reinterpret_cast<long *>(&bcast_pSync_pool[team_i * ROC_SHMEM_BCAST_SYNC_SIZE]);
+        alltoall_pSync  = reinterpret_cast<long *>(&alltoall_pSync_pool[team_i * ROC_SHMEM_ALLTOALL_SYNC_SIZE]);
+
+        for (int i = 0; i < ROC_SHMEM_BARRIER_SYNC_SIZE; i++) {
+            barrier_pSync[i]  = ROC_SHMEM_SYNC_VALUE;
+        }
         for (int i = 0; i < ROC_SHMEM_REDUCE_SYNC_SIZE; i++) {
-            barrier_pSync[i] = ROC_SHMEM_SYNC_VALUE;
-            reduce_pSync[i]  = ROC_SHMEM_SYNC_VALUE;
-            bcast_pSync[i]   = ROC_SHMEM_SYNC_VALUE;
+            reduce_pSync[i]   = ROC_SHMEM_SYNC_VALUE;
+        }
+        for (int i = 0; i < ROC_SHMEM_BCAST_SYNC_SIZE; i++) {
+            bcast_pSync[i]    = ROC_SHMEM_SYNC_VALUE;
+        }
+        for (int i = 0; i < ROC_SHMEM_ALLTOALL_SYNC_SIZE; i++) {
+            alltoall_pSync[i] = ROC_SHMEM_SYNC_VALUE;
         }
     }
 
@@ -442,7 +462,9 @@ GPUIBBackend::teams_destroy() {
     roc_shmem_free(barrier_pSync_pool);
     roc_shmem_free(reduce_pSync_pool);
     roc_shmem_free(bcast_pSync_pool);
+    roc_shmem_free(alltoall_pSync_pool);
     roc_shmem_free(pWrk_pool);
+    roc_shmem_free(pAta_pool);
 
     free(pool_bitmask_);
     free(reduced_bitmask_);

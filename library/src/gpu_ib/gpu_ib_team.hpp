@@ -29,7 +29,7 @@ namespace rocshmem {
 
 class GPUIBTeam : public Team {
  public:
-    GPUIBTeam(const Backend &handle,
+    GPUIBTeam(Backend* handle,
               TeamInfo* team_info_wrt_parent,
               TeamInfo* team_info_wrt_world,
               int num_pes,
@@ -42,7 +42,9 @@ class GPUIBTeam : public Team {
     long* barrier_pSync {nullptr};
     long* reduce_pSync {nullptr};
     long* bcast_pSync {nullptr};
+    long* alltoall_pSync {nullptr};
     void* pWrk {nullptr};
+    void* pAta {nullptr};
 
     int pool_index_ {-1};
 };

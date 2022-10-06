@@ -80,7 +80,7 @@ PingPongTester::~PingPongTester()
 }
 
 void
-PingPongTester::resetBuffers()
+PingPongTester::resetBuffers(uint64_t size)
 {
     memset(r_buf, 0, sizeof(int));
 }
@@ -106,7 +106,7 @@ PingPongTester::launchKernel(dim3 gridSize,
                        _shmem_context);
 
     num_msgs = (loop + args.skip) * gridSize.x;
-    num_timed_msgs = loop * gridSize.x;
+    num_timed_msgs = loop;
 }
 
 void

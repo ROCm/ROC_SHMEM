@@ -27,7 +27,7 @@
 
 using namespace rocshmem;
 
-#define NUM_TEAMS 9 /* this constant should equal ROC_SHMEM_MAX_NUM_TEAMS-1 */
+#define NUM_TEAMS 39 /* this constant should equal ROC_SHMEM_MAX_NUM_TEAMS-1 */
 
 roc_shmem_team_t team_world_dup[NUM_TEAMS];
 
@@ -100,7 +100,7 @@ TeamCtxInfraTester::~TeamCtxInfraTester()
 }
 
 void
-TeamCtxInfraTester::resetBuffers()
+TeamCtxInfraTester::resetBuffers(uint64_t size)
 {
 }
 

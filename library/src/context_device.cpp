@@ -30,10 +30,10 @@
 namespace rocshmem {
 
 __device__
-Context::Context(const Backend &handle,
+Context::Context(Backend *handle,
                  bool shareable)
-    : num_pes(handle.getNumPEs()),
-      my_pe(handle.getMyPE()),
+    : num_pes(handle->getNumPEs()),
+      my_pe(handle->getMyPE()),
       fence_(shareable) {
     /*
      * Device-side context constructor is a work-group collective, so make
@@ -60,6 +60,15 @@ Context::Context(const Backend &handle,
 __device__ void
 Context::threadfence_system() {
     DISPATCH(threadfence_system());
+}
+
+__device__ void
+Context::ctx_create() {
+    if (is_thread_zero_in_block()) {
+        ctxStats.incStat(NUM_CREATE);
+    }
+
+    DISPATCH(ctx_create());
 }
 
 __device__ void
@@ -136,6 +145,14 @@ Context::fence() {
 }
 
 __device__ void
+Context::fence(int pe) {
+    ctxStats.incStat(NUM_FENCE);
+
+    DISPATCH(fence(pe));
+}
+
+
+__device__ void
 Context::quiet() {
     ctxStats.incStat(NUM_QUIET);
 
@@ -162,6 +179,13 @@ Context::sync_all() {
     ctxStats.incStat(NUM_SYNC_ALL);
 
     DISPATCH(sync_all());
+}
+
+__device__ void
+Context::sync(roc_shmem_team_t team) {
+    ctxStats.incStat(NUM_SYNC_ALL);
+
+    DISPATCH(sync(team));
 }
 
 __device__ int64_t

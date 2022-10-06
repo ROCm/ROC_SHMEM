@@ -34,6 +34,7 @@ PrimitiveAMOTest(int loop,
                  int skip,
                  uint64_t *timer,
                  char *r_buf,
+                 int64_t *s_buf,
                  int64_t *ret_val,
                  TestType type,
                  ShmemContextType ctx_type)
@@ -44,7 +45,7 @@ PrimitiveAMOTest(int loop,
 
     if (hipThreadIdx_x == 0) {
         uint64_t start;
-        int64_t ret;
+        int64_t ret = 0;
         int64_t cond = 0;
 
         for(int i = 0; i < loop+skip; i++) {
@@ -86,10 +87,10 @@ PrimitiveAMOTest(int loop,
 
         timer[hipBlockIdx_x] =  roc_shmem_timer() - start;
 
-        *ret_val = ret;
+        ret_val[hipBlockIdx_x] = ret;
 
         // do get to check the result for no-fetch ops
-        roc_shmem_ctx_getmem(ctx, r_buf, r_buf, sizeof(int64_t), 1);
+        roc_shmem_ctx_getmem(ctx, &s_buf[hipBlockIdx_x], r_buf, sizeof(int64_t), 1);
     }
 
     roc_shmem_wg_ctx_destroy(ctx);
@@ -102,21 +103,23 @@ PrimitiveAMOTest(int loop,
 PrimitiveAMOTester::PrimitiveAMOTester(TesterArguments args)
     : Tester(args)
 {
-    hipMalloc((void**)&_ret_val, args.max_msg_size );
-    r_buf = (char *)roc_shmem_malloc(args.max_msg_size);
+    hipMalloc((void**)&_ret_val, args.max_msg_size * args.num_wgs);
+    _r_buf = (char *)roc_shmem_malloc(args.max_msg_size);
+    _s_buf = (int64_t *)roc_shmem_malloc(args.max_msg_size * args.num_wgs);
 }
 
 PrimitiveAMOTester::~PrimitiveAMOTester()
 {
-    roc_shmem_free(r_buf);
+    roc_shmem_free(_r_buf);
     hipFree(_ret_val);
 }
 
 void
-PrimitiveAMOTester::resetBuffers()
+PrimitiveAMOTester::resetBuffers(uint64_t size)
 {
-    memset(r_buf, 0, args.max_msg_size );
-    memset(_ret_val, 0, args.max_msg_size);
+    memset(_r_buf, 0, args.max_msg_size );
+    memset(_ret_val, 0, args.max_msg_size * args.num_wgs);
+    memset(_s_buf, 0, args.max_msg_size * args.num_wgs);
 }
 
 void
@@ -136,18 +139,21 @@ PrimitiveAMOTester::launchKernel(dim3 gridsize,
                        loop,
                        args.skip,
                        timer,
-                       r_buf,
+                       _r_buf,
+                       _s_buf,
                        _ret_val,
                        _type,
                        _shmem_context);
 
+    _gridSize = gridsize;
     num_msgs = (loop + args.skip) * gridsize.x;
-    num_timed_msgs = loop * gridsize.x;
+    num_timed_msgs = loop;
 }
 
 void
 PrimitiveAMOTester::verifyResults(uint64_t size)
 {
+    int64_t ret;
     if (args.myid == 0) {
         int64_t expected_val = 0;
 
@@ -165,7 +171,7 @@ PrimitiveAMOTester::verifyResults(uint64_t size)
                 expected_val = num_msgs;
                 break;
             case AMO_FCswapTestType:
-                expected_val = num_msgs - 2;
+                expected_val = (num_msgs - 2) / _gridSize.x;
                 break;
             default:
                 break;
@@ -177,17 +183,19 @@ PrimitiveAMOTester::verifyResults(uint64_t size)
                         _type == AMO_FCswapTestType) ? 1 : 0;
 
         if (fetch_op == 1) {
-            if (*_ret_val != expected_val) {
+            ret = *std::max_element(_ret_val, _ret_val + args.num_wgs);
+            if (ret != expected_val) {
                 fprintf(stderr, "data validation error\n");
                 fprintf(stderr, "got %ld, expected %ld\n",
-                        *_ret_val, expected_val);
+                        ret, expected_val);
                 exit(-1);
             }
         } else {
-            if (((int64_t*)r_buf)[0] != expected_val) {
+            ret = *std::max_element(_s_buf, _s_buf + args.num_wgs);
+            if (ret != expected_val) {
                 fprintf(stderr, "data validation error\n");
                 fprintf(stderr, "got %ld, expected %ld\n",
-                    ((int64_t*)r_buf)[0], expected_val);
+                        ret, expected_val);
                 exit(-1);
             }
         }

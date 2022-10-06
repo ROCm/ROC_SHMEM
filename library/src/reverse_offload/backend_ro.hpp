@@ -25,13 +25,28 @@
 
 #include "backend_bc.hpp"
 
-namespace rocshmem {
+#include "backend_proxy.hpp"
+#include "barrier_proxy.hpp"
+#include "context_pool_proxy.hpp"
+#include "default_context_proxy.hpp"
+#include "hdp_proxy.hpp"
+#include "hip_allocator.hpp"
+#include "mpi_transport.hpp"
+#include "profiler_proxy.hpp"
+#include "queue_proxy.hpp"
+#include "queue_desc_proxy.hpp"
+#include "queue_element_proxy.hpp"
+#include "ro_team_proxy.hpp"
+#include "team_info_proxy.hpp"
+#include "win_pool_bitmask_proxy.hpp"
 
-struct ro_net_handle;
+namespace rocshmem {
 
 class HostInterface;
 class ROHostContext;
-class Transport;
+
+Status
+ro_net_get_dynamic_shared(size_t *shared_bytes);
 
 /**
  * @class ROBackend backend.hpp
@@ -55,14 +70,15 @@ class ROBackend : public Backend {
     virtual ~ROBackend();
 
     /**
-     * @copydoc Backend::team_destroy(roc_shmem_team_t)
+     * @brief Abort the application.
+     *
+     * @param[in] status Exit code.
+     *
+     * @return void.
+     *
+     * @note This routine terminates the entire application.
      */
-    Status team_destroy(roc_shmem_team_t team) override;
-
-    /**
-     * @copydoc Backend::dynamic_shared(size_t*)
-     */
-    Status dynamic_shared(size_t *shared_bytes) override;
+    void global_exit(int status) override;
 
     /**
      * @copydoc Backend::create_new_team
@@ -76,46 +92,22 @@ class ROBackend : public Backend {
                            roc_shmem_team_t *new_team) override;
 
     /**
-     * @brief The host-facing interface that will be used
-     * by all contexts of the ROBackend
+     * @copydoc Backend::team_destroy(roc_shmem_team_t)
      */
-    HostInterface *host_interface = nullptr;
+    Status team_destroy(roc_shmem_team_t team) override;
 
     /**
-     * @brief Abort the application.
-     *
-     * @param[in] status Exit code.
-     *
-     * @return void.
-     *
-     * @note This routine terminates the entire application.
+     * @copydoc Backend::ctx_create
      */
-    void global_exit(int status) override;
-
-
- protected:
-    /**
-     * @copydoc Backend::dump_backend_stats()
-     */
-    Status dump_backend_stats() override;
+    void ctx_create(int64_t options, void **ctx) override;
 
     /**
-     * @copydoc Backend::reset_backend_stats()
+     * @copydoc Backend::ctx_destroy
      */
-    Status reset_backend_stats() override;
-
- public:
-    /**
-     * @brief Handle to itself.
-     *
-     * @todo Remove this member.
-     */
-    ro_net_handle *backend_handle = nullptr;
+    void ctx_destroy(Context *ctx) override;
 
     /**
      * @brief Free all resources associated with the backend.
-     *
-     * @param[in,out] handle Pointer to the Backend object.
      *
      * The memory allocated to the handle param is deallocated during this
      * method. The handle should be treated as a nullptr after the call.
@@ -129,34 +121,41 @@ class ROBackend : public Backend {
      * of these internal resources need to be moved into subclasses using
      * RAII.
      */
-    Status ro_net_free_runtime(ro_net_handle *handle);
+    Status ro_net_free_runtime();
 
     /**
      * @brief Try to process one element from the queue.
      *
      * @param[in] queue_idx Index to access the queue_desc and queues fields.
-     * @param[in] ro_net_gpu_handle Pointer to an internal data structure.
-     * @param[in] finalized Unused parameter
      *
      * @return Boolean value with "True" indicating that one element was
      * process and "False" indicating that no valid queue element was
      * found.
-     *
-     * @todo Remove finalized parameter.
      */
-    bool ro_net_process_queue(int queue_idx,
-                              struct ro_net_handle *ro_net_gpu_handle,
-                              bool *finalized);
+    bool ro_net_process_queue(int queue_idx);
 
     /**
-     * @brief Calls into the HIP runtime to get fine-grained memory.
-     *
-     * @param[in,out] ptr Handle updated with newly allocated memory.
-     * @param[in] size Requested memory size in bytes.
+     * @brief The host-facing interface that will be used
+     * by all contexts of the ROBackend
      */
-    void ro_net_device_uc_malloc(void **ptr, size_t size);
+    HostInterface *host_interface {nullptr};
+
+    /**
+     * @brief Handle to device memory fields.
+     */
+    BackendProxyT backend_proxy {};
 
  protected:
+    /**
+     * @copydoc Backend::dump_backend_stats()
+     */
+    Status dump_backend_stats() override;
+
+    /**
+     * @copydoc Backend::reset_backend_stats()
+     */
+    Status reset_backend_stats() override;
+
     /**
      * @brief Service thread routine which spins on a number of queues until
      * the host calls net_finalize.
@@ -170,29 +169,112 @@ class ROBackend : public Backend {
     void ro_net_poll(int thread_id, int num_threads);
 
     /**
-     * @brief Host-side buffer which holds a single device-side queue element.
-     *
-     * This small buffer is intended to be used as an optimization to access
-     * the queue elements in device memory.
+     * @brief Helper to initialize IPC interface.
      */
-    char *elt = nullptr;
+    void
+    initIPC();
 
     /**
      * @brief Handle for the transport class object.
      *
      * See the transport class for more details.
      */
-    Transport *transport = nullptr;
+    MPITransport transport_ {};
+
+    /**
+     * @brief Proxy for the team info used by the device.
+     *
+     * See the transport class for more details.
+     */
+    ROTeamProxyT team_world_proxy_ {this};
 
     /**
      * @brief Workers used to poll on the device network request queues.
      */
-    std::vector<std::thread> worker_threads;
+    std::vector<std::thread> worker_threads {};
 
     /**
      * @brief Holds a copy of the default context for host functions
      */
-    ROHostContext *default_host_ctx = nullptr;
+    std::unique_ptr<ROHostContext> default_host_ctx {nullptr};
+
+    /**
+     * @brief Maximum number of RO contexts in the application
+     */
+    int max_num_ctxs_ {-1};
+
+    /**
+     * @brief Pool of contexts for RO_NET
+     *
+     * TODO: @Brandon - This does not seem to be used. Figure out why
+     * this was added and then not used.
+     */
+    ContextPoolProxyT ro_context_pool_proxy_ {&heap};
+
+    /**
+     * @brief Bitmask for allocating window pools
+     *
+     * TODO: @Brandon - This is not really a bitmask; it uses integers.
+     * internally. Fix this as some point.
+     */
+    WinPoolBitmaskProxyT win_pool_bitmask_proxy_ {};
+
+    /**
+     * @brief Handle to device barrier memory.
+     *
+     * @note Internal data ownership is managed by the proxy
+     */
+    BarrierProxyT barrier_proxy_ {};
+
+    /**
+     * @brief Allocates uncacheable host memory for the hdp policy.
+     *
+     * @note Internal data ownership is managed by the proxy
+     */
+    HdpProxy<HIPHostAllocator> hdp_proxy_ {};
+
+    /**
+     * @brief Handle to device profiler memory
+     *
+     * @note Internal data ownership is managed by the proxy
+     */
+    ProfilerProxyT profiler_proxy_;  // init handled in constructor
+
+    /**
+     * @brief Host buffer for device memory copies
+     *
+     * @note Internal data ownership is managed by the proxy
+     */
+    QueueProxyT queue_proxy_ {};
+
+    /**
+     * @brief Host buffer for device memory copies
+     *
+     * @note Internal data ownership is managed by the proxy
+     */
+    QueueDescProxyT queue_desc_proxy_ {};
+
+    /**
+     * @brief Host buffer for device memory copies
+     *
+     * @note Internal data ownership is managed by the proxy
+     */
+    QueueElementProxyT queue_element_proxy_ {};
+
+    /**
+     * @brief Host-side buffer which holds a single device-side queue element.
+     *
+     * This small buffer is intended to be used as an optimization to access
+     * the queue elements in device memory.
+     */
+    queue_element_t *queue_element_cache_ {queue_element_proxy_.get()};
+
+    /**
+     * @brief Proxy for the default context
+     *
+     * @note Internal data ownership is managed by the proxy
+     */
+    DefaultContextProxyT default_context_proxy_; // init handled in constructor
 };
 
 }  // namespace rocshmem

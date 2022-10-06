@@ -60,20 +60,6 @@ QueuePair::~QueuePair() {
     __syncthreads();
 }
 
-__device__ bool
-QueuePair::is_cq_owner_sw(mlx5_cqe64 *cqe_entry) {
-    // static MLX5DV_ALWAYS_INLINE
-    // uint8_t mlx5dv_get_cqe_owner(struct mlx5_cqe64 *cqe)
-    // {
-    //     return cqe->op_own & 0x1;
-    // }
-    // return mlx5dv_get_cqe_owner(cqe_entry) ==
-    //     ((cq_consumer_counter >> cq_log_size) & 1);
-
-    return (__builtin_nontemporal_load(&cqe_entry->op_own) & 0x1) ==
-           ((cq_consumer_counter >> cq_log_size) & 1);
-}
-
 __device__ uint8_t
 QueuePair::get_cq_error_syndrome(mlx5_cqe64 *cqe_entry) {
     mlx5_err_cqe * cqe_err = reinterpret_cast<mlx5_err_cqe*>(cqe_entry);
@@ -143,32 +129,43 @@ QueuePair::compute_db_val_opcode(uint64_t *db_val,
 template <class level>
 __device__ void
 QueuePair::quiet_internal() {
+    /*
+     * If there are nothing to quiet, just return early.
+     */
     uint32_t quiet_val = quiet_counter;
     if (!quiet_val) {
         return;
     }
 
-    level L;
-
     profiler.incStat(QUIET_COUNT);
-
     uint64_t start = profiler.startTimer();
 
+    /*
+     * Generate a pointer to the completion queue entry.
+     */
     cq_consumer_counter = cq_consumer_counter + quiet_val - 1;
     uint32_t indx = (cq_consumer_counter % cq_size);
-
     mlx5_cqe64 *cqe_entry = &current_cq_q[indx];
 
+    /*
+     * Access the op_own value in the completion queue entry.
+     */
     int val_ld = uncached_load_ubyte(&(cqe_entry->op_own));
     uint8_t val_op_own = val_ld;
 
-     while (!((val_op_own & 0x1) ==
-             ((cq_consumer_counter >> cq_log_size) & 1))
-            || ((val_op_own) >> 4) == 0xF) {
+    /*
+     * If the completion queue entry is not valid, wait for it to become so.
+     */
+    while (!((val_op_own & 0x1) ==
+            ((cq_consumer_counter >> cq_log_size) & 1))
+           || ((val_op_own) >> 4) == 0xF) {
         val_ld = uncached_load_ubyte(&(cqe_entry->op_own));
         val_op_own = val_ld;
     }
 
+    /*
+     * Grab the opcode from the op_own field and report if it is an error.
+     */
     uint8_t opcode = val_op_own >> 4;
     if (opcode != 0) {
         uint8_t syndrome = get_cq_error_syndrome(cqe_entry);
@@ -177,13 +174,33 @@ QueuePair::quiet_internal() {
                     syndrome, cqe_err->s_wqe_opcode_qpn, cqe_err->wqe_counter);
     }
 
+    /*
+     * Decrement the quiet count by the amount determined at the beginning
+     * of this method.
+     *
+     * bpotter - There are two areas of concern in this method for me.
+     * 1) In multithreaded builds, we may need to make this method a critical
+     * section to prevent data races on these variables.
+     *
+     * 2) Is there a data race in the API if a one remote process calls quiet
+     * while another process continues adding events? Is it ever possible for
+     * a quiet to complete, but the quiet_counter decrement here is not set
+     * to zero?
+     */
+    level L;
     L.decQuietCounter(&quiet_counter, quiet_val);
-    profiler.endTimer(start, POLL_CQ);
 
+    profiler.endTimer(start, POLL_CQ);
     start = profiler.startTimer();
+
+    /*
+     * Increment the trailing index counter which tracks our spot in the
+     * completion queue.
+     */
     cq_consumer_counter++;
     swap_endian_store(const_cast<uint32_t*>(dbrec_cq),
                       cq_consumer_counter);
+
     profiler.endTimer(start, NEXT_CQ);
 }
 
@@ -387,7 +404,7 @@ QueuePair::zero_b_rd(int pe) {
                                            0,
                                            true,
                                            0,
-                                           true);  // enable 0_bye read op
+                                           true);  // enable 0_byte read op
 }
 
 __device__ int64_t
@@ -463,17 +480,20 @@ QueuePair::atomic_nofetch(void *dest,
 
 __device__ void
 QueuePair::fence(int pe) {
+    // TODO (@khamidou): should this be replaced by a zero_byte_rd?
+    // FIXME: the relaxed ordering requires an intervening read to order
+    // prior operations.
     auto remote_hdp_uncast = hdp_address[pe];
     uintptr_t *remote_hdp = reinterpret_cast<uintptr_t*>(remote_hdp_uncast);
-    update_posted_wqe_generic<THREAD, false>(pe,
-                                             0,
-                                             nullptr,
-                                             remote_hdp,
-                                             MLX5_OPCODE_RDMA_WRITE,
-                                             0,
-                                             0,
-                                             true,
-                                             0);
+    update_posted_wqe_generic<THREAD, true>(pe,
+                                            0,
+                                            nullptr,
+                                            remote_hdp,
+                                            MLX5_OPCODE_RDMA_WRITE,
+                                            0,
+                                            0,
+                                            true,
+                                            0);
 }
 
 __device__ void

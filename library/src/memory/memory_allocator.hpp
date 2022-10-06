@@ -56,7 +56,8 @@ class MemoryAllocator
      * @note Finegrained flag is assumed by default
      */
     MemoryAllocator(hipError_t (*hip_alloc_fn)(void**, size_t, unsigned),
-                    hipError_t (*hip_free_fn)(void*));
+                    hipError_t (*hip_free_fn)(void*),
+                    unsigned flags);
 
     /**
      * @brief Primary constructor
@@ -77,6 +78,17 @@ class MemoryAllocator
                     std::function<void(void*)> free_fn);
 
     /**
+     * @brief Primary constructor
+     *
+     * @param[in] an allocation function
+     * @param[in] a free function
+     * @param[in] alignment for allocations
+     */
+    MemoryAllocator(std::function<int(void**, size_t, size_t)> posix_align_fn,
+                    std::function<void(void*)> free_fn,
+                    size_t alignment);
+
+    /**
      * @brief Allocates memory
      *
      * @param[in, out] Address of raw pointer (&pointer_to_char)
@@ -93,7 +105,31 @@ class MemoryAllocator
     void
     deallocate(void* ptr);
 
+    /**
+     * @brief Returns is memory is managed
+     *
+     * @return returns whether this memory is managed
+     */
+    bool
+    is_managed();
+
+  protected:
+    /**
+     * @brief is this memory allocated using managed memory
+     */
+    bool _managed {false};
+
   private:
+    /**
+     * @brief a posix allocator function for memory aligned accesses
+     */
+    std::function<int(void**, size_t, size_t)> _alloc_posix_memalign;
+
+    /**
+     * @brief alignment for posix_memalign allocations
+     */
+    size_t _alignment {0};
+
     /**
      * @brief a standard allocator function
      */
@@ -112,7 +148,14 @@ class MemoryAllocator
     /**
      * @brief a hip-specific allocator function
      */
-    std::function<hipError_t(void**, size_t, int)> _hip_alloc_finegrained {nullptr};
+    std::function<hipError_t(void**, size_t, unsigned)> _hip_alloc_with_flags {nullptr};
+
+    /**
+     * @brief flags specified in hip_runtime_api.h
+     *
+     * Used as a runtime input parameter to the _hip_alloc_with_flags function.
+     */
+    unsigned _flags {0x0};
 
     /**
      * @brief a hip-specific free function

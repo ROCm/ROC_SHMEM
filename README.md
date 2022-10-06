@@ -45,6 +45,8 @@ ROC_SHMEM base requirements:
 * ROCm version 4.3.1 onwards
     *  May work with other versions, but not tested
 * AMD GFX9 GPUs (e.g.: MI25, Vega 56, Vega 64, MI50, MI60, MI100, Radeon VII)
+* AMD MI200 GPUs: To enable the support on MI200, please configure the library
+ with USE_CACHED_HEAP
 * ROCm-aware MPI as described in
   [Building the Dependencies](#building-the-dependencies)
 * InfiniBand adaptor compatable with ROCm RDMA technology
@@ -139,21 +141,22 @@ page useful.
                         packet (WQE). Each WQE is 64B. This only for
                         GPU-IB conduit
 
-    RTN_USE_CQ_GPU_MEM  (default : 1)
+    ROC_SHMEM_USE_CQ_GPU_MEM  (default : 1)
                         Set the placement of CQ on GPU memory (1)
                         or CPU memory (0)
 
-    RTN_USE_SQ_GPU_MEM  (default : 1)
+    ROC_SHMEM_USE_SQ_GPU_MEM  (default : 1)
                         Set the placement of SQ on GPU memory (1)
                         or CPU memory (0)
+
+    RO_NET_NUM_THREADS  (default: 1)
+                        Defines the number of CPU threads the RO
+                        backend should spawn. RO backend only.
 
     RO_NET_QUEUE_SIZE   (default: 64 elements)
                         Defines the size of the producer/consumer queue per
                         work-group (each element 128B). RO backend only.
 
-    RO_NET_CPU_HEAP     (default: not set)
-                        Force symmetric heap to be in CPU memory.  RO backend
-                        only.
 
     RO_NET_CPU_QUEUE    (default: not set)
                         Force producer/consumer queues between CPU and GPU to

@@ -121,15 +121,15 @@ NetworkOnImpl::exchange_hdp_info(HdpPolicy *hdp_policy,
      */
     Status status;
 
-/* TODO(khamidou): commenting this out until ROCm4.5 fixed the issue
-    status = connection->reg_mr(hdp_policy->get_hdp_flush_addr(),
+// TODO(khamidou): commenting this out until ROCm4.5 fixed the issue
+    status = connection->reg_mr(hdp_policy->get_hdp_flush_ptr(),
                                 32,
-                                &hdp_mr);
+                                &hdp_mr, false);
 
     if (status != Status::ROC_SHMEM_SUCCESS) {
         return status;
     }
-*/
+
 
     /*
      * Allocate device-side memory for the remote HDP keys.
@@ -168,8 +168,8 @@ NetworkOnImpl::exchange_hdp_info(HdpPolicy *hdp_policy,
      * into the host-side arrays which were just allocated.
      */
     int my_rank = my_pe;
-    host_hdp_cpy[my_rank] = 0;
-    host_hdp_address_cpy[my_rank] = hdp_policy->get_hdp_flush_addr();
+    host_hdp_cpy[my_rank] = htobe32(hdp_mr->rkey);
+    host_hdp_address_cpy[my_rank] = hdp_policy->get_hdp_flush_ptr();
 
     /*
      * Do all-to-all exchange of our HDP key with other processing elements.
@@ -241,7 +241,7 @@ NetworkOnImpl::setup_atomic_region() {
     Status status;
     status = connection->reg_mr(atomic_ret->atomic_base_ptr,
                                 sizeof(uint64_t) * max_nb_atomic * num_wg,
-                                &mr);
+                                &mr, false);
 
     if (status != Status::ROC_SHMEM_SUCCESS) {
         return status;
@@ -257,8 +257,9 @@ NetworkOnImpl::setup_atomic_region() {
 
 Status
 NetworkOnImpl::heap_memory_rkey(char *local_heap_base,
-                                int heap_size,
-                                MPI_Comm thread_comm) {
+                                size_t heap_size,
+                                MPI_Comm thread_comm,
+                                bool is_managed) {
     /*
      * Allocate host-side memory to hold remote keys for all processing
      * elements.
@@ -277,7 +278,8 @@ NetworkOnImpl::heap_memory_rkey(char *local_heap_base,
     void *base_heap = local_heap_base;
     Status status = connection->reg_mr(base_heap,
                                        heap_size,
-                                       &heap_mr);
+                                       &heap_mr,
+                                       is_managed);
     if (status != Status::ROC_SHMEM_SUCCESS) {
         free(host_rkey_cpy);
         printf("Error failed to register the heap\n");
@@ -409,7 +411,8 @@ NetworkOnImpl::networkHostSetup(GPUIBBackend *B) {
     const auto& heap_bases {B->heap.get_heap_bases()};
     status = heap_memory_rkey(heap_bases[my_pe],
                               B->heap.get_size(),
-                              B->thread_comm);
+                              B->thread_comm,
+                              B->heap.is_managed());
     assert(status == Status::ROC_SHMEM_SUCCESS);
     // The earliest we can allow the main thread to launch a kernel to
     // avoid potential deadlock
@@ -456,15 +459,17 @@ NetworkOnImpl::networkHostFinalize() {
         connection = nullptr;
     }
 }
-
 __host__ uint32_t
-NetworkOnImpl::networkDynamicShared() {
-    int remote_conn;
-    while (network_init_done != true) {
-    }
-
-    connection->get_remote_conn(&remote_conn);
+network_get_DynamicShared(int num_pes) {
+#ifndef USE_SINGLE_NODE
+    int remote_conn = 1;
+#ifndef USE_DC
+    remote_conn = num_pes;
+#endif
     return remote_conn * sizeof(QueuePair);
+#else
+    return 0;
+#endif
 }
 
 __host__ void

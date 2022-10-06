@@ -171,6 +171,46 @@ Context::get_nbi(T *dest,
 
 template <typename T>
 __device__ void
+Context::alltoall(roc_shmem_team_t team,
+                  T *dest,
+                  const T *source,
+                  int nelems) {
+    if (nelems == 0) {
+        return;
+    }
+
+    if (is_thread_zero_in_block()) {
+        ctxStats.incStat(NUM_ALLTOALL);
+    }
+
+    DISPATCH(alltoall<T>(team,
+                         dest,
+                         source,
+                         nelems));
+}
+
+template <typename T>
+__device__ void
+Context::fcollect(roc_shmem_team_t team,
+                  T *dest,
+                  const T *source,
+                  int nelems) {
+    if (nelems == 0) {
+        return;
+    }
+
+    if (is_thread_zero_in_block()) {
+        ctxStats.incStat(NUM_FCOLLECT);
+    }
+
+    DISPATCH(fcollect<T>(team,
+                         dest,
+                         source,
+                         nelems));
+}
+
+template <typename T>
+__device__ void
 Context::broadcast(roc_shmem_team_t team,
                    T *dest,
                    const T *source,

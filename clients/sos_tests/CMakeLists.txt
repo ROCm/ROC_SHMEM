@@ -106,6 +106,11 @@ set(TEST_SOURCES
       shmem_team_reuse_teams.cpp
       shmem_team_reduce.cpp
       shmem_team_b2b_collectives.cpp
+      many-ctx.cpp
+)
+
+set (TEST_SOURCES_WITH_OMP
+      put_ctx_mbw_mr.cpp
 )
 # Automatic alternative (not reocommended 'cause cmake won't detect new files):
 # file( GLOB TEST_SOURCES RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} *.cpp )
@@ -120,6 +125,31 @@ foreach( testsourcefile ${TEST_SOURCES} )
     target_link_libraries(
         ${testname}
         PRIVATE
+          rocshmem::rocshmem
+          hip::host
+          -fgpu-rdc
+    )
+endforeach( testsourcefile ${APP_SOURCES} )
+
+find_package(OpenMP REQUIRED)
+if(OPENMP_FOUND)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+endif()
+if(NOT OPENMP_FOUND)
+    message(FATAL ERROR "Unable to find OpenMP library.")
+endif()
+
+foreach( testsourcefile ${TEST_SOURCES_WITH_OMP} )
+    string( REPLACE ".cpp" "" testname ${testsourcefile} )
+    add_executable( ${testname} ${testsourcefile} )
+    target_include_directories(
+        ${testname}
+        PRIVATE rocshmem::rocshmem
+    )
+    target_link_libraries(
+        ${testname}
+        PUBLIC
           rocshmem::rocshmem
           hip::host
           -fgpu-rdc

@@ -62,6 +62,9 @@ enum roc_shmem_stats {
     NUM_PUT_NBI_WAVE,
     NUM_GET_WAVE,
     NUM_GET_NBI_WAVE,
+    NUM_CREATE,
+    NUM_ALLTOALL,
+    NUM_FCOLLECT,
     NUM_STATS
 };
 

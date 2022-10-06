@@ -95,9 +95,13 @@ typedef struct {
 } roc_shmem_team_config_t;
 
 constexpr size_t ROC_SHMEM_REDUCE_MIN_WRKDATA_SIZE = 1024;
-constexpr size_t ROC_SHMEM_BARRIER_SYNC_SIZE = 256;
-constexpr size_t ROC_SHMEM_REDUCE_SYNC_SIZE = 256;
-constexpr size_t ROC_SHMEM_BCAST_SYNC_SIZE = 256;
+constexpr size_t ROC_SHMEM_ATA_MAX_WRKDATA_SIZE = (4 * 1024 * 1024);
+constexpr size_t ROC_SHMEM_BARRIER_SYNC_SIZE  = 256;
+constexpr size_t ROC_SHMEM_REDUCE_SYNC_SIZE   = 256;
+// Internally calls sync function, which matches barrier implementation
+constexpr size_t ROC_SHMEM_BCAST_SYNC_SIZE    = ROC_SHMEM_BARRIER_SYNC_SIZE;
+constexpr size_t ROC_SHMEM_ALLTOALL_SYNC_SIZE = ROC_SHMEM_BARRIER_SYNC_SIZE + 1;
+constexpr size_t ROC_SHMEM_FCOLLECT_SYNC_SIZE = ROC_SHMEM_ALLTOALL_SYNC_SIZE;
 constexpr size_t ROC_SHMEM_SYNC_VALUE = 0;
 
 const int ROC_SHMEM_CTX_ZERO = 0;
@@ -227,6 +231,28 @@ roc_shmem_n_pes();
  */
 __host__ int
 roc_shmem_my_pe();
+
+/**
+ * @brief Creates an OpenSHMEM context.
+ *
+ * @param[in] options Options for context creation. Ignored in current design.
+ * @param[out] ctx    Context handle.
+ *
+ * @return Zero on success and nonzero otherwise.
+ */
+__host__ int
+roc_shmem_ctx_create(int64_t options,
+                     roc_shmem_ctx_t *ctx);
+
+/**
+ * @brief Destroys an OpenSHMEM context.
+ *
+ * @param[out] ctx    Context handle.
+ *
+ * @return void.
+ */
+__host__ void
+roc_shmem_ctx_destroy(roc_shmem_ctx_t ctx);
 
 /**
  * @brief Translate the PE in src_team to that in dest_team.
@@ -748,6 +774,25 @@ roc_shmem_ctx_fence(roc_shmem_ctx_t ctx);
 __device__ void
 roc_shmem_fence();
 
+
+/**
+ * @brief Guarantees order between messages in this context in accordance with
+ * OpenSHMEM semantics.
+ *
+ * This function  is an extension as it is per PE. has same semantics as default
+ * API but it is per PE
+ *
+ * @param[in] ctx Context with which to perform this operation.
+ * @param[in] pe destination pe.
+ *
+ * @return void.
+ */
+__device__ void
+roc_shmem_ctx_fence(roc_shmem_ctx_t ctx, int pe);
+
+__device__ void
+roc_shmem_fence(int pe);
+
 /**
  * @brief Completes all previous operations posted to this context.
  *
@@ -847,6 +892,27 @@ roc_shmem_ctx_wg_sync_all(roc_shmem_ctx_t ctx);
 
 __device__ void
 roc_shmem_wg_sync_all();
+
+/**
+ * @brief registers the arrival of a PE at a barrier.
+ * The caller is blocked until the synchronization is resolved.
+ *
+ * In contrast with the shmem_barrier_all routine, shmem_team_sync only ensures
+ * completion and visibility of previously issued memory stores and does not
+ * ensure completion of remote memory updates issued via OpenSHMEM routines.
+ *
+ * This function must be called as a work-group collective.
+ *
+ * @param[in] handle GPU side handle.
+ * @param[in] team  Handle of the team being synchronized
+ *
+ * @return void
+ */
+__device__ void
+roc_shmem_ctx_wg_team_sync(roc_shmem_ctx_t ctx, roc_shmem_team_t team);
+
+__device__ void
+roc_shmem_wg_team_sync(roc_shmem_team_t team);
 
 /**
  * @brief Query a local pointer to a symmetric data object on the
@@ -978,6 +1044,27 @@ roc_shmem_ctx_threadfence_system(roc_shmem_ctx_t ctx);
                                       const T *source, \
                                       int nelem, \
                                       int pe_root);                  /* NOLINT */
+
+/*
+ * MACRO DECLARE SHMEM_ALLTOALL APIs
+ */
+#define ALLTOALL_API_GEN(T, TNAME) \
+    __device__ void \
+    roc_shmem_ctx_##TNAME##_wg_alltoall(roc_shmem_ctx_t ctx, \
+                                        roc_shmem_team_t team, \
+                                        T *dest, \
+                                        const T *source, \
+                                        int nelem);                  /* NOLINT */
+/*
+ * MACRO DECLARE SHMEM_FCOLLECT APIs
+ */
+#define FCOLLECT_API_GEN(T, TNAME) \
+    __device__ void \
+    roc_shmem_ctx_##TNAME##_wg_fcollect(roc_shmem_ctx_t ctx, \
+                                        roc_shmem_team_t team, \
+                                        T *dest, \
+                                        const T *source, \
+                                        int nelem);                  /* NOLINT */
 
 /*
  * MACRO DECLARE SHMEM_PUT APIs
@@ -1357,6 +1444,72 @@ BROADCAST_API_GEN(unsigned short, ushort)               // NOLINT(runtime/int)
 BROADCAST_API_GEN(unsigned int, uint)
 BROADCAST_API_GEN(unsigned long, ulong)                 // NOLINT(runtime/int)
 BROADCAST_API_GEN(unsigned long long, ulonglong)        // NOLINT(runtime/int)
+///@}
+
+/**
+ * @name SHMEM_ALLTOALL
+ * @brief Exchanges a fixed amount of contiguous data blocks between all pairs 
+ * of PEs participating in the collective routine.
+ *
+ * This function must be called as a work-group collective.
+ *
+ * @param[in] team         The team participating in the collective.
+ * @param[in] dest         Destination address. Must be an address on the
+ *                         symmetric heap.
+ * @param[in] source       Source address. Must be an address on the symmetric
+                           heap.
+ * @param[in] nelems       Number of data blocks transferred per pair of PEs.
+ *
+ * @return void
+ */
+///@{
+ALLTOALL_API_GEN(float, float)
+ALLTOALL_API_GEN(double, double)
+ALLTOALL_API_GEN(char, char)
+// ALLTOALL_API_GEN(long double, longdouble)
+ALLTOALL_API_GEN(signed char, schar)
+ALLTOALL_API_GEN(short, short)                         // NOLINT(runtime/int)
+ALLTOALL_API_GEN(int, int)
+ALLTOALL_API_GEN(long, long)                           // NOLINT(runtime/int)
+ALLTOALL_API_GEN(long long, longlong)                  // NOLINT(runtime/int)
+ALLTOALL_API_GEN(unsigned char, uchar)
+ALLTOALL_API_GEN(unsigned short, ushort)               // NOLINT(runtime/int)
+ALLTOALL_API_GEN(unsigned int, uint)
+ALLTOALL_API_GEN(unsigned long, ulong)                 // NOLINT(runtime/int)
+ALLTOALL_API_GEN(unsigned long long, ulonglong)        // NOLINT(runtime/int)
+///@}
+
+/**
+ * @name SHMEM_FCOLLECT
+ * @brief Concatenates blocks of data from multiple PEs to an array in every 
+ * PE participating in the collective routine.
+ *
+ * This function must be called as a work-group collective.
+ *
+ * @param[in] team         The team participating in the collective.
+ * @param[in] dest         Destination address. Must be an address on the
+ *                         symmetric heap.
+ * @param[in] source       Source address. Must be an address on the symmetric
+                           heap.
+ * @param[in] nelems       Number of data blocks in source array.
+ *
+ * @return void
+ */
+///@{
+FCOLLECT_API_GEN(float, float)
+FCOLLECT_API_GEN(double, double)
+FCOLLECT_API_GEN(char, char)
+// FCOLLECT_API_GEN(long double, longdouble)
+FCOLLECT_API_GEN(signed char, schar)
+FCOLLECT_API_GEN(short, short)                         // NOLINT(runtime/int)
+FCOLLECT_API_GEN(int, int)
+FCOLLECT_API_GEN(long, long)                           // NOLINT(runtime/int)
+FCOLLECT_API_GEN(long long, longlong)                  // NOLINT(runtime/int)
+FCOLLECT_API_GEN(unsigned char, uchar)
+FCOLLECT_API_GEN(unsigned short, ushort)               // NOLINT(runtime/int)
+FCOLLECT_API_GEN(unsigned int, uint)
+FCOLLECT_API_GEN(unsigned long, ulong)                 // NOLINT(runtime/int)
+FCOLLECT_API_GEN(unsigned long long, ulonglong)        // NOLINT(runtime/int)
 ///@}
 
 /**

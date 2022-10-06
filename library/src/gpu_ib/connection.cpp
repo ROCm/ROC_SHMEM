@@ -61,12 +61,16 @@ Connection::~Connection() {
 }
 
 Status
-Connection::reg_mr(void* ptr, size_t size, ibv_mr** mr) {
-    *mr = ibv_reg_mr(ib_state->pd, ptr, size,
-                    IBV_ACCESS_LOCAL_WRITE |
+Connection::reg_mr(void* ptr, size_t size, ibv_mr** mr, bool managed) {
+    int access =    IBV_ACCESS_LOCAL_WRITE |
                     IBV_ACCESS_REMOTE_WRITE |
                     IBV_ACCESS_REMOTE_READ |
-                    IBV_ACCESS_REMOTE_ATOMIC);
+                    IBV_ACCESS_REMOTE_ATOMIC;
+    if (managed) {
+        access |= IBV_ACCESS_ON_DEMAND;
+    }
+
+    *mr = ibv_reg_mr(ib_state->pd, ptr, size, access);
 
     if (*mr == nullptr) {
         return Status::ROC_SHMEM_UNKNOWN_ERROR;
@@ -327,7 +331,7 @@ Connection::buf_alloc(struct ibv_pd* pd,
     if (use_gpu_mem) {
         void* dev_ptr;
         if(coherent_cq ==1 ){
-#ifdef USE_CACHED
+#if defined USE_COHERENT_HEAP || defined USE_CACHED_HEAP
             CHECK_HIP(hipMalloc(reinterpret_cast<void**>(&dev_ptr),
                                         size));
 #else
@@ -335,7 +339,7 @@ Connection::buf_alloc(struct ibv_pd* pd,
                                         size,
                                         hipDeviceMallocFinegrained));
 #endif
-            }else{
+        } else {
             CHECK_HIP(hipExtMallocWithFlags(reinterpret_cast<void**>(&dev_ptr),
                                         size,
                                         hipDeviceMallocFinegrained));

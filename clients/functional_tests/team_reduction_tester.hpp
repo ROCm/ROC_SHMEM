@@ -41,7 +41,7 @@ class TeamReductionTester : public Tester
 
   protected:
     virtual void
-    resetBuffers() override;
+    resetBuffers(uint64_t size) override;
 
     virtual void
     preLaunchKernel() override;

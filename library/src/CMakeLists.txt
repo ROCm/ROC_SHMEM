@@ -31,7 +31,6 @@ target_sources(
     context_host.cpp
     context_device.cpp
     device_mutex.cpp
-    hdp_policy.cpp
     ipc_policy.cpp
     mpi_init_singleton.cpp
     roc_shmem_gpu.cpp
@@ -54,6 +53,9 @@ target_compile_options(
   ${PROJECT_NAME}
   PUBLIC
     -fgpu-rdc
+#   xnack allows address translation fault recovery
+#   required option for managed heap configs
+#    -mxnack
 )
 
 #target_link_options(

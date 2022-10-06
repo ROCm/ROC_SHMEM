@@ -39,8 +39,77 @@
 #include <roc_shmem.hpp>
 #include "hdp_policy.hpp"
 #include "window_info.hpp"
+#include "symmetric_heap.hpp"
 
 namespace rocshmem {
+
+class HostContextWindowInfo
+{
+  public:
+    /**
+     * @brief Constructor with default members
+     */
+    HostContextWindowInfo() = default;
+
+    /**
+     * @brief Constructor with initialized members
+     *
+     * @param[in] team pointer used to track team info
+     * @param[in] team_info information about participating PEs
+     */
+    HostContextWindowInfo(MPI_Comm comm_world,
+                          SymmetricHeap *heap);
+
+    /**
+     * @brief Destructor
+     */
+    __host__
+    ~HostContextWindowInfo();
+
+    /**
+     * @brief Retrieve a pointer to the internal WindowInfo
+     *
+     * @return WindowInfo pointer
+     */
+    WindowInfo*
+    get() {
+        return window_info_;
+    }
+
+    /**
+     * @brief Mark the window info as avaialable (not allocated)
+     */
+    void
+    mark_avail() {
+        avail_ = true;
+    }
+
+    /**
+     * @brief Mark the window info as unavaialble (allocated)
+     */
+    void
+    mark_unavail() {
+        avail_ = false;
+    }
+
+    /**
+     * @brief Check if the window info has been allocated
+     */
+    bool
+    is_avail() {
+        return avail_;
+    }
+  private:
+    /**
+     * @brief Flag to state whether or not this window is available to be assigned to a Host Context
+     */
+    bool avail_ {true};
+
+    /**
+     * @brief Pointer to the WindowInfo object that manages the MPI Window for this context
+     */
+    WindowInfo *window_info_ {nullptr};
+};
 
 class HostInterface {
  public:
@@ -49,7 +118,8 @@ class HostInterface {
      */
     __host__
     HostInterface(HdpPolicy* hdp_policy,
-                  MPI_Comm roc_shmem_comm);
+                  MPI_Comm roc_shmem_comm,
+                  SymmetricHeap *heap);
 
     /**
      * @brief Destructor
@@ -66,6 +136,20 @@ class HostInterface {
     get_comm_world() {
         return host_comm_world_;
     }
+
+    /**
+     * @brief Get a window context from the pool
+     *
+     * @return Pointer to the WindowInfo in the allocated one from the pool
+     */
+    WindowInfo*
+    acquire_window_context();
+
+    /**
+     * @brief Return a window context back to the pool
+     */
+    void
+    release_window_context(WindowInfo *window_info);
 
     /**************************************************************************
      ***************************** HOST FUNCTIONS *****************************
@@ -336,8 +420,23 @@ class HostInterface {
     /**
      * @brief MPI window for hdp flushing
      */
-    // TODO(rozambre): enable for rocm 4.5
-    // MPI_Win hdp_win;
+    MPI_Win hdp_win;
+
+    /**
+     * @brief Max number of contexts for the application
+     */
+    int max_num_ctxs_ {40};
+
+    /**
+     * @brief Pool of HostContexWindowInfos
+     */
+    HostContextWindowInfo **host_window_context_pool_ {nullptr};
+
+    int
+    find_win_info_in_pool(WindowInfo *window_info);
+
+    int
+    find_avail_pool_entry();
 
     /*
      * @brief Used by comm_map map for active sets.

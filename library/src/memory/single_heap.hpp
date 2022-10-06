@@ -25,7 +25,7 @@
 
 #include "address_record.hpp"
 #include "heap_memory.hpp"
-#include "hip_allocator.hpp"
+#include "heap_type.hpp"
 #include "pow2_bins.hpp"
 
 /**
@@ -40,15 +40,6 @@
 namespace rocshmem {
 
 class SingleHeap {
-    /**
-     * @brief Helper type for heap memory
-     */
-#ifdef USE_CACHED
-    using HEAP_T = HeapMemory<HIPAllocator>;
-#else
-    using HEAP_T = HeapMemory<HIPAllocatorFinegrained>;
-#endif
-
     /**
      * @brief Helper type for address records
      */
@@ -137,6 +128,16 @@ class SingleHeap {
      */
     size_t
     get_avail();
+
+    /**
+     * @brief Returns is the heap is allocated with managed memory
+     *
+     * @return bool
+     */
+    bool
+    is_managed() {
+        return heap_mem_.is_managed();
+    }
 
   private:
     /**

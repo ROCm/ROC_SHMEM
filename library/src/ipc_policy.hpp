@@ -33,6 +33,10 @@
 
 namespace rocshmem {
 
+__host__ uint32_t
+ipc_get_DynamicShared();
+
+
 class Backend;
 class Context;
 
@@ -41,19 +45,14 @@ class IpcOnImpl {
         std::vector<char*, StdAllocatorHIP<char*>>;
 
  public:
-    std::atomic<bool> ipc_init_done{false};
+    uint32_t shm_size {0};
 
-    uint32_t shm_size = 0;
-
-    char **ipc_bases = nullptr;
+    char **ipc_bases {nullptr};
 
     __host__ void
     ipcHostInit(int my_pe,
                 const HEAP_BASES_T& heap_bases,
                 MPI_Comm thread_comm);
-
-    __host__ uint32_t
-    ipcDynamicShared();
 
     __device__ __attribute__((noinline)) bool
     isIpcAvailable(int my_pe,
@@ -121,19 +120,14 @@ class IpcOffImpl {
         std::vector<char*, StdAllocatorHIP<char*>>;
 
  public:
-    uint32_t shm_size = 0;
+    uint32_t shm_size {0};
 
-    char **ipc_bases = nullptr;
+    char **ipc_bases {nullptr};
 
     __host__ void
     ipcHostInit(int my_pe,
                 const HEAP_BASES_T& heap_bases,
                 MPI_Comm thread_comm) {
-    }
-
-    __host__ uint32_t
-    ipcDynamicShared() {
-        return 0;
     }
 
     __device__ bool

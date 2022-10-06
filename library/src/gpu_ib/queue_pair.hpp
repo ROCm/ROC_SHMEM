@@ -67,29 +67,43 @@ typedef union db_reg {
 class QueuePair {
  public:
     /**
-     * TODO(bpotter): document
+     * @brief Constructor.
+     *
+     * @param[in] backend Backend needed for member access.
      */
     explicit QueuePair(GPUIBBackend* backend);
 
     /**
-     * TODO(bpotter): document
+     * @brief Destructor.
      */
     __device__ ~QueuePair();
 
     /**
-     * TODO(bpotter): document
+     * @brief Inspect completion queue and possibly wait for free space.
+     *
+     * @param[in] num_msgs Number of entries needing space in completion queue.
      */
     __device__ void
     waitCQSpace(int num_msgs);
 
     /**
-     * TODO(bpotter): document
+     * @brief Inspect send queue and possibly wait for free space.
+     *
+     * @param[in] num_msgs Number of entries needing space in send queue.
      */
     __device__ void
     waitSQSpace(int num_msgs);
 
     /**
-     * TODO(bpotter): document
+     * @brief Create and enqueue a non-blocking put work queue entry (wqe).
+     *
+     * @tparam level Implements specific behaviors for thread, warp, block access.
+     *
+     * @param[in] dest Destination address for data transmission.
+     * @param[in] source Source address for data transmission.
+     * @param[in] nelems Size in bytes of data transmission.
+     * @param[in] pe Destination processing element of data transmission.
+     * @param[in] db_ring Denotes whether send queue door bell should be rung.
      */
     template <class level>
     __device__ void
@@ -100,38 +114,71 @@ class QueuePair {
             bool db_ring);
 
     /**
-     * TODO(bpotter): document
+     * @brief Create and enqueue a non-blocking put work queue entry (wqe).
+     *
+     * @note This variant differs from put_nbi by requesting that a completion
+     * queue entry is generated in the completion queue.
+     *
+     * @tparam level Implements specific behaviors for thread, warp, block access.
+     *
+     * @param[in] dest Destination address for data transmission.
+     * @param[in] source Source address for data transmission.
+     * @param[in] nelems Size in bytes of data transmission.
+     * @param[in] pe Destination processing element of data transmission.
+     * @param[in] db_ring Denotes whether send queue door bell should be rung.
      */
     template <class level>
     __device__ void
     put_nbi_cqe(void *dest,
-            const void *source,
-            size_t nelems,
-            int pe,
-            bool db_ring);
+                const void *source,
+                size_t nelems,
+                int pe,
+                bool db_ring);
 
     /**
-     * TODO(bpotter): document
+     * @brief Consume a completion queue entry from this queue pair's
+     * completion queue.
+     *
+     * @tparam level Implements specific behaviors for thread, warp, block access.
      */
     template <class level>
     __device__ void
     quiet_single();
 
     /**
-     * TODO(bpotter): document
+     * @brief Send a zero-byte read to enforce ordering and then consume
+     * a completion queue entry from this queue pair's completion queue.
+     *
+     * @tparam level Implements specific behaviors for thread, warp, block access.
+     *
+     * @param[in] pe Processing element id to send the zero_b_rd.
      */
     template <class level>
     __device__ void
     quiet_single_heavy(int pe);
 
     /**
-     * TODO(bpotter): document
+     * @brief Create and enqueue a HDP flush work queue entry on the remote PE.
+     *
+     * @param[in] pe Processing element id to send the HDP flush operation.
+     *
+     * TODO(@khamidou): does this require a zero_b_rd to enforce write ordering
+     * The HDP flush is itself a write. Could this write be reordered with
+     * respect to other write on the network and arrive out-of-order?
      */
     __device__ void
     fence(int pe);
 
     /**
-     * TODO(bpotter): document
+     * @brief Create and enqueue a non-blocking get work queue entry (wqe).
+     *
+     * @tparam level Implements specific behaviors for thread, warp, block access.
+     *
+     * @param[in] dest Destination address for data transmission.
+     * @param[in] source Source address for data transmission.
+     * @param[in] nelems Size in bytes of data transmission.
+     * @param[in] pe Destination processing element of data transmission.
+     * @param[in] db_ring Denotes whether send queue door bell should be rung.
      */
     template <class level>
     __device__ void
@@ -142,25 +189,49 @@ class QueuePair {
             bool db_ring);
 
     /**
-     * TODO(bpotter): document
+     * @brief Create and enqueue a non-blocking get work queue entry (wqe).
+     *
+     * @note This variant differs from get_nbi by requesting that a completion
+     * queue entry is generated in the completion queue.
+     *
+     * @tparam level Implements specific behaviors for thread, warp, block access.
+     *
+     * @param[in] dest Destination address for data transmission.
+     * @param[in] source Source address for data transmission.
+     * @param[in] nelems Size in bytes of data transmission.
+     * @param[in] pe Destination processing element of data transmission.
+     * @param[in] db_ring Denotes whether send queue door bell should be rung.
      */
     template <class level>
     __device__ void
     get_nbi_cqe(void *dest,
-            const void *source,
-            size_t nelems,
-            int pe,
-            bool db_ring);
+                const void *source,
+                size_t nelems,
+                int pe,
+                bool db_ring);
 
     /**
-     * TODO(bpotter): document
+     * @brief Create and enqueue a zero-byte read to enforce write ordering.
+     *
+     * @tparam level Implements specific behaviors for thread, warp, block access.
+     *
+     * @param[in] pe Processing element id to send the zero_b_rd.
      */
     template <class level>
     __device__ void
     zero_b_rd(int pe);
 
     /**
-     * TODO(bpotter): document
+     * @brief Create and enqueue an atomic fetch work queue entry (wqe).
+     *
+     * @param[in] dest Destination address for data transmission.
+     * @param[in] value Data value for the atomic operation.
+     * @param[in] cond Used in atomic comparisons.
+     * @param[in] pe Destination processing element of data transmission.
+     * @param[in] db_ring Denotes whether send queue door bell should be rung.
+     * @param[in] atomic_op The atomic operation to perform.
+     *
+     * @return An atomic value
      */
     __device__ int64_t
     atomic_fetch(void *dest,
@@ -171,7 +242,14 @@ class QueuePair {
                  uint8_t atomic_op);
 
     /**
-     * TODO(bpotter): document
+     * @brief Create and enqueue an atomic fetch work queue entry (wqe).
+     *
+     * @param[in] dest Destination address for data transmission.
+     * @param[in] value Data value for the atomic operation.
+     * @param[in] cond Used in atomic comparisons.
+     * @param[in] pe Destination processing element of data transmission.
+     * @param[in] db_ring Denotes whether send queue door bell should be rung.
+     * @param[in] atomic_op The atomic operation to perform.
      */
     __device__ void
     atomic_nofetch(void *dest,
@@ -182,13 +260,29 @@ class QueuePair {
                    uint8_t atomic_op);
 
     /**
-     * TODO(bpotter): document
+     * @brief Helper method to set the doorbell's value.
+     *
+     * @param[in] val Desired value for the doorbell.
      */
     void setDBval(uint64_t val);
 
  protected:
     /**
-     * TODO(bpotter): document
+     * @brief Helper method to build work requests for the send queue.
+     *
+     * @tparam level Implements specific behaviors for thread, warp, block access.
+     * @tparam cqe Flag to optionally generate cqes.
+     *
+     * @param[in] pe Destination processing element of data transmission.
+     * @param[in] size Size in bytes of data transmission.
+     * @param[in] laddr Local address.
+     * @param[in] raddr Remote address.
+     * @param[in] opcode Operation to be performed.
+     * @param[in] atomic_data An atomic data value to be used.
+     * @param[in] atomic_cmp An atomic comparison operation to be performed.
+     * @param[in] ring_db Boolean denoting if doorbell should be rung.
+     * @param[in] atomic_ret_pos Index into atomic return structure.
+     * @param[in] zero_byte_rd Boolean if zero byte read should be used.
      */
     template <class level, bool cqe>
     __device__ void
@@ -204,14 +298,22 @@ class QueuePair {
                               bool zero_byte_rd = false);
 
     /**
-     * TODO(bpotter): document
+     * @brief Helper method to drain completion queue entries.
+     *
+     * @tparam level Implements specific behaviors for thread, warp, block access.
+     *
      */
     template <class level>
     __device__ void
     quiet_internal();
 
     /**
-     * TODO(bpotter): document
+     * @brief Helper method to compute doorbell value opcode which is used to
+     * ring the doorbell.
+     *
+     * @param[in,out] db_val
+     * @param[in] dbrec_val
+     * @param[in] opcode
      */
     __device__ void
     compute_db_val_opcode(uint64_t *db_val,
@@ -219,43 +321,54 @@ class QueuePair {
                           uint8_t opcode);
 
     /**
-     * TODO(bpotter): document
+     * @brief Helper method that sets the field in a work queue entry to
+     * generate a completion entry in the completion queue.
+     *
+     * @param num_wqes Number of work entries this completion entry represents.
      */
     __device__ void
     set_completion_flag_on_wqe(int num_wqes);
 
     /**
-     * TODO(bpotter): document
+     * @brief Helper method to update fields for the work queue entry.
+     *
+     * @tparam cqe Flag to optionally generate cqes.
+     *
+     * @note Single variant is meant to be callable by a block leader.
      */
-    template<bool cqe>
-    __device__ void update_wqe_ce_single(int num_wqes);
+    template <bool cqe>
+    __device__ void
+    update_wqe_ce_single(int num_wqes);
 
     /**
-     * TODO(bpotter): document
+     * @brief Helper method to update fields for the work queue entry.
+     *
+     * @tparam cqe Flag to optionally generate cqes.
+     *
+     * @note Thread variant is meant to be callable by multiple threads.
      */
-    template<bool cqe>
-    __device__ void update_wqe_ce_thread(int num_wqes);
+    template <bool cqe>
+    __device__ void
+    update_wqe_ce_thread(int num_wqes);
 
     /**
-     * TODO(bpotter): document
+     * @brief Helper method to ring the doorbell
+     *
+     * @param[in] db_val Doorbell value is written by method.
      */
     __device__ void
     ring_doorbell(uint64_t db_val);
 
     /**
-     * TODO(bpotter): document
-     */
-    __device__ bool
-    is_cq_owner_sw(mlx5_cqe64 *cq_entry);
-
-    /**
-     * TODO(bpotter): document
+     * @brief Helper method to extract syndrome field from cqe.
+     *
+     * @param[in] cq_entry Completion queue entry.
      */
     __device__ uint8_t
     get_cq_error_syndrome(mlx5_cqe64 *cq_entry);
 
  private:
-    const int inline_threshold = 8;
+    const int inline_threshold {8};
 
     /* TODO(bpotter): Most of these should be private/protected */
  public:
@@ -268,40 +381,40 @@ class QueuePair {
     /*
      * Pointer to the hardware doorbell register for the QP.
      */
-    db_reg_t db;
+    db_reg_t db {};
 
     /*
      * Base pointer of this QP's SQ
      * TODO(bpotter): Use the correct struct type for this.
      */
-    uint64_t *current_sq = nullptr;
-    uint64_t *current_sq_H = nullptr;
+    uint64_t *current_sq {nullptr};
+    uint64_t *current_sq_H {nullptr};
 
     /*
      * Base pointer of this QP's CQ
      */
-    mlx5_cqe64 *current_cq_q = nullptr;
-    mlx5_cqe64 *current_cq_q_H = nullptr;
+    mlx5_cqe64 *current_cq_q {nullptr};
+    mlx5_cqe64 *current_cq_q_H {nullptr};
 
     /*
      * Pointer to the doorbell record for this SQ.
      */
-    volatile uint32_t *dbrec_send = nullptr;
+    volatile uint32_t *dbrec_send {nullptr};
 
     /*
      * Pointer to the doorbell record for the CQ.
      */
-    volatile uint32_t *dbrec_cq = nullptr;
+    volatile uint32_t *dbrec_cq {nullptr};
 
-    uint32_t *hdp_rkey = nullptr;
+    uint32_t *hdp_rkey {nullptr};
 
-    uintptr_t *hdp_address = nullptr;
+    uintptr_t *hdp_address {nullptr};
 
-    HdpPolicy hdp_policy;
+    HdpPolicy hdp_policy {};
 
-    atomic_ret_t atomic_ret;
+    atomic_ret_t atomic_ret {};
 
-    ThreadImpl threadImpl;
+    ThreadImpl threadImpl {};
 
     ConnectionImpl connection_policy;
 
@@ -309,47 +422,47 @@ class QueuePair {
     /*
      * Current index into the SQ (non-modulo size).
      */
-    uint32_t sq_counter = 0;
-    uint32_t local_sq_cnt = 0;
+    uint32_t sq_counter {0};
+    uint32_t local_sq_cnt {0};
 
     /*
      * Number of outstanding messages on this QP that need to be completed
      * during a quiet operation.
      */
-    uint32_t quiet_counter = 0;
+    uint32_t quiet_counter {0};
 
-    int num_cqs = 0;
+    int num_cqs {0};
 
     /*
      * Current index into the SQ (non-module size).
      */
-    uint32_t cq_consumer_counter = 0;
+    uint32_t cq_consumer_counter {0};
 
-    uint16_t cq_log_size = 0;
+    uint16_t cq_log_size {0};
 
-    uint16_t cq_size = 0;
+    uint16_t cq_size {0};
 
-    uint32_t ctrl_qp_sq = 0;
+    uint32_t ctrl_qp_sq {0};
 
-    uint64_t ctrl_sig = 0;
+    uint64_t ctrl_sig {0};
 
-    uint32_t rkey = 0;
+    uint32_t rkey {0};
 
-    uint32_t lkey = 0;
+    uint32_t lkey {0};
 
-    GPUIBStats profiler;
+    GPUIBStats profiler {};
 
-    uint16_t max_nwqe = 0;
+    uint16_t max_nwqe {0};
 
-    bool sq_overflow = 0;
+    bool sq_overflow {0};
 
-    uint64_t db_val;
+    uint64_t db_val {};
     /*
      * Pointer to the QP in global memory that this QP is copied from.  When
      * this QP is destroyed, the dynamic (indicies, stats, etc) in the
      * global_qp are updated.
      */
-    QueuePair *global_qp = nullptr;
+    QueuePair *global_qp {nullptr};
 
     friend SingleThreadImpl;
     friend MultiThreadImpl;

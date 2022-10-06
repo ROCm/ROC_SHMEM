@@ -31,6 +31,7 @@ using namespace rocshmem;
  *****************************************************************************/
 __global__ void
 BarrierAllTest(int loop,
+               int skip,
                uint64_t *timer)
 {
     __shared__ roc_shmem_ctx_t ctx;
@@ -39,16 +40,15 @@ BarrierAllTest(int loop,
     roc_shmem_wg_ctx_create(ROC_SHMEM_CTX_WG_PRIVATE, &ctx);
 
     uint64_t start;
-    if (hipThreadIdx_x == 0) {
-        start = roc_shmem_timer();
-    }
+    for (int i = 0; i < loop + skip; i++) {
+        if (hipThreadIdx_x == 0 && i == skip) {
+            start = roc_shmem_timer();
+        }
 
-    __syncthreads();
+        __syncthreads();
 
-    for (int i = 0; i < loop; i++) {
         roc_shmem_ctx_wg_barrier_all(ctx);
     }
-
     __syncthreads();
 
     if (hipThreadIdx_x == 0) {
@@ -86,11 +86,15 @@ BarrierAllTester::launchKernel(dim3 gridSize,
                        shared_bytes,
                        stream,
                        loop,
+                       args.skip,
                        timer);
+
+    num_msgs = (loop + args.skip) * gridSize.x;
+    num_timed_msgs = loop ;
 }
 
 void
-BarrierAllTester::resetBuffers()
+BarrierAllTester::resetBuffers(uint64_t size)
 {
 }
 

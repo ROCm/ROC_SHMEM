@@ -57,6 +57,7 @@ class BinnerTestFixture : public ::testing::Test
      * @brief a heap memory object
      */
     HeapMemory<HIPAllocator> hm_ {};
+
     /**
      * @brief a bins object
      */

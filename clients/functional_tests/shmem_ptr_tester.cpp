@@ -64,7 +64,7 @@ ShmemPtrTester::~ShmemPtrTester()
 }
 
 void
-ShmemPtrTester::resetBuffers()
+ShmemPtrTester::resetBuffers(uint64_t size)
 {
     memset(r_buf, '0', args.max_msg_size);
     memset(_available, 0, sizeof(int));

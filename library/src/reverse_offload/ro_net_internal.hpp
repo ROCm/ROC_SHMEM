@@ -52,9 +52,12 @@ enum ro_net_cmds {
     RO_NET_FINALIZE,
     RO_NET_TO_ALL,
     RO_NET_TEAM_TO_ALL,
+    RO_NET_SYNC,
     RO_NET_BARRIER_ALL,
     RO_NET_BROADCAST,
     RO_NET_TEAM_BROADCAST,
+    RO_NET_ALLTOALL,
+    RO_NET_FCOLLECT,
 };
 
 enum ro_net_types {
@@ -157,23 +160,6 @@ typedef Stats<RO_NUM_STATS> ROStats;
 typedef NullStats<RO_NUM_STATS> ROStats;
 #endif
 
-struct ro_net_handle {
-    queue_element_t **queues;
-    queue_desc_t *queue_descs;
-    ROStats *profiler;
-    int num_threads;
-    bool done_flag;
-    unsigned int *barrier_ptr;
-    bool *needs_quiet;
-    bool *needs_blocking;
-    uint64_t queue_size;
-    char *g_ret;
-    HdpPolicy *hdp_policy;
-    WindowInfo *heap_window_info;
-    atomic_ret_t * atomic_ret;
-    bool gpu_queue;
-};
-
 /* Meant for local allocation on the GPU */
 struct ro_net_wg_handle {
     queue_element_t *queue;
@@ -191,18 +177,33 @@ struct ro_net_wg_handle {
 };
 
 /* Device-side internal functions */
-__device__ void inline  __ro_inv() { asm volatile ("buffer_wbinvl1;"); }
+__device__ void inline
+__ro_inv() {
+    asm volatile ("buffer_wbinvl1;");
+}
 
-__device__ bool isFull(uint64_t read_idx, uint64_t write_idx, int queue_size);
+__device__ bool
+isFull(uint64_t read_idx,
+       uint64_t write_idx,
+       int queue_size);
 
-__device__ void build_queue_element(ro_net_cmds type, void* dst, void * src,
-                                    size_t size, int pe, int logPE_stride,
-                                    int PE_size, int PE_root, void* pWrk,
-                                    long* pSync, MPI_Comm team_comm,
-                                    struct ro_net_wg_handle *handle,
-                                    bool blocking,
-                                    ROC_SHMEM_OP op = ROC_SHMEM_SUM,
-                                    ro_net_types datatype = RO_NET_INT);
+__device__ void
+build_queue_element(ro_net_cmds type,
+                    void *dst,
+                    void *src,
+                    size_t size,
+                    int pe,
+                    int logPE_stride,
+                    int PE_size,
+                    int PE_root,
+                    void *pWrk,
+                    long *pSync,
+                    MPI_Comm team_comm,
+                    int ro_net_win_id,
+                    struct ro_net_wg_handle *handle,
+                    bool blocking,
+                    ROC_SHMEM_OP op = ROC_SHMEM_SUM,
+                    ro_net_types datatype = RO_NET_INT);
 
 }  // namespace rocshmem
 

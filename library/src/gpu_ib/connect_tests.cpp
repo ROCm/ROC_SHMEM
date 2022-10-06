@@ -28,8 +28,6 @@
 
 namespace rocshmem {
 
-// requires defined use_hdp_map to work
-
 // test with different use_ib_hca
 // test with different heap size
 // test with different sleep

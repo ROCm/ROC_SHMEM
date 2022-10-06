@@ -105,18 +105,6 @@ class Backend {
     virtual Status team_destroy(roc_shmem_team_t team) = 0;
 
     /**
-     * @brief Reports library usage of shared (LDS) space.
-     *
-     * @param[out] shared_bytes Number of LDS bytes used by library.
-     *
-     * @return Status code containing outcome.
-     *
-     * @todo Implementation must ensure that the ptr parameter is not nullptr.
-     */
-    virtual Status
-    dynamic_shared(size_t* shared_bytes) = 0;
-
-    /**
      * @brief Reports processing element number id.
      *
      * @return Unique numeric identifier for each processing element.
@@ -201,6 +189,25 @@ class Backend {
     global_exit(int status) = 0;
 
     /**
+     * @brief Creates a new OpenSHMEM context.
+     *
+     * @param[in] options Options for context creation
+     * @param[in] ctx     Address of the pointer to the new context
+     *
+     * @return Zero on success, nonzero otherwise.
+     */
+    virtual void ctx_create(int64_t options, void **ctx) = 0;
+
+    /**
+     * @brief Destroys a context.
+     *
+     * @param[in] ctx Context handle.
+     *
+     * @return void.
+     */
+    virtual void ctx_destroy(Context *ctx) = 0;
+
+    /**
      * @brief High level device stats that do not depend on backend type.
      */
     ROCStats globalStats {};
@@ -271,6 +278,21 @@ class Backend {
     int hip_dev_id {0};
 
     /**
+     * @brief Add ctx from the list of user-created ctxs
+     */
+    void track_ctx(Context *ctx, int64_t options);
+
+    /**
+     * @brief Remove ctx from the list of user-created ctxs
+     */
+    void untrack_ctx(Context *ctx);
+
+    /**
+     * @brief Remove all ctxs from the list of user-created ctxs
+     */
+    void destroy_remaining_ctxs();
+
+    /**
      * @brief Compile-time configuration policy for intra-node shared memory
      * accesses.
      *
@@ -314,6 +336,12 @@ class Backend {
      */
     virtual Status
     reset_backend_stats() = 0;
+
+ private:
+    /**
+     * @brief List of ctxs created by the user.
+     */
+    std::vector<Context *> list_of_ctxs {};
 };
 
 /**
