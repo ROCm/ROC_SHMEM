@@ -29,6 +29,7 @@
  */
 
 #include <roc_shmem.hpp>
+#include <vector>
 
 namespace rocshmem {
 
