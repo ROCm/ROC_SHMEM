@@ -20,44 +20,40 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef ROCSHMEM_LIBRARY_SRC_WF_COAL_POLICY_HPP
-#define ROCSHMEM_LIBRARY_SRC_WF_COAL_POLICY_HPP
-
-#include "config.h"
+#ifndef LIBRARY_SRC_WF_COAL_POLICY_HPP_
+#define LIBRARY_SRC_WF_COAL_POLICY_HPP_
 
 #include <hip/hip_runtime.h>
 
+#include "config.h"  // NOLINT(build/include_subdir)
+#include "src/util.hpp"
+
 namespace rocshmem {
 
-class WfCoalOn
-{
-  public:
-    /**
-     * Coalesce contiguous messages from a single wavefront.
-     *
-     * With regards to calling threads, the command must already be the
-     * same for active threads otherwise they must have diverged at the
-     * function call level.
-     */
-    __device__ bool
-    coalesce(int pe,
-             const void *source,
-             const void *dest,
-             size_t &size);
+class WfCoalOn {
+ public:
+  /**
+   * Coalesce contiguous messages from a single wavefront.
+   *
+   * With regards to calling threads, the command must already be the
+   * same for active threads otherwise they must have diverged at the
+   * function call level.
+   */
+  __device__ bool coalesce(int pe, const void *source, const void *dest,
+                           size_t *size);
 };
 
-class WfCoalOff
-{
-  public:
-    __device__ bool
-    coalesce(int pe,
-             const void *source,
-             const void *dest,
-             size_t &size)
-    {
-        return true;
-    }
+// clang-format off
+NOWARN(-Wunused-parameter,
+class WfCoalOff {
+ public:
+  __device__ bool coalesce(int pe, const void *source, const void *dest,
+                           size_t *size) {
+    return true;
+  }
 };
+)
+// clang-format on
 
 /**
  * Compile time configuration options will enable or disable this feature.
@@ -70,4 +66,4 @@ typedef WfCoalOff WavefrontCoalescer;
 
 }  // namespace rocshmem
 
-#endif  // ROCSHMEM_LIBRARY_SRC_WF_COAL_POLICY_HPP
+#endif  // LIBRARY_SRC_WF_COAL_POLICY_HPP_

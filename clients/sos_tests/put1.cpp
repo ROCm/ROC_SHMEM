@@ -29,50 +29,49 @@
  * SOFTWARE.
  */
 
-#include <roc_shmem.hpp>
-#include <string.h>
 #include <stdio.h>
+#include <string.h>
+
+#include <roc_shmem.hpp>
 
 using namespace rocshmem;
 
-int
-main(int argc, char* argv[])
-{
-    long source[10] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
-    long *target;
+int main(int argc, char *argv[]) {
+  long source[10] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+  long *target;
 
-    roc_shmem_init(1);
+  roc_shmem_init();
 
-    if (roc_shmem_n_pes() == 1) {
-        printf("%s: Requires number of PEs > 1\n", argv[0]);
-        roc_shmem_finalize();
-        return 0;
-    }
-
-    target = (long *) roc_shmem_malloc(10 * sizeof(long));
-
-    if (roc_shmem_my_pe() == 0) {
-        /* put 10 elements into target on PE 1 */
-        roc_shmem_long_put(target, source, 10, 1);
-    }
-
-    roc_shmem_barrier_all();  /* sync sender and receiver */
-
-    if (roc_shmem_my_pe() == 1) {
-        if (0 != memcmp(source, target, sizeof(long) * 10)) {
-            int i;
-            fprintf(stderr,"[%d] Src & Target mismatch?\n",roc_shmem_my_pe());
-            for (i = 0 ; i < 10 ; ++i) {
-                printf("%ld,%ld ", source[i], target[i]);
-            }
-            printf("\n");
-            roc_shmem_global_exit(1);
-        }
-    }
-
-    roc_shmem_free(target);
-
+  if (roc_shmem_n_pes() == 1) {
+    printf("%s: Requires number of PEs > 1\n", argv[0]);
     roc_shmem_finalize();
-
     return 0;
+  }
+
+  target = (long *)roc_shmem_malloc(10 * sizeof(long));
+
+  if (roc_shmem_my_pe() == 0) {
+    /* put 10 elements into target on PE 1 */
+    roc_shmem_long_put(target, source, 10, 1);
+  }
+
+  roc_shmem_barrier_all(); /* sync sender and receiver */
+
+  if (roc_shmem_my_pe() == 1) {
+    if (0 != memcmp(source, target, sizeof(long) * 10)) {
+      int i;
+      fprintf(stderr, "[%d] Src & Target mismatch?\n", roc_shmem_my_pe());
+      for (i = 0; i < 10; ++i) {
+        printf("%ld,%ld ", source[i], target[i]);
+      }
+      printf("\n");
+      roc_shmem_global_exit(1);
+    }
+  }
+
+  roc_shmem_free(target);
+
+  roc_shmem_finalize();
+
+  return 0;
 }

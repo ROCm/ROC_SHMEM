@@ -20,47 +20,37 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#include "gpu_ib_team.hpp"
+#include "src/gpu_ib/gpu_ib_team.hpp"
 
-#include "backend_ib.hpp"
-#include "backend_type.hpp"
+#include "src/backend_type.hpp"
+#include "src/gpu_ib/backend_ib.hpp"
 
 namespace rocshmem {
 
-GPUIBTeam::GPUIBTeam(Backend *backend,
-                     TeamInfo *team_info_parent,
-                     TeamInfo *team_info_world,
-                     int num_pes,
-                     int my_pe,
-                     MPI_Comm mpi_comm,
-                     int pool_index)
-    : Team(backend,
-           team_info_parent,
-           team_info_world,
-           num_pes,
-           my_pe,
+GPUIBTeam::GPUIBTeam(Backend *backend, TeamInfo *team_info_parent,
+                     TeamInfo *team_info_world, int num_pes, int my_pe,
+                     MPI_Comm mpi_comm, int pool_index)
+    : Team(backend, team_info_parent, team_info_world, num_pes, my_pe,
            mpi_comm) {
-    type = BackendType::GPU_IB_BACKEND;
-    const GPUIBBackend* b = static_cast<const GPUIBBackend*>(backend);
+  type = BackendType::GPU_IB_BACKEND;
+  const GPUIBBackend *b = static_cast<const GPUIBBackend *>(backend);
 
-    pool_index_ = pool_index;
+  pool_index_ = pool_index;
 
-    barrier_pSync = &(b->barrier_pSync_pool[
-       pool_index * ROC_SHMEM_BARRIER_SYNC_SIZE]);
-    reduce_pSync = &(b->reduce_pSync_pool[
-       pool_index * ROC_SHMEM_REDUCE_SYNC_SIZE]);
-    bcast_pSync = &(b->bcast_pSync_pool[
-       pool_index * ROC_SHMEM_BCAST_SYNC_SIZE]);
-    alltoall_pSync = &(b->alltoall_pSync_pool[
-       pool_index * ROC_SHMEM_ALLTOALL_SYNC_SIZE]);
+  barrier_pSync =
+      &(b->barrier_pSync_pool[pool_index * ROC_SHMEM_BARRIER_SYNC_SIZE]);
+  reduce_pSync =
+      &(b->reduce_pSync_pool[pool_index * ROC_SHMEM_REDUCE_SYNC_SIZE]);
+  bcast_pSync = &(b->bcast_pSync_pool[pool_index * ROC_SHMEM_BCAST_SYNC_SIZE]);
+  alltoall_pSync =
+      &(b->alltoall_pSync_pool[pool_index * ROC_SHMEM_ALLTOALL_SYNC_SIZE]);
 
-    pWrk = (char *)(b->pWrk_pool) + ROC_SHMEM_REDUCE_MIN_WRKDATA_SIZE * 
-                   sizeof(double) * pool_index;
-    pAta = (char *)(b->pAta_pool) + ROC_SHMEM_ATA_MAX_WRKDATA_SIZE *
-                   sizeof(double) * pool_index;
+  pWrk = reinterpret_cast<char *>(b->pWrk_pool) +
+         ROC_SHMEM_REDUCE_MIN_WRKDATA_SIZE * sizeof(double) * pool_index;
+  pAta = reinterpret_cast<char *>(b->pAta_pool) +
+         ROC_SHMEM_ATA_MAX_WRKDATA_SIZE * sizeof(double) * pool_index;
 }
 
-GPUIBTeam::~GPUIBTeam() {
-}
+GPUIBTeam::~GPUIBTeam() {}
 
 }  // namespace rocshmem

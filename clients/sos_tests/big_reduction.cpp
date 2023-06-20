@@ -33,85 +33,85 @@
  * reduce across PEs with roc_shmem_max_to_all()
  *
  * usage: big_reduction {-v|h}
-*/
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include <roc_shmem.hpp>
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
 
 using namespace rocshmem;
 
 #define N 128
 
 #define MAX(a, b) ((a) > (b)) ? (a) : (b)
-#define WRK_SIZE MAX(N/2+1, ROC_SHMEM_REDUCE_MIN_WRKDATA_SIZE)
+#define WRK_SIZE MAX(N / 2 + 1, ROC_SHMEM_REDUCE_MIN_WRKDATA_SIZE)
 
-int
-main(int argc, char* argv[])
-{
-    int i, Verbose=0;
-    char *pgm;
-    long *pSync, *pWrk;
-    long *src, *dst;
+int main(int argc, char *argv[]) {
+  int i, Verbose = 0;
+  char *pgm;
+  long *pSync, *pWrk;
+  long *src, *dst;
 
-    if ((pgm=strrchr(argv[0],'/'))) {
-        pgm++;
-    } else {
-        pgm = argv[0];
+  if ((pgm = strrchr(argv[0], '/'))) {
+    pgm++;
+  } else {
+    pgm = argv[0];
+  }
+
+  if (argc > 1) {
+    if (strncmp(argv[1], "-v", 3) == 0) {
+      Verbose = 1;
+    } else if (strncmp(argv[1], "-h", 3) == 0) {
+      fprintf(stderr, "usage: %s {-v(verbose)|h(help)}\n", pgm);
+      roc_shmem_finalize();
+      exit(1);
     }
+  }
 
-    if (argc > 1) {
-        if (strncmp(argv[1],"-v",3) == 0) {
-            Verbose=1;
-        } else if (strncmp(argv[1],"-h",3) == 0) {
-            fprintf(stderr,"usage: %s {-v(verbose)|h(help)}\n",pgm);
-            roc_shmem_finalize();
-            exit(1);
-        }
-    }
+  roc_shmem_init();
 
-    roc_shmem_init(1);
+  src = (long *)roc_shmem_malloc(N * sizeof(long));
+  for (i = 0; i < N; i += 1) {
+    src[i] = roc_shmem_my_pe() + i;
+  }
+  dst = (long *)roc_shmem_malloc(N * sizeof(long));
 
-    src = (long *) roc_shmem_malloc(N * sizeof(long));
+  pSync = (long *)roc_shmem_malloc(ROC_SHMEM_REDUCE_SYNC_SIZE * sizeof(long));
+  for (i = 0; i < ROC_SHMEM_REDUCE_SYNC_SIZE; i += 1) {
+    pSync[i] = ROC_SHMEM_SYNC_VALUE;
+  }
+
+  pWrk = (long *)roc_shmem_malloc(WRK_SIZE * sizeof(long));
+
+  roc_shmem_barrier_all();
+
+  roc_shmem_ctx_long_max_to_all(ROC_SHMEM_CTX_DEFAULT, dst, src, N, 0, 0,
+                                roc_shmem_n_pes(), pWrk, pSync);
+
+  if (Verbose) {
+    printf("%d/%d\tdst =", roc_shmem_my_pe(), roc_shmem_n_pes());
     for (i = 0; i < N; i += 1) {
-        src[i] = roc_shmem_my_pe() + i;
+      printf(" %ld", dst[i]);
     }
-    dst = (long *) roc_shmem_malloc(N * sizeof(long));
+    printf("\n");
+  }
 
-    pSync = (long *) roc_shmem_malloc(ROC_SHMEM_REDUCE_SYNC_SIZE * sizeof(long));
-    for (i = 0; i < ROC_SHMEM_REDUCE_SYNC_SIZE; i += 1) {
-        pSync[i] = ROC_SHMEM_SYNC_VALUE;
+  for (i = 0; i < N; i += 1) {
+    if (dst[i] != roc_shmem_n_pes() - 1 + i) {
+      printf("[%3d] Error: dst[%d] == %ld, expected %ld\n", roc_shmem_my_pe(),
+             i, dst[i], roc_shmem_n_pes() - 1 + (long)i);
+      roc_shmem_global_exit(1);
     }
+  }
 
-    pWrk = (long *) roc_shmem_malloc(WRK_SIZE * sizeof(long));
+  roc_shmem_free(dst);
+  roc_shmem_free(src);
+  roc_shmem_free(pSync);
+  roc_shmem_free(pWrk);
 
-    roc_shmem_barrier_all();
+  roc_shmem_finalize();
 
-    roc_shmem_ctx_long_max_to_all(ROC_SHMEM_CTX_DEFAULT, dst, src, N, 0, 0, roc_shmem_n_pes(), pWrk, pSync);
-
-    if (Verbose) {
-        printf("%d/%d\tdst =", roc_shmem_my_pe(), roc_shmem_n_pes() );
-        for (i = 0; i < N; i+= 1) {
-            printf(" %ld", dst[i]);
-        }
-        printf("\n");
-    }
-
-    for (i = 0; i < N; i+= 1) {
-        if (dst[i] != roc_shmem_n_pes() - 1 + i) {
-            printf("[%3d] Error: dst[%d] == %ld, expected %ld\n",
-                   roc_shmem_my_pe(), i, dst[i], roc_shmem_n_pes() - 1 + (long) i);
-            roc_shmem_global_exit(1);
-        }
-    }
-
-    roc_shmem_free(dst);
-    roc_shmem_free(src);
-    roc_shmem_free(pSync);
-    roc_shmem_free(pWrk);
-
-    roc_shmem_finalize();
-
-    return 0;
+  return 0;
 }

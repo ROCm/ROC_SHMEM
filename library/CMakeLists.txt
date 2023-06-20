@@ -25,10 +25,12 @@ cmake_minimum_required(VERSION 3.16.3 FATAL_ERROR)
 ###############################################################################
 # GLOBAL COMPILE FLAGS
 ###############################################################################
+if (NOT DEFINED CMAKE_CXX_COMPILER)
+    set(CMAKE_CXX_COMPILER /opt/rocm/bin/hipcc)
+endif()
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_COMPILER /opt/rocm/bin/hipcc)
 set(CMAKE_CXX_FLAGS_DEBUG "-O0 -ggdb")
 
 ###############################################################################
@@ -67,6 +69,7 @@ project(rocshmem VERSION 1.1.0 LANGUAGES CXX)
 ###############################################################################
 option(DEBUG "Enable debug trace" OFF)
 option(PROFILE "Enable statistics and timing support" OFF)
+option(USE_GPU_IB "Enable GPU_IB conduit. If off, RO_NET will be used" ON)
 option(USE_DC "Enable IB dynamically connected transport (DC)" OFF)
 option(USE_IPC "Enable IPC support (using HIP)" OFF)
 option(USE_THREADS "Enable workgroup threads to share network queues" OFF)
@@ -76,6 +79,8 @@ option(USE_CACHED_HEAP "Enable support for cached systems" OFF)
 option(USE_MANAGED_HEAP "Enable managed memory" OFF)
 option(USE_HOST_HEAP "Enable host memory using malloc/free" OFF)
 option(USE_HIP_HOST_HEAP "Enable host memory using hip api" OFF)
+option(USE_FUNC_CALL "Force compiler to use function calls on library API" OFF)
+option(USE_SHARED_CTX "Request support for shared ctx between WG" OFF)
 
 configure_file(config.h.in config.h)
 
@@ -95,7 +100,7 @@ target_include_directories(
   ${PROJECT_NAME}
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}>                 # CONFIG.H
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> # PUBLIC HEADERS
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
     $<INSTALL_INTERFACE:include>
 )
 
@@ -138,8 +143,22 @@ target_link_libraries(
 )
 
 ###############################################################################
+# PTHREADS
+###############################################################################
+set(CMAKE_THREAD_PREFER_PTHREAD TRUE)
+set(THREADS_PREFER_PTHREAD_FLAG TRUE)
+find_package(Threads REQUIRED)
+
+target_link_libraries(
+  ${PROJECT_NAME}
+  PUBLIC
+    Threads::Threads
+)
+
+###############################################################################
 # IBVERBS
 ###############################################################################
+IF (USE_GPU_IB)
 find_package(Ibverbs REQUIRED)
 
 target_include_directories(
@@ -153,6 +172,7 @@ target_link_libraries(
   PUBLIC
     ${IBVERBS_LIBRARIES}
 )
+ENDIF()
 
 ###############################################################################
 # MPI

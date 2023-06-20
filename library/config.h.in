@@ -1,11 +1,14 @@
 #cmakedefine DEBUG
 #cmakedefine PROFILE
+#cmakedefine USE_GPU_IB
 #cmakedefine USE_DC
 #cmakedefine USE_IPC
 #cmakedefine USE_THREADS
+#cmakedefine USE_SHARED_CTX
 #cmakedefine USE_WF_COAL
 #cmakedefine USE_COHERENT_HEAP
 #cmakedefine USE_CACHED_HEAP
 #cmakedefine USE_MANAGED_HEAP
 #cmakedefine USE_HOST_HEAP
 #cmakedefine USE_HIP_HOST_HEAP
+#cmakedefine USE_FUNC_CALL

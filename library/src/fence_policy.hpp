@@ -20,10 +20,10 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef ROCSHMEM_LIBRARY_SRC_FENCE_POLICY_HPP
-#define ROCSHMEM_LIBRARY_SRC_FENCE_POLICY_HPP
+#ifndef LIBRARY_SRC_FENCE_POLICY_HPP_
+#define LIBRARY_SRC_FENCE_POLICY_HPP_
 
-#include <roc_shmem.hpp>
+#include "include/roc_shmem.hpp"
 
 namespace rocshmem {
 
@@ -31,49 +31,46 @@ namespace rocshmem {
  * @brief Controls the behavior of device code which may need to stall
  */
 class Fence {
-  public:
-    /**
-     * Secondary constructor
-     */
-    __host__ __device__
-    Fence() = default;
+ public:
+  /**
+   * Secondary constructor
+   */
+  __host__ __device__ Fence() = default;
 
-    /**
-     * Primary constructor
-     *
-     * @param[in] options interpreted as a bitfield using bitwise operations
-     */
-    __host__ __device__
-    Fence(long option) {
-        if (option & ROC_SHMEM_CTX_NOSTORE) {
-            flush_ = false;
-        }
+  /**
+   * Primary constructor
+   *
+   * @param[in] options interpreted as a bitfield using bitwise operations
+   */
+  __host__ __device__ Fence(long option) {
+    if (option & ROC_SHMEM_CTX_NOSTORE) {
+      flush_ = false;
     }
+  }
 
-    /**
-     * @brief Wait for outstanding memory operations to complete
-     *
-     * This can be useful when code needs guarantees about visibility
-     * before moving past the flush.
-     *
-     * @return void
-     */
-    __device__ void
-    flush() {
-        if (flush_) {
-            __threadfence();
-        }
+  /**
+   * @brief Wait for outstanding memory operations to complete
+   *
+   * This can be useful when code needs guarantees about visibility
+   * before moving past the flush.
+   *
+   * @return void
+   */
+  __device__ void flush() {
+    if (flush_) {
+      __threadfence();
     }
+  }
 
-  private:
-    /**
-     * @brief Used to toggle flushes behavior on and off
-     *
-     * @note By default, flushing is enabled.
-     */
-    bool flush_ {true};
+ private:
+  /**
+   * @brief Used to toggle flushes behavior on and off
+   *
+   * @note By default, flushing is enabled.
+   */
+  bool flush_{true};
 };
 
 }  // namespace rocshmem
 
-#endif  // ROCSHMEM_LIBRARY_SRC_FENCE_POLICY_HPP
+#endif  // LIBRARY_SRC_FENCE_POLICY_HPP_

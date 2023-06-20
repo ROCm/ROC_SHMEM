@@ -28,35 +28,25 @@
 /******************************************************************************
  * DEVICE TEST KERNEL
  *****************************************************************************/
-__global__ void
-PingPongTest(int loop,
-             int skip,
-             uint64_t *timer,
-             int *r_buf);
+__global__ void PingPongTest(int loop, int skip, uint64_t *timer, int *r_buf);
 
 /******************************************************************************
  * HOST TESTER CLASS
  *****************************************************************************/
-class PingPongTester : public Tester
-{
-  public:
-    explicit PingPongTester(TesterArguments args);
-    virtual ~PingPongTester();
+class PingPongTester : public Tester {
+ public:
+  explicit PingPongTester(TesterArguments args);
+  virtual ~PingPongTester();
 
-  protected:
-    virtual void
-    resetBuffers(uint64_t size) override;
+ protected:
+  virtual void resetBuffers(uint64_t size) override;
 
-    virtual void
-    launchKernel(dim3 gridSize,
-                 dim3 blockSize,
-                 int loop,
-                 uint64_t size) override;
+  virtual void launchKernel(dim3 gridSize, dim3 blockSize, int loop,
+                            uint64_t size) override;
 
-    virtual void
-    verifyResults(uint64_t size) override;
+  virtual void verifyResults(uint64_t size) override;
 
-    int *r_buf;
+  int *r_buf;
 };
 
 #endif

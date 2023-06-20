@@ -28,27 +28,21 @@
 /******************************************************************************
  * HOST TESTER CLASS
  *****************************************************************************/
-class PrimitiveMRTester : public Tester
-{
-  public:
-    explicit PrimitiveMRTester(TesterArguments args);
-    virtual ~PrimitiveMRTester();
+class PrimitiveMRTester : public Tester {
+ public:
+  explicit PrimitiveMRTester(TesterArguments args);
+  virtual ~PrimitiveMRTester();
 
-  protected:
-    virtual void
-    resetBuffers(size_t size) override;
+ protected:
+  virtual void resetBuffers(size_t size) override;
 
-    virtual void
-    launchKernel(dim3 gridSize,
-                 dim3 blockSize,
-                 int loop,
-                 uint64_t size) override;
+  virtual void launchKernel(dim3 gridSize, dim3 blockSize, int loop,
+                            uint64_t size) override;
 
-    virtual void
-    verifyResults(uint64_t size) override;
+  virtual void verifyResults(uint64_t size) override;
 
-    char *s_buf = nullptr;
-    char *r_buf = nullptr;
+  char *s_buf = nullptr;
+  char *r_buf = nullptr;
 };
 
 #endif

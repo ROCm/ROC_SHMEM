@@ -29,12 +29,7 @@ target_sources(
     backend_ro.cpp
     context_ro_device.cpp
     context_ro_host.cpp
-    ro_net_team.cpp
     mpi_transport.cpp
-)
-
-target_include_directories(
-  ${PROJECT_NAME}
-  PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}
+    queue.cpp
+    ro_net_team.cpp
 )

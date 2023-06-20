@@ -21,323 +21,232 @@
  *****************************************************************************/
 
 #include "config.h"  // NOLINT(build/include_subdir)
-
-#include "context_incl.hpp"
-#include "backend_bc.hpp"
-
-#include "util.hpp"
+#include "src/backend_bc.hpp"
+#include "src/context_incl.hpp"
+#include "src/util.hpp"
 
 namespace rocshmem {
 
-__device__
-Context::Context(Backend *handle,
-                 bool shareable)
+__device__ Context::Context(Backend* handle, bool shareable)
     : num_pes(handle->getNumPEs()),
       my_pe(handle->getMyPE()),
-      fence_(shareable) {
-    /*
-     * Device-side context constructor is a work-group collective, so make
-     * sure all the members have their default values before returning.
-     *
-     * Each thread is essentially initializing the same thing right over the
-     * top of each other for all the default values in context.hh (and the
-     * initializer list). It's not incorrect, but it is weird and probably
-     * wasteful.
-     *
-     * TODO: Might consider refactoring so that constructor is always called
-     * from a single thread, and the parallel portion of initialization can be
-     * a separate function. This requires reworking all the derived classes
-     * since their constructors actually make use of all the threads to boost
-     * performance.
-     */
-    __syncthreads();
+      fence_(shareable),
+      dev_mtx_(shareable) {
+  /*
+   * Device-side context constructor is a work-group collective, so make
+   * sure all the members have their default values before returning.
+   *
+   * Each thread is essentially initializing the same thing right over the
+   * top of each other for all the default values in context.hh (and the
+   * initializer list). It's not incorrect, but it is weird and probably
+   * wasteful.
+   *
+   * TODO: Might consider refactoring so that constructor is always called
+   * from a single thread, and the parallel portion of initialization can be
+   * a separate function. This requires reworking all the derived classes
+   * since their constructors actually make use of all the threads to boost
+   * performance.
+   */
+  __syncthreads();
 }
 
 /******************************************************************************
  ********************** CONTEXT DISPATCH IMPLEMENTATIONS **********************
  *****************************************************************************/
 
-__device__ void
-Context::threadfence_system() {
-    DISPATCH(threadfence_system());
+__device__ void Context::threadfence_system() {
+  DISPATCH(threadfence_system());
 }
 
-__device__ void
-Context::ctx_create() {
-    if (is_thread_zero_in_block()) {
-        ctxStats.incStat(NUM_CREATE);
-    }
+__device__ void Context::ctx_create() {
+  if (is_thread_zero_in_block()) {
+    ctxStats.incStat(NUM_CREATE);
+  }
 
-    DISPATCH(ctx_create());
+  DISPATCH(ctx_create());
 }
 
-__device__ void
-Context::ctx_destroy() {
-    if (is_thread_zero_in_block()) {
-        ctxStats.incStat(NUM_FINALIZE);
-        device_backend_proxy->globalStats.accumulateStats(ctxStats);
-    }
+__device__ void Context::ctx_destroy() {
+  if (is_thread_zero_in_block()) {
+    ctxStats.incStat(NUM_FINALIZE);
+    device_backend_proxy->globalStats.accumulateStats(ctxStats);
+  }
 
-    DISPATCH(ctx_destroy());
+  DISPATCH(ctx_destroy());
 }
 
-__device__ void
-Context::putmem(void* dest,
-                const void* source,
-                size_t nelems,
-                int pe) {
-    if (nelems == 0) {
-        return;
-    }
+__device__ void Context::putmem(void* dest, const void* source, size_t nelems,
+                                int pe) {
+  if (nelems == 0) {
+    return;
+  }
 
-    ctxStats.incStat(NUM_PUT);
+  ctxStats.incStat(NUM_PUT);
 
-    DISPATCH(putmem(dest, source, nelems, pe));
+  DISPATCH(putmem(dest, source, nelems, pe));
 }
 
-__device__ void
-Context::getmem(void* dest,
-                const void* source,
-                size_t nelems,
-                int pe) {
-    if (nelems == 0) {
-        return;
-    }
+__device__ void Context::getmem(void* dest, const void* source, size_t nelems,
+                                int pe) {
+  if (nelems == 0) {
+    return;
+  }
 
-    ctxStats.incStat(NUM_GET);
+  ctxStats.incStat(NUM_GET);
 
-    DISPATCH(getmem(dest, source, nelems, pe));
+  DISPATCH(getmem(dest, source, nelems, pe));
 }
 
-__device__ void
-Context::putmem_nbi(void* dest,
-                    const void* source,
-                    size_t nelems,
-                    int pe) {
-    if (nelems == 0) {
-        return;
-    }
+__device__ void Context::putmem_nbi(void* dest, const void* source,
+                                    size_t nelems, int pe) {
+  if (nelems == 0) {
+    return;
+  }
 
-    ctxStats.incStat(NUM_PUT_NBI);
+  ctxStats.incStat(NUM_PUT_NBI);
 
-    DISPATCH(putmem_nbi(dest, source, nelems, pe));
+  DISPATCH(putmem_nbi(dest, source, nelems, pe));
 }
 
-__device__ void
-Context::getmem_nbi(void* dest,
-                    const void* source,
-                    size_t size,
-                    int pe) {
-    if (size == 0) {
-        return;
-    }
+__device__ void Context::getmem_nbi(void* dest, const void* source, size_t size,
+                                    int pe) {
+  if (size == 0) {
+    return;
+  }
 
-    ctxStats.incStat(NUM_GET_NBI);
+  ctxStats.incStat(NUM_GET_NBI);
 
-    DISPATCH(getmem_nbi(dest, source, size, pe));
+  DISPATCH(getmem_nbi(dest, source, size, pe));
 }
 
-__device__ void
-Context::fence() {
-    ctxStats.incStat(NUM_FENCE);
+__device__ void Context::fence() {
+  ctxStats.incStat(NUM_FENCE);
 
-    DISPATCH(fence());
+  DISPATCH(fence());
 }
 
-__device__ void
-Context::fence(int pe) {
-    ctxStats.incStat(NUM_FENCE);
+__device__ void Context::fence(int pe) {
+  ctxStats.incStat(NUM_FENCE);
 
-    DISPATCH(fence(pe));
+  DISPATCH(fence(pe));
 }
 
+__device__ void Context::quiet() {
+  ctxStats.incStat(NUM_QUIET);
 
-__device__ void
-Context::quiet() {
-    ctxStats.incStat(NUM_QUIET);
-
-    DISPATCH(quiet());
+  DISPATCH(quiet());
 }
 
-__device__ void*
-Context::shmem_ptr(const void* dest,
-                   int pe) {
-    ctxStats.incStat(NUM_SHMEM_PTR);
+__device__ void* Context::shmem_ptr(const void* dest, int pe) {
+  ctxStats.incStat(NUM_SHMEM_PTR);
 
-    DISPATCH_RET_PTR(shmem_ptr(dest, pe));
+  DISPATCH_RET_PTR(shmem_ptr(dest, pe));
 }
 
-__device__ void
-Context::barrier_all() {
-    ctxStats.incStat(NUM_BARRIER_ALL);
+__device__ void Context::barrier_all() {
+  ctxStats.incStat(NUM_BARRIER_ALL);
 
-    DISPATCH(barrier_all());
+  DISPATCH(barrier_all());
 }
 
-__device__ void
-Context::sync_all() {
-    ctxStats.incStat(NUM_SYNC_ALL);
+__device__ void Context::sync_all() {
+  ctxStats.incStat(NUM_SYNC_ALL);
 
-    DISPATCH(sync_all());
+  DISPATCH(sync_all());
 }
 
-__device__ void
-Context::sync(roc_shmem_team_t team) {
-    ctxStats.incStat(NUM_SYNC_ALL);
+__device__ void Context::sync(roc_shmem_team_t team) {
+  ctxStats.incStat(NUM_SYNC_ALL);
 
-    DISPATCH(sync(team));
+  DISPATCH(sync(team));
 }
 
-__device__ int64_t
-Context::amo_fetch_add(void* dst,
-                       int64_t value,
-                       int64_t cond,
-                       int pe) {
-    ctxStats.incStat(NUM_ATOMIC_FADD);
+__device__ void Context::putmem_wg(void* dest, const void* source,
+                                   size_t nelems, int pe) {
+  if (nelems == 0) {
+    return;
+  }
 
-    DISPATCH_RET(amo_fetch_add(dst, value, cond, pe));
+  ctxStats.incStat(NUM_PUT_WG);
+
+  DISPATCH(putmem_wg(dest, source, nelems, pe));
 }
 
-__device__ void
-Context::amo_add(void* dst,
-                 int64_t value,
-                 int64_t cond,
-                 int pe) {
-    ctxStats.incStat(NUM_ATOMIC_ADD);
+__device__ void Context::getmem_wg(void* dest, const void* source,
+                                   size_t nelems, int pe) {
+  if (nelems == 0) {
+    return;
+  }
 
-    DISPATCH(amo_add(dst, value, cond, pe));
+  ctxStats.incStat(NUM_GET_WG);
+
+  DISPATCH(getmem_wg(dest, source, nelems, pe));
 }
 
-__device__ int64_t
-Context::amo_fetch_cas(void* dst,
-                       int64_t value,
-                       int64_t cond,
-                       int pe) {
-    ctxStats.incStat(NUM_ATOMIC_FCSWAP);
+__device__ void Context::putmem_nbi_wg(void* dest, const void* source,
+                                       size_t nelems, int pe) {
+  if (nelems == 0) {
+    return;
+  }
 
-    DISPATCH_RET(amo_fetch_cas(dst, value, cond, pe));
+  ctxStats.incStat(NUM_PUT_NBI_WG);
+
+  DISPATCH(putmem_nbi_wg(dest, source, nelems, pe));
 }
 
-__device__ void
-Context::amo_cas(void* dst,
-                 int64_t value,
-                 int64_t cond,
-                 int pe) {
-    ctxStats.incStat(NUM_ATOMIC_CSWAP);
+__device__ void Context::getmem_nbi_wg(void* dest, const void* source,
+                                       size_t size, int pe) {
+  if (size == 0) {
+    return;
+  }
 
-    DISPATCH(amo_cas(dst, value, cond, pe));
+  ctxStats.incStat(NUM_GET_NBI_WG);
+
+  DISPATCH(getmem_nbi_wg(dest, source, size, pe));
 }
 
-__device__ void
-Context::putmem_wg(void* dest,
-                   const void* source,
-                   size_t nelems,
-                   int pe) {
-    if (nelems == 0) {
-        return;
-    }
+__device__ void Context::putmem_wave(void* dest, const void* source,
+                                     size_t nelems, int pe) {
+  if (nelems == 0) {
+    return;
+  }
 
-    ctxStats.incStat(NUM_PUT_WG);
+  ctxStats.incStat(NUM_PUT_WAVE);
 
-    DISPATCH_NO_LOCK(putmem_wg(dest, source, nelems, pe));
+  DISPATCH(putmem_wave(dest, source, nelems, pe));
 }
 
-__device__ void
-Context::getmem_wg(void* dest,
-                   const void* source,
-                   size_t nelems,
-                   int pe) {
-    if (nelems == 0) {
-        return;
-    }
+__device__ void Context::getmem_wave(void* dest, const void* source,
+                                     size_t nelems, int pe) {
+  if (nelems == 0) {
+    return;
+  }
 
-    ctxStats.incStat(NUM_GET_WG);
+  ctxStats.incStat(NUM_GET_WAVE);
 
-    DISPATCH_NO_LOCK(getmem_wg(dest, source, nelems, pe));
+  DISPATCH(getmem_wave(dest, source, nelems, pe));
 }
 
-__device__ void
-Context::putmem_nbi_wg(void* dest,
-                       const void* source,
-                       size_t nelems,
-                       int pe) {
-    if (nelems == 0) {
-        return;
-    }
+__device__ void Context::putmem_nbi_wave(void* dest, const void* source,
+                                         size_t nelems, int pe) {
+  if (nelems == 0) {
+    return;
+  }
 
-    ctxStats.incStat(NUM_PUT_NBI_WG);
+  ctxStats.incStat(NUM_PUT_NBI_WAVE);
 
-    DISPATCH_NO_LOCK(putmem_nbi_wg(dest, source, nelems, pe));
+  DISPATCH(putmem_nbi_wave(dest, source, nelems, pe));
 }
 
-__device__ void
-Context::getmem_nbi_wg(void* dest,
-                       const void* source,
-                       size_t size,
-                       int pe) {
-    if (size == 0) {
-        return;
-    }
+__device__ void Context::getmem_nbi_wave(void* dest, const void* source,
+                                         size_t size, int pe) {
+  if (size == 0) {
+    return;
+  }
 
-    ctxStats.incStat(NUM_GET_NBI_WG);
+  ctxStats.incStat(NUM_GET_NBI_WAVE);
 
-    DISPATCH_NO_LOCK(getmem_nbi_wg(dest, source, size, pe));
-}
-
-__device__ void
-Context::putmem_wave(void* dest,
-                     const void* source,
-                     size_t nelems,
-                     int pe) {
-    if (nelems == 0) {
-        return;
-    }
-
-    ctxStats.incStat(NUM_PUT_WAVE);
-
-    DISPATCH(putmem_wave(dest, source, nelems, pe));
-}
-
-__device__ void
-Context::getmem_wave(void* dest,
-                     const void* source,
-                     size_t nelems,
-                     int pe) {
-    if (nelems == 0) {
-        return;
-    }
-
-    ctxStats.incStat(NUM_GET_WAVE);
-
-    DISPATCH(getmem_wave(dest, source, nelems, pe));
-}
-
-__device__ void
-Context::putmem_nbi_wave(void* dest,
-                         const void* source,
-                         size_t nelems,
-                         int pe) {
-    if (nelems == 0) {
-        return;
-    }
-
-    ctxStats.incStat(NUM_PUT_NBI_WAVE);
-
-    DISPATCH(putmem_nbi_wave(dest, source, nelems, pe));
-}
-
-__device__ void
-Context::getmem_nbi_wave(void* dest,
-                         const void* source,
-                         size_t size,
-                         int pe) {
-    if (size == 0) {
-        return;
-    }
-
-    ctxStats.incStat(NUM_GET_NBI_WAVE);
-
-    DISPATCH(getmem_nbi_wave(dest, source, size, pe));
+  DISPATCH(getmem_nbi_wave(dest, source, size, pe));
 }
 
 }  // namespace rocshmem

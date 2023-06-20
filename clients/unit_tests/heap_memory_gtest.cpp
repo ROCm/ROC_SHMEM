@@ -24,19 +24,16 @@
 
 using namespace rocshmem;
 
-TEST(HeapMemoryTest, size_constructor)
-{
-    HeapMemory<HIPAllocator> heap_mem {2048};
-    ASSERT_EQ(heap_mem.get_size(), 2048);
-    ASSERT_NE(heap_mem.get_ptr(), nullptr);
+TEST(HeapMemoryTest, size_constructor) {
+  HeapMemory<HIPAllocator> heap_mem{2048};
+  ASSERT_EQ(heap_mem.get_size(), 2048);
+  ASSERT_NE(heap_mem.get_ptr(), nullptr);
 }
 
-TEST_F(HeapMemoryTestFixture, size_check)
-{
-    ASSERT_EQ(heap_mem_.get_size(), 1 << 30);
+TEST_F(HeapMemoryTestFixture, size_check) {
+  ASSERT_EQ(heap_mem_.get_size(), 1 << 30);
 }
 
-TEST_F(HeapMemoryTestFixture, ptr_check)
-{
-    ASSERT_NE(heap_mem_.get_ptr(), nullptr);
+TEST_F(HeapMemoryTestFixture, ptr_check) {
+  ASSERT_NE(heap_mem_.get_ptr(), nullptr);
 }

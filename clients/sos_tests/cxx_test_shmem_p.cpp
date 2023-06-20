@@ -30,43 +30,44 @@
  * SOFTWARE.
  */
 
-#include <stdlib.h>
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
+
 #include <roc_shmem.hpp>
 
 using namespace rocshmem;
 
-#define TEST_SHMEM_P(USE_CTX, TYPE, TYPENAME)                   \
-  do {                                                          \
-    TYPE *remote;                                         \
-    remote = (TYPE*) roc_shmem_malloc(sizeof(TYPE));            \
-    const int mype = roc_shmem_my_pe();                         \
-    const int npes = roc_shmem_n_pes();                         \
-    if (USE_CTX)                                                \
-        roc_shmem_ctx_##TYPENAME##_p(ROC_SHMEM_CTX_DEFAULT,     \
-               remote, (TYPE)mype, (mype + 1) % npes);         \
-    else                                                        \
-        roc_shmem_##TYPENAME##_p(remote, (TYPE)mype,           \
-                                     (mype + 1) % npes);        \
-    roc_shmem_barrier_all();                                    \
-    if ((*remote) != (TYPE)((mype + npes - 1) % npes)) {           \
-      printf("PE %i received incorrect value with "             \
-             "TEST_SHMEM_P(%d, %s)\n", mype,                    \
-             (int)(USE_CTX), #TYPE);                            \
-      rc = EXIT_FAILURE;                                        \
-      roc_shmem_global_exit(1);                                 \
-    }                                                           \
+#define TEST_SHMEM_P(USE_CTX, TYPE, TYPENAME)                                 \
+  do {                                                                        \
+    TYPE* remote;                                                             \
+    remote = (TYPE*)roc_shmem_malloc(sizeof(TYPE));                           \
+    const int mype = roc_shmem_my_pe();                                       \
+    const int npes = roc_shmem_n_pes();                                       \
+    if (USE_CTX)                                                              \
+      roc_shmem_ctx_##TYPENAME##_p(ROC_SHMEM_CTX_DEFAULT, remote, (TYPE)mype, \
+                                   (mype + 1) % npes);                        \
+    else                                                                      \
+      roc_shmem_##TYPENAME##_p(remote, (TYPE)mype, (mype + 1) % npes);        \
+    roc_shmem_barrier_all();                                                  \
+    if ((*remote) != (TYPE)((mype + npes - 1) % npes)) {                      \
+      printf(                                                                 \
+          "PE %i received incorrect value with "                              \
+          "TEST_SHMEM_P(%d, %s)\n",                                           \
+          mype, (int)(USE_CTX), #TYPE);                                       \
+      rc = EXIT_FAILURE;                                                      \
+      roc_shmem_global_exit(1);                                               \
+    }                                                                         \
   } while (false)
 
 int main(int argc, char* argv[]) {
-  roc_shmem_init(1);
+  roc_shmem_init();
 
   int rc = EXIT_SUCCESS;
   TEST_SHMEM_P(0, float, float);
   TEST_SHMEM_P(0, double, double);
-  //TEST_SHMEM_P(0, long double, longdouble);
+  // TEST_SHMEM_P(0, long double, longdouble);
   TEST_SHMEM_P(0, char, char);
   TEST_SHMEM_P(0, signed char, schar);
   TEST_SHMEM_P(0, short, short);
@@ -78,20 +79,20 @@ int main(int argc, char* argv[]) {
   TEST_SHMEM_P(0, unsigned int, uint);
   TEST_SHMEM_P(0, unsigned long, ulong);
   TEST_SHMEM_P(0, unsigned long long, ulonglong);
-  //TEST_SHMEM_P(0, int8_t, int8);
-  //TEST_SHMEM_P(0, int16_t, int16);
-  //TEST_SHMEM_P(0, int32_t, int32);
-  //TEST_SHMEM_P(0, int64_t, int64);
-  //TEST_SHMEM_P(0, uint8_t, uint8);
-  //TEST_SHMEM_P(0, uint16_t, uint16);
-  //TEST_SHMEM_P(0, uint32_t, uint32);
-  //TEST_SHMEM_P(0, uint64_t, uint64);
-  //TEST_SHMEM_P(0, size_t, size);
-  //TEST_SHMEM_P(0, ptrdiff_t, ptrdiff);
+  // TEST_SHMEM_P(0, int8_t, int8);
+  // TEST_SHMEM_P(0, int16_t, int16);
+  // TEST_SHMEM_P(0, int32_t, int32);
+  // TEST_SHMEM_P(0, int64_t, int64);
+  // TEST_SHMEM_P(0, uint8_t, uint8);
+  // TEST_SHMEM_P(0, uint16_t, uint16);
+  // TEST_SHMEM_P(0, uint32_t, uint32);
+  // TEST_SHMEM_P(0, uint64_t, uint64);
+  // TEST_SHMEM_P(0, size_t, size);
+  // TEST_SHMEM_P(0, ptrdiff_t, ptrdiff);
 
   TEST_SHMEM_P(1, float, float);
   TEST_SHMEM_P(1, double, double);
-  //TEST_SHMEM_P(1, long double, longdouble);
+  // TEST_SHMEM_P(1, long double, longdouble);
   TEST_SHMEM_P(1, char, char);
   TEST_SHMEM_P(1, signed char, schar);
   TEST_SHMEM_P(1, short, short);
@@ -103,16 +104,16 @@ int main(int argc, char* argv[]) {
   TEST_SHMEM_P(1, unsigned int, uint);
   TEST_SHMEM_P(1, unsigned long, ulong);
   TEST_SHMEM_P(1, unsigned long long, ulonglong);
-  //TEST_SHMEM_P(1, int8_t, int8);
-  //TEST_SHMEM_P(1, int16_t, int16);
-  //TEST_SHMEM_P(1, int32_t, int32);
-  //TEST_SHMEM_P(1, int64_t, int64);
-  //TEST_SHMEM_P(1, uint8_t, uint8);
-  //TEST_SHMEM_P(1, uint16_t, uint16);
-  //TEST_SHMEM_P(1, uint32_t, uint32);
-  //TEST_SHMEM_P(1, uint64_t, uint64);
-  //TEST_SHMEM_P(1, size_t, size);
-  //TEST_SHMEM_P(1, ptrdiff_t, ptrdiff);
+  // TEST_SHMEM_P(1, int8_t, int8);
+  // TEST_SHMEM_P(1, int16_t, int16);
+  // TEST_SHMEM_P(1, int32_t, int32);
+  // TEST_SHMEM_P(1, int64_t, int64);
+  // TEST_SHMEM_P(1, uint8_t, uint8);
+  // TEST_SHMEM_P(1, uint16_t, uint16);
+  // TEST_SHMEM_P(1, uint32_t, uint32);
+  // TEST_SHMEM_P(1, uint64_t, uint64);
+  // TEST_SHMEM_P(1, size_t, size);
+  // TEST_SHMEM_P(1, ptrdiff_t, ptrdiff);
 
   roc_shmem_finalize();
   return rc;

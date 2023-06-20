@@ -20,10 +20,11 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef ROCSHMEM_LIBRARY_SRC_GPU_IB_RO_NET_TEAM_HPP
-#define ROCSHMEM_LIBRARY_SRC_GPU_IB_RO_NET_TEAM_HPP
+#ifndef LIBRARY_SRC_REVERSE_OFFLOAD_RO_NET_TEAM_HPP_
+#define LIBRARY_SRC_REVERSE_OFFLOAD_RO_NET_TEAM_HPP_
 
-#include "team.hpp"
+#include "src/team.hpp"
+
 #define MAX_ATA_BUFF_SIZE (1024 * 1024 * 128)
 
 namespace rocshmem {
@@ -32,18 +33,15 @@ class Backend;
 
 class ROTeam : public Team {
  public:
-    ROTeam(Backend* handle,
-           TeamInfo* team_info_wrt_parent,
-           TeamInfo* team_info_wrt_world,
-           int num_pes,
-           int my_pe,
-           MPI_Comm team_comm);
+  ROTeam(Backend* handle, TeamInfo* team_info_wrt_parent,
+         TeamInfo* team_info_wrt_world, int num_pes, int my_pe,
+         MPI_Comm team_comm);
 
-    virtual ~ROTeam();
+  virtual ~ROTeam();
 
-    void *ata_buffer;
+  void* ata_buffer;
 };
 
 }  // namespace rocshmem
 
-#endif  // ROCSHMEM_LIBRARY_SRC_GPU_IB_RO_NET_TEAM_HPP
+#endif  // LIBRARY_SRC_REVERSE_OFFLOAD_RO_NET_TEAM_HPP_

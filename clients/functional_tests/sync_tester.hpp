@@ -28,24 +28,18 @@
 /******************************************************************************
  * HOST TESTER CLASS
  *****************************************************************************/
-class SyncTester : public Tester
-{
-  public:
-    explicit SyncTester(TesterArguments args);
-    virtual ~SyncTester();
+class SyncTester : public Tester {
+ public:
+  explicit SyncTester(TesterArguments args);
+  virtual ~SyncTester();
 
-  protected:
-    virtual void
-    resetBuffers(uint64_t size) override;
+ protected:
+  virtual void resetBuffers(uint64_t size) override;
 
-    virtual void
-    launchKernel(dim3 gridSize,
-                 dim3 blockSize,
-                 int loop,
-                 uint64_t size) override;
+  virtual void launchKernel(dim3 gridSize, dim3 blockSize, int loop,
+                            uint64_t size) override;
 
-    virtual void
-    verifyResults(uint64_t size) override;
+  virtual void verifyResults(uint64_t size) override;
 };
 
 #endif

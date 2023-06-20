@@ -20,34 +20,30 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#include "team_tracker.hpp"
+#include "src/team_tracker.hpp"
 
 #include <cstdlib>
 
 namespace rocshmem {
 
 TeamTracker::TeamTracker() {
-    char* value {nullptr};
-    if ((value = getenv("ROC_SHMEM_MAX_NUM_TEAMS"))) {
-        max_num_teams_ = atoi(value);
-    }
+  char* value{nullptr};
+  if ((value = getenv("ROC_SHMEM_MAX_NUM_TEAMS"))) {
+    max_num_teams_ = atoi(value);
+  }
 }
 
-void
-TeamTracker::track(roc_shmem_team_t team) {
-    if (team == ROC_SHMEM_TEAM_INVALID) {
-        return;
-    }
-    teams_.push_back(team);
+void TeamTracker::track(roc_shmem_team_t team) {
+  if (team == ROC_SHMEM_TEAM_INVALID) {
+    return;
+  }
+  teams_.push_back(team);
 }
 
-void
-TeamTracker::untrack(roc_shmem_team_t team) {
-    auto it {std::find(teams_.begin(),
-                       teams_.end(),
-                       team)};
-    assert(it != teams_.end());
-    teams_.erase(it);
+void TeamTracker::untrack(roc_shmem_team_t team) {
+  auto it{std::find(teams_.begin(), teams_.end(), team)};
+  assert(it != teams_.end());
+  teams_.erase(it);
 }
 
 }  // namespace rocshmem

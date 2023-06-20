@@ -20,204 +20,231 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef ROCSHMEM_LIBRARY_SRC_CONTEXT_TMPL_HOST_HPP
-#define ROCSHMEM_LIBRARY_SRC_CONTEXT_TMPL_HOST_HPP
+#ifndef LIBRARY_SRC_CONTEXT_TMPL_HOST_HPP_
+#define LIBRARY_SRC_CONTEXT_TMPL_HOST_HPP_
 
-#include "backend_type.hpp"
-#include "context_ib_host.hpp"
-#include "context_ro_host.hpp"
-
+#include "config.h"  // NOLINT(build/include_subdir)
+#include "src/backend_type.hpp"
+#ifdef USE_GPU_IB
+#include "src/gpu_ib/context_ib_host.hpp"
+#else
+#include "src/reverse_offload/context_ro_host.hpp"
+#endif
 namespace rocshmem {
 
 template <typename T>
-__host__ void
-Context::p(T *dest,
-           T value,
-           int pe) {
-    ctxHostStats.incStat(NUM_HOST_P);
+__host__ void Context::p(T *dest, T value, int pe) {
+  ctxHostStats.incStat(NUM_HOST_P);
 
-    HOST_DISPATCH(p(dest, value, pe));
+  HOST_DISPATCH(p(dest, value, pe));
 }
 
 template <typename T>
-__host__ T
-Context::g(const T *source,
-           int pe) {
-    ctxHostStats.incStat(NUM_HOST_G);
+__host__ T Context::g(const T *source, int pe) {
+  ctxHostStats.incStat(NUM_HOST_G);
 
-    HOST_DISPATCH_RET(g(source, pe));
+  HOST_DISPATCH_RET(g(source, pe));
 }
 
 template <typename T>
-__host__ void
-Context::put(T *dest,
-             const T *source,
-             size_t nelems,
-             int pe) {
-    if (nelems == 0) {
-        return;
-    }
+__host__ void Context::put(T *dest, const T *source, size_t nelems, int pe) {
+  if (nelems == 0) {
+    return;
+  }
 
-    ctxHostStats.incStat(NUM_HOST_PUT);
+  ctxHostStats.incStat(NUM_HOST_PUT);
 
-    HOST_DISPATCH(put(dest, source, nelems, pe));
+  HOST_DISPATCH(put(dest, source, nelems, pe));
 }
 
 template <typename T>
-__host__ void
-Context::get(T *dest,
-             const T *source,
-             size_t nelems,
-             int pe) {
-    if (nelems == 0) {
-        return;
-    }
+__host__ void Context::get(T *dest, const T *source, size_t nelems, int pe) {
+  if (nelems == 0) {
+    return;
+  }
 
-    ctxHostStats.incStat(NUM_HOST_GET);
+  ctxHostStats.incStat(NUM_HOST_GET);
 
-    HOST_DISPATCH(get(dest, source, nelems, pe));
+  HOST_DISPATCH(get(dest, source, nelems, pe));
 }
 
 template <typename T>
-__host__ void
-Context::put_nbi(T *dest,
-                 const T *source,
-                 size_t nelems,
-                 int pe) {
-    if (nelems == 0) {
-        return;
-    }
+__host__ void Context::put_nbi(T *dest, const T *source, size_t nelems,
+                               int pe) {
+  if (nelems == 0) {
+    return;
+  }
 
-    ctxHostStats.incStat(NUM_HOST_PUT_NBI);
+  ctxHostStats.incStat(NUM_HOST_PUT_NBI);
 
-    HOST_DISPATCH(put_nbi(dest, source, nelems, pe));
+  HOST_DISPATCH(put_nbi(dest, source, nelems, pe));
 }
 
 template <typename T>
-__host__ void
-Context::get_nbi(T *dest,
-                 const T *source,
-                 size_t nelems,
-                 int pe) {
-    if (nelems == 0) {
-        return;
-    }
+__host__ void Context::get_nbi(T *dest, const T *source, size_t nelems,
+                               int pe) {
+  if (nelems == 0) {
+    return;
+  }
 
-    ctxHostStats.incStat(NUM_HOST_GET_NBI);
+  ctxHostStats.incStat(NUM_HOST_GET_NBI);
 
-    HOST_DISPATCH(get_nbi(dest, source, nelems, pe));
+  HOST_DISPATCH(get_nbi(dest, source, nelems, pe));
 }
 
 template <typename T>
-__host__ void
-Context::broadcast(T *dest,
-                   const T *source,
-                   int nelems,
-                   int pe_root,
-                   int pe_start,
-                   int log_pe_stride,
-                   int pe_size,
-                   long *p_sync) {  // NOLINT(runtime/int)
-    if (nelems == 0) {
-        return;
-    }
+__host__ T Context::amo_fetch_add(void *dst, T value, int pe) {
+  ctxHostStats.incStat(NUM_HOST_ATOMIC_FADD);
 
-    ctxHostStats.incStat(NUM_HOST_BROADCAST);
-
-    HOST_DISPATCH(broadcast<T>(dest,
-                          source,
-                          nelems,
-                          pe_root,
-                          pe_start,
-                          log_pe_stride,
-                          pe_size,
-                          p_sync));
+  HOST_DISPATCH_RET(amo_fetch_add(dst, value, pe));
 }
 
 template <typename T>
-__host__ void
-Context::broadcast(roc_shmem_team_t team,
-                   T *dest,
-                   const T *source,
-                   int nelems,
-                   int pe_root) {  // NOLINT(runtime/int)
-    if (nelems == 0) {
-        return;
-    }
+__host__ void Context::amo_add(void *dst, T value, int pe) {
+  ctxHostStats.incStat(NUM_HOST_ATOMIC_ADD);
 
-    ctxHostStats.incStat(NUM_HOST_BROADCAST);
+  HOST_DISPATCH(amo_add(dst, value, pe));
+}
 
-    HOST_DISPATCH(broadcast<T>(team,
-                               dest,
-                               source,
-                               nelems,
-                               pe_root));
+template <typename T>
+__host__ void Context::amo_set(void *dst, T value, int pe) {
+  ctxHostStats.incStat(NUM_HOST_ATOMIC_ADD);
+
+  HOST_DISPATCH(amo_set(dst, value, pe));
+}
+
+template <typename T>
+__host__ T Context::amo_swap(void *dst, T value, int pe) {
+  ctxHostStats.incStat(NUM_HOST_ATOMIC_ADD);
+
+  HOST_DISPATCH_RET(amo_swap(dst, value, pe));
+}
+
+template <typename T>
+__host__ T Context::amo_fetch_and(void *dst, T value, int pe) {
+  ctxHostStats.incStat(NUM_HOST_ATOMIC_FETCH_AND);
+
+  HOST_DISPATCH_RET(amo_fetch_and(dst, value, pe));
+}
+
+template <typename T>
+__host__ void Context::amo_and(void *dst, T value, int pe) {
+  ctxHostStats.incStat(NUM_HOST_ATOMIC_AND);
+
+  HOST_DISPATCH(amo_and(dst, value, pe));
+}
+
+template <typename T>
+__host__ T Context::amo_fetch_or(void *dst, T value, int pe) {
+  ctxHostStats.incStat(NUM_HOST_ATOMIC_FETCH_OR);
+
+  HOST_DISPATCH_RET(amo_fetch_or(dst, value, pe));
+}
+
+template <typename T>
+__host__ void Context::amo_or(void *dst, T value, int pe) {
+  ctxHostStats.incStat(NUM_HOST_ATOMIC_OR);
+
+  HOST_DISPATCH(amo_or(dst, value, pe));
+}
+
+template <typename T>
+__host__ T Context::amo_fetch_xor(void *dst, T value, int pe) {
+  ctxHostStats.incStat(NUM_HOST_ATOMIC_FETCH_XOR);
+
+  HOST_DISPATCH_RET(amo_fetch_xor(dst, value, pe));
+}
+
+template <typename T>
+__host__ void Context::amo_xor(void *dst, T value, int pe) {
+  ctxHostStats.incStat(NUM_HOST_ATOMIC_XOR);
+
+  HOST_DISPATCH(amo_xor(dst, value, pe));
+}
+
+template <typename T>
+__host__ T Context::amo_fetch_cas(void *dst, T value, T cond, int pe) {
+  ctxHostStats.incStat(NUM_HOST_ATOMIC_FCSWAP);
+
+  HOST_DISPATCH_RET(amo_fetch_cas(dst, value, cond, pe));
+}
+
+template <typename T>
+__host__ void Context::amo_cas(void *dst, T value, T cond, int pe) {
+  ctxHostStats.incStat(NUM_HOST_ATOMIC_CSWAP);
+
+  HOST_DISPATCH(amo_cas(dst, value, cond, pe));
+}
+
+template <typename T>
+__host__ void Context::broadcast(T *dest, const T *source, int nelems,
+                                 int pe_root, int pe_start, int log_pe_stride,
+                                 int pe_size,
+                                 long *p_sync) {  // NOLINT(runtime/int)
+  if (nelems == 0) {
+    return;
+  }
+
+  ctxHostStats.incStat(NUM_HOST_BROADCAST);
+
+  HOST_DISPATCH(broadcast<T>(dest, source, nelems, pe_root, pe_start,
+                             log_pe_stride, pe_size, p_sync));
+}
+
+template <typename T>
+__host__ void Context::broadcast(roc_shmem_team_t team, T *dest,
+                                 const T *source, int nelems,
+                                 int pe_root) {  // NOLINT(runtime/int)
+  if (nelems == 0) {
+    return;
+  }
+
+  ctxHostStats.incStat(NUM_HOST_BROADCAST);
+
+  HOST_DISPATCH(broadcast<T>(team, dest, source, nelems, pe_root));
 }
 
 template <typename T, ROC_SHMEM_OP Op>
-__host__ void
-Context::to_all(T *dest,
-                const T *source,
-                int nreduce,
-                int PE_start,
-                int logPE_stride,
-                int PE_size,
-                T *pWrk,
-                long *pSync) {  // NOLINT(runtime/int)
-    if (nreduce == 0) {
-        return;
-    }
+__host__ void Context::to_all(T *dest, const T *source, int nreduce,
+                              int PE_start, int logPE_stride, int PE_size,
+                              T *pWrk,
+                              long *pSync) {  // NOLINT(runtime/int)
+  if (nreduce == 0) {
+    return;
+  }
 
-    ctxHostStats.incStat(NUM_HOST_TO_ALL);
+  ctxHostStats.incStat(NUM_HOST_TO_ALL);
 
-    HOST_DISPATCH(to_all<PAIR(T, Op)>(dest,
-                                      source,
-                                      nreduce,
-                                      PE_start,
-                                      logPE_stride,
-                                      PE_size,
-                                      pWrk,
-                                      pSync));
+  HOST_DISPATCH(to_all<PAIR(T, Op)>(dest, source, nreduce, PE_start,
+                                    logPE_stride, PE_size, pWrk, pSync));
 }
 
 template <typename T, ROC_SHMEM_OP Op>
-__host__ void
-Context::to_all(roc_shmem_team_t team,
-                T *dest,
-                const T *source,
-                int nreduce) {  // NOLINT(runtime/int)
-    if (nreduce == 0) {
-        return;
-    }
+__host__ void Context::to_all(roc_shmem_team_t team, T *dest, const T *source,
+                              int nreduce) {  // NOLINT(runtime/int)
+  if (nreduce == 0) {
+    return;
+  }
 
-    ctxHostStats.incStat(NUM_HOST_TO_ALL);
+  ctxHostStats.incStat(NUM_HOST_TO_ALL);
 
-    HOST_DISPATCH(to_all<PAIR(T, Op)>(team,
-                                      dest,
-                                      source,
-                                      nreduce));
+  HOST_DISPATCH(to_all<PAIR(T, Op)>(team, dest, source, nreduce));
 }
 
 template <typename T>
-__host__ void
-Context::wait_until(T *ptr,
-                    roc_shmem_cmps cmp,
-                    T val) {
-    ctxHostStats.incStat(NUM_HOST_WAIT_UNTIL);
+__host__ void Context::wait_until(T *ptr, roc_shmem_cmps cmp, T val) {
+  ctxHostStats.incStat(NUM_HOST_WAIT_UNTIL);
 
-    HOST_DISPATCH(wait_until<T>(ptr, cmp, val));
+  HOST_DISPATCH(wait_until<T>(ptr, cmp, val));
 }
 
 template <typename T>
-__host__ int
-Context::test(T *ptr,
-              roc_shmem_cmps cmp,
-              T val) {
-    ctxHostStats.incStat(NUM_HOST_TEST);
+__host__ int Context::test(T *ptr, roc_shmem_cmps cmp, T val) {
+  ctxHostStats.incStat(NUM_HOST_TEST);
 
-    HOST_DISPATCH_RET(test<T>(ptr, cmp, val));
+  HOST_DISPATCH_RET(test<T>(ptr, cmp, val));
 }
 
-} // namespace rocshmem
+}  // namespace rocshmem
 
-#endif  // ROCSHMEM_LIBRARY_SRC_CONTEXT_TMPL_HOST_HPP
+#endif  // LIBRARY_SRC_CONTEXT_TMPL_HOST_HPP_

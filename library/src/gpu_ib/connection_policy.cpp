@@ -20,13 +20,13 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#include "connection_policy.hpp"
+#include "src/gpu_ib/connection_policy.hpp"
 
 #include <infiniband/mlx5dv.h>
 
 #include "config.h"  // NOLINT(build/include_subdir)
-#include "dynamic_connection.hpp"
-#include "queue_pair.hpp"
+#include "src/gpu_ib/dynamic_connection.hpp"
+#include "src/gpu_ib/queue_pair.hpp"
 
 #ifdef DEBUG
 #define HIP_ENABLE_PRINTF 1
@@ -34,53 +34,48 @@
 
 namespace rocshmem {
 
-RCConnectionImpl::RCConnectionImpl(Connection* conn,
-                                   uint32_t* _vec_rkey) {
+RCConnectionImpl::RCConnectionImpl([[maybe_unused]] Connection* conn,
+                                   [[maybe_unused]] uint32_t* _vec_rkey) {}
+
+DCConnectionImpl::DCConnectionImpl(Connection* conn, uint32_t* _vec_rkey)
+    : vec_dct_num(static_cast<DynamicConnection*>(conn)->get_vec_dct_num()),
+      vec_rkey(_vec_rkey),
+      vec_lids(static_cast<DynamicConnection*>(conn)->get_vec_lids()) {}
+
+__device__ uint32_t RCConnectionImpl::getNumWqesImpl([
+    [maybe_unused]] uint8_t opcode) {
+  return 1;
 }
 
-DCConnectionImpl::DCConnectionImpl(Connection* conn,
-                                   uint32_t* _vec_rkey)
-  : vec_dct_num(static_cast<DynamicConnection*>(conn)->get_vec_dct_num()),
-    vec_rkey(_vec_rkey),
-    vec_lids(static_cast<DynamicConnection*>(conn)->get_vec_lids()) {
+__device__ uint32_t DCConnectionImpl::getNumWqesImpl(uint8_t opcode) {
+  // FIXME: We assume all threads in wave are performing ATOMIC ops.
+  // While this might be common, we do not have such restriction
+  // so need to be fixed.
+  // Since OFED 5.2, a DC segments uses 48bytes - so with or without
+  // atomic we need 2 wqes.
+  // return 2;
+  return (opcode == MLX5_OPCODE_ATOMIC_FA || opcode == MLX5_OPCODE_ATOMIC_CS)
+             ? 2
+             : 1;
 }
 
-__device__ uint32_t
-RCConnectionImpl::getNumWqesImpl(uint8_t opcode) {
-    return 1;
+__device__ bool RCConnectionImpl::updateConnectionSegmentImpl(
+    [[maybe_unused]] ib_mlx5_base_av_t* wqe, [[maybe_unused]] int pe) {
+  return false;
 }
 
-__device__ uint32_t
-DCConnectionImpl::getNumWqesImpl(uint8_t opcode) {
-    // FIXME: We assume all threads in wave are performing ATOMIC ops.
-    // While this might be common, we do not have such restriction
-    // so need to be fixed.
-    // Since OFED 5.2, a DC segments uses 48bytes - so with or without
-    // atomic we need 2 wqes.
-    // return 2;
-    return (opcode == MLX5_OPCODE_ATOMIC_FA ||
-            opcode == MLX5_OPCODE_ATOMIC_CS) ? 2 : 1;
+__device__ bool DCConnectionImpl::updateConnectionSegmentImpl(
+    ib_mlx5_base_av_t* wqe, int pe) {
+  wqe->dqp_dct = vec_dct_num[pe];
+  wqe->rlid = vec_lids[pe];
+  return true;
 }
 
-__device__ bool
-RCConnectionImpl::updateConnectionSegmentImpl(ib_mlx5_base_av_t* wqe, int pe) {
-    return false;
-}
+__device__ void RCConnectionImpl::setRkeyImpl([[maybe_unused]] uint32_t* rkey,
+                                              [[maybe_unused]] int pe) {}
 
-__device__ bool
-DCConnectionImpl::updateConnectionSegmentImpl(ib_mlx5_base_av_t* wqe, int pe) {
-    wqe->dqp_dct = vec_dct_num[pe];
-    wqe->rlid = vec_lids[pe];
-    return true;
-}
-
-__device__ void
-RCConnectionImpl::setRkeyImpl(uint32_t* rkey, int pe) {
-}
-
-__device__ void
-DCConnectionImpl::setRkeyImpl(uint32_t* rkey, int pe) {
-    *rkey = vec_rkey[pe];
+__device__ void DCConnectionImpl::setRkeyImpl(uint32_t* rkey, int pe) {
+  *rkey = vec_rkey[pe];
 }
 
 }  // namespace rocshmem

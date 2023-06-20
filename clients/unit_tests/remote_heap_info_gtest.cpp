@@ -24,19 +24,14 @@
 
 using namespace rocshmem;
 
-TEST_F(RemoteHeapInfoTestFixture, MPI_num_pes)
-{
-    ASSERT_EQ(mpi_.num_pes(), 4);
+TEST_F(RemoteHeapInfoTestFixture, MPI_num_pes) { ASSERT_EQ(mpi_.num_pes(), 4); }
+
+TEST_F(RemoteHeapInfoTestFixture, MPI_barrier) {
+  ASSERT_NO_FATAL_FAILURE(mpi_.barrier());
 }
 
-TEST_F(RemoteHeapInfoTestFixture, MPI_barrier)
-{
-    ASSERT_NO_FATAL_FAILURE(mpi_.barrier());
-}
-
-TEST_F(RemoteHeapInfoTestFixture, MPI_bases)
-{
-    for (auto base : mpi_.get_heap_bases()) {
-        ASSERT_NE(base, nullptr);
-    }
+TEST_F(RemoteHeapInfoTestFixture, MPI_bases) {
+  for (auto base : mpi_.get_heap_bases()) {
+    ASSERT_NE(base, nullptr);
+  }
 }

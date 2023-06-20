@@ -20,18 +20,18 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef ROCSHMEM_LIBRARY_SRC_CONTEXT_HPP
-#define ROCSHMEM_LIBRARY_SRC_CONTEXT_HPP
+#ifndef LIBRARY_SRC_CONTEXT_HPP_
+#define LIBRARY_SRC_CONTEXT_HPP_
 
 #include <hip/hip_runtime.h>
 
-#include "backend_type.hpp"
-#include "device_mutex.hpp"
-#include "ipc_policy.hpp"
-#include "fence_policy.hpp"
-#include "stats.hpp"
-#include "wf_coal_policy.hpp"
-#include "host.hpp"
+#include "src/backend_type.hpp"
+#include "src/fence_policy.hpp"
+#include "src/host/host.hpp"
+#include "src/ipc_policy.hpp"
+#include "src/stats.hpp"
+#include "src/sync/spin_ebo_block_mutex.hpp"
+#include "src/wf_coal_policy.hpp"
 
 namespace rocshmem {
 
@@ -54,543 +54,351 @@ class Backend;
  */
 class Context {
  public:
-    __host__
-    Context(Backend *handle,
-            bool shareable);
-
-    __device__
-    Context(Backend *handle,
-            bool shareable);
-
-    /*
-     * Dispatch functions to get runtime polymorphism without 'virtual' or
-     * function pointers. Each one of these guys will use 'type' to
-     * static_cast themselves and dispatch to the appropriate derived class.
-     * It's basically doing part of what the 'virtual' keyword does, so when
-     * we get that working in ROCm it will be super easy to adapt to it by
-     * just removing the dispatch implementations.
-     *
-     * No comments for these guys since its basically the same as in the
-     * roc_shmem.hpp public header.
-     */
-
-    /**************************************************************************
-     ***************************** DEVICE METHODS *****************************
-     *************************************************************************/
-    template <typename T>
-    __device__ void
-    wait_until(T* ptr,
-              roc_shmem_cmps cmp,
-              T val);
-
-    template <typename T>
-    __device__ int
-    test(T* ptr,
-         roc_shmem_cmps cmp,
-         T val);
-
-    __device__ void
-    threadfence_system();
-
-    __device__ void
-    ctx_create();
-
-    __device__ void
-    ctx_destroy();
-
-    __device__ void
-    putmem(void* dest,
-           const void* source,
-           size_t nelems,
-           int pe);
-
-    __device__ void
-    getmem(void* dest,
-           const void* source,
-           size_t nelems,
-           int pe);
-
-    __device__ void
-    putmem_nbi(void* dest,
-               const void* source,
-               size_t nelems,
-               int pe);
-
-    __device__ void
-    getmem_nbi(void* dest,
-               const void* source,
-               size_t size,
-               int pe);
-
-    __device__ void
-    fence();
-
-    __device__ void
-    fence(int pe);
-
-    __device__ void
-    quiet();
-
-    __device__ void*
-    shmem_ptr(const void* dest,
-              int pe);
-
-    __device__ void
-    barrier_all();
-
-    __device__ void
-    sync_all();
-
-    __device__ void
-    sync(roc_shmem_team_t team);
-
-    __device__ int64_t
-    amo_fetch(void* dst,
-              int64_t value,
-              int64_t cond,
-              int pe,
-              uint8_t atomic_op);
-
-    __device__ void
-    amo_add(void* dst,
-            int64_t value,
-            int64_t cond,
-            int pe);
-
-    __device__ void
-    amo_cas(void* dst,
-            int64_t value,
-            int64_t cond,
-            int pe);
-
-    __device__ int64_t
-    amo_fetch_add(void* dst,
-                  int64_t value,
-                  int64_t cond,
-                  int pe);
-
-    __device__ int64_t
-    amo_fetch_cas(void* dst,
-                  int64_t value,
-                  int64_t cond,
-                  int pe);
-
-    template <typename T>
-    __device__ void
-    p(T* dest,
-      T value,
-      int pe);
-
-    template <typename T>
-    __device__ T
-    g(T* source,
-      int pe);
-
-    template <typename T, ROC_SHMEM_OP Op>
-    __device__ void
-    to_all(T* dest,
-           const T* source,
-           int nreduce,
-           int PE_start,
-           int logPE_stride,
-           int PE_size,
-           T* pWrk,
-           long* pSync);  // NOLINT(runtime/int)
-
-    template <typename T, ROC_SHMEM_OP Op>
-    __device__ void
-    to_all(roc_shmem_team_t team,
-           T* dest,
-           const T* source,
-           int nreduce);
-
-    template <typename T>
-    __device__ void
-    put(T* dest,
-        const T* source,
-        size_t nelems,
-        int pe);
-
-    template <typename T>
-    __device__ void
-    put_nbi(T* dest,
-            const T* source,
-            size_t nelems,
-            int pe);
-
-    template <typename T>
-    __device__ void
-    get(T* dest,
-        const T* source,
-        size_t nelems,
-        int pe);
-
-    template <typename T>
-    __device__ void
-    get_nbi(T* dest,
-            const T* source,
-            size_t nelems,
-            int pe);
-
-    template <typename T>
-    __device__ void
-    alltoall(roc_shmem_team_t team,
-              T* dest,
-              const T* source,
-              int nelems);
-
-    template <typename T>
-    __device__ void
-    fcollect(roc_shmem_team_t team,
-              T* dest,
-              const T* source,
-              int nelems);
-
-    template <typename T>
-    __device__ void
-    broadcast(roc_shmem_team_t team,
-              T* dest,
-              const T* source,
-              int nelems,
-              int pe_root);
-
-    template <typename T>
-    __device__ void
-    broadcast(T* dest,
-              const T* source,
-              int nelems,
-              int pe_root,
-              int pe_start,
-              int log_pe_stride,
-              int pe_size,
-              long* p_sync);  // NOLINT(runtime/int)
-
-    __device__ void
-    putmem_wg(void* dest,
-              const void* source,
-              size_t nelems,
-              int pe);
-
-    __device__ void
-    getmem_wg(void* dest,
-              const void* source,
-              size_t nelems,
-              int pe);
-
-    __device__ void
-    putmem_nbi_wg(void* dest,
-                  const void* source,
-                  size_t nelems,
-                  int pe);
-
-    __device__ void
-    getmem_nbi_wg(void* dest,
-                  const void* source,
-                  size_t size,
-                  int pe);
-
-    __device__ void
-    putmem_wave(void* dest,
-                const void* source,
-                size_t nelems,
-                int pe);
-
-    __device__ void
-    getmem_wave(void* dest,
-                const void* source,
-                size_t nelems,
-                int pe);
-
-    __device__ void
-    putmem_nbi_wave(void* dest,
-                    const void* source,
-                    size_t nelems,
-                    int pe);
-
-    __device__ void
-    getmem_nbi_wave(void* dest,
-                    const void* source,
-                    size_t size,
-                    int pe);
-
-    template <typename T>
-    __device__ void
-    put_wg(T* dest,
-           const T* source,
-           size_t nelems,
-           int pe);
-
-    template <typename T>
-    __device__ void
-    put_nbi_wg(T* dest,
-               const T* source,
-               size_t nelems,
-               int pe);
-
-    template <typename T>
-    __device__ void
-    get_wg(T* dest,
-           const T* source,
-           size_t nelems,
-           int pe);
-
-    template <typename T>
-    __device__ void
-    get_nbi_wg(T* dest,
-               const T* source,
-               size_t nelems,
-               int pe);
-
-    template <typename T>
-    __device__ void
-    put_wave(T* dest,
-             const T* source,
-             size_t nelems,
-             int pe);
-
-    template <typename T>
-    __device__ void
-    put_nbi_wave(T* dest,
-                 const T* source,
-                 size_t nelems,
-                 int pe);
-
-    template <typename T>
-    __device__ void
-    get_wave(T* dest,
-             const T* source,
-             size_t nelems,
-             int pe);
-
-    template <typename T>
-    __device__ void
-    get_nbi_wave(T* dest,
-                 const T* source,
-                 size_t nelems,
-                 int pe);
-
-    /**************************************************************************
-     ****************************** HOST METHODS ******************************
-     *************************************************************************/
-    template <typename T>
-    __host__ void
-    p(T* dest,
-      T value,
-      int pe);
-
-    template <typename T>
-    __host__ T
-    g(const T* source,
-      int pe);
-
-    template <typename T>
-    __host__ void
-    put(T* dest,
-        const T* source,
-        size_t nelems,
-        int pe);
-
-    template <typename T>
-    __host__ void
-    get(T* dest,
-        const T* source,
-        size_t nelems,
-        int pe);
-
-    template <typename T>
-    __host__ void
-    put_nbi(T* dest,
-            const T* source,
-            size_t nelems,
-            int pe);
-
-    template <typename T>
-    __host__ void
-    get_nbi(T* dest,
-            const T* source,
-            size_t nelems,
-            int pe);
-
-    __host__ void
-    putmem(void* dest,
-           const void* source,
-           size_t nelems,
-           int pe);
-
-    __host__ void
-    getmem(void* dest,
-           const void* source,
-           size_t nelems,
-           int pe);
-
-    __host__ void
-    putmem_nbi(void* dest,
-               const void* source,
-               size_t nelems,
-               int pe);
-
-    __host__ void
-    getmem_nbi(void* dest,
-               const void* source,
-               size_t size,
-               int pe);
-
-    __host__ void
-    amo_add(void* dst,
-            int64_t value,
-            int64_t cond,
-            int pe);
-
-    __host__ void
-    amo_cas(void* dst,
-            int64_t value,
-            int64_t cond,
-            int pe);
-
-    __host__ int64_t
-    amo_fetch_add(void* dst,
-                  int64_t value,
-                  int64_t cond,
-                  int pe);
-
-    __host__ int64_t
-    amo_fetch_cas(void* dst,
-                  int64_t value,
-                  int64_t cond,
-                  int pe);
-
-    __host__ void
-    fence();
-
-    __host__ void
-    quiet();
-
-    __host__ void
-    barrier_all();
-
-    __host__ void
-    sync_all();
-
-    template <typename T>
-    __host__ void
-    broadcast(T* dest,
-              const T* source,
-              int nelems,
-              int pe_root,
-              int pe_start,
-              int log_pe_stride,
-              int pe_size,
-              long* p_sync);  // NOLINT(runtime/int)
-
-    template <typename T>
-    __host__ void
-    broadcast(roc_shmem_team_t team,
-              T* dest,
-              const T* source,
-              int nelems,
-              int pe_root);
-
-    template <typename T, ROC_SHMEM_OP Op>
-    __host__ void
-    to_all(T* dest,
-           const T* source,
-           int nreduce,
-           int PE_start,
-           int logPE_stride,
-           int PE_size,
-           T* pWrk,
-           long* pSync);  // NOLINT(runtime/int)
-
-    template <typename T, ROC_SHMEM_OP Op>
-    __host__ void
-    to_all(roc_shmem_team_t team,
-           T* dest,
-           const T* source,
-           int nreduce);
-
-    template <typename T>
-    __host__ void
-    wait_until(T* ptr,
-               roc_shmem_cmps cmp,
-               T val);
-
-    template <typename T>
-    __host__ int
-    test(T* ptr,
-         roc_shmem_cmps cmp,
-         T val);
+  __host__ Context(Backend* handle, bool shareable);
+
+  __device__ Context(Backend* handle, bool shareable);
+
+  /*
+   * Dispatch functions to get runtime polymorphism without 'virtual' or
+   * function pointers. Each one of these guys will use 'type' to
+   * static_cast themselves and dispatch to the appropriate derived class.
+   * It's basically doing part of what the 'virtual' keyword does, so when
+   * we get that working in ROCm it will be super easy to adapt to it by
+   * just removing the dispatch implementations.
+   *
+   * No comments for these guys since its basically the same as in the
+   * roc_shmem.hpp public header.
+   */
+
+  /**************************************************************************
+   ***************************** DEVICE METHODS *****************************
+   *************************************************************************/
+  template <typename T>
+  __device__ void wait_until(T* ptr, roc_shmem_cmps cmp, T val);
+
+  template <typename T>
+  __device__ int test(T* ptr, roc_shmem_cmps cmp, T val);
+
+  __device__ void threadfence_system();
+
+  __device__ void ctx_create();
+
+  __device__ void ctx_destroy();
+
+  __device__ void putmem(void* dest, const void* source, size_t nelems, int pe);
+
+  __device__ void getmem(void* dest, const void* source, size_t nelems, int pe);
+
+  __device__ void putmem_nbi(void* dest, const void* source, size_t nelems,
+                             int pe);
+
+  __device__ void getmem_nbi(void* dest, const void* source, size_t size,
+                             int pe);
+
+  __device__ void fence();
+
+  __device__ void fence(int pe);
+
+  __device__ void quiet();
+
+  __device__ void* shmem_ptr(const void* dest, int pe);
+
+  __device__ void barrier_all();
+
+  __device__ void sync_all();
+
+  __device__ void sync(roc_shmem_team_t team);
+
+  template <typename T>
+  __device__ T amo_fetch(void* dst, T value, T cond, int pe, uint8_t atomic_op);
+
+  template <typename T>
+  __device__ void amo_add(void* dst, T value, int pe);
+
+  template <typename T>
+  __device__ void amo_set(void* dst, T value, int pe);
+
+  template <typename T>
+  __device__ T amo_swap(void* dst, T value, int pe);
+
+  template <typename T>
+  __device__ T amo_fetch_and(void* dst, T value, int pe);
+
+  template <typename T>
+  __device__ void amo_and(void* dst, T value, int pe);
+
+  template <typename T>
+  __device__ T amo_fetch_or(void* dst, T value, int pe);
+
+  template <typename T>
+  __device__ void amo_or(void* dst, T value, int pe);
+
+  template <typename T>
+  __device__ T amo_fetch_xor(void* dst, T value, int pe);
+
+  template <typename T>
+  __device__ void amo_xor(void* dst, T value, int pe);
+
+  template <typename T>
+  __device__ void amo_cas(void* dst, T value, T cond, int pe);
+
+  template <typename T>
+  __device__ T amo_fetch_add(void* dst, T value, int pe);
+
+  template <typename T>
+  __device__ T amo_fetch_cas(void* dst, T value, T cond, int pe);
+
+  template <typename T>
+  __device__ void p(T* dest, T value, int pe);
+
+  template <typename T>
+  __device__ T g(T* source, int pe);
+
+  template <typename T, ROC_SHMEM_OP Op>
+  __device__ void to_all(T* dest, const T* source, int nreduce, int PE_start,
+                         int logPE_stride, int PE_size, T* pWrk,
+                         long* pSync);  // NOLINT(runtime/int)
+
+  template <typename T, ROC_SHMEM_OP Op>
+  __device__ void to_all(roc_shmem_team_t team, T* dest, const T* source,
+                         int nreduce);
+
+  template <typename T>
+  __device__ void put(T* dest, const T* source, size_t nelems, int pe);
+
+  template <typename T>
+  __device__ void put_nbi(T* dest, const T* source, size_t nelems, int pe);
+
+  template <typename T>
+  __device__ void get(T* dest, const T* source, size_t nelems, int pe);
+
+  template <typename T>
+  __device__ void get_nbi(T* dest, const T* source, size_t nelems, int pe);
+
+  template <typename T>
+  __device__ void alltoall(roc_shmem_team_t team, T* dest, const T* source,
+                           int nelems);
+
+  template <typename T>
+  __device__ void fcollect(roc_shmem_team_t team, T* dest, const T* source,
+                           int nelems);
+
+  template <typename T>
+  __device__ void broadcast(roc_shmem_team_t team, T* dest, const T* source,
+                            int nelems, int pe_root);
+
+  template <typename T>
+  __device__ void broadcast(T* dest, const T* source, int nelems, int pe_root,
+                            int pe_start, int log_pe_stride, int pe_size,
+                            long* p_sync);  // NOLINT(runtime/int)
+
+  __device__ void putmem_wg(void* dest, const void* source, size_t nelems,
+                            int pe);
+
+  __device__ void getmem_wg(void* dest, const void* source, size_t nelems,
+                            int pe);
+
+  __device__ void putmem_nbi_wg(void* dest, const void* source, size_t nelems,
+                                int pe);
+
+  __device__ void getmem_nbi_wg(void* dest, const void* source, size_t size,
+                                int pe);
+
+  __device__ void putmem_wave(void* dest, const void* source, size_t nelems,
+                              int pe);
+
+  __device__ void getmem_wave(void* dest, const void* source, size_t nelems,
+                              int pe);
+
+  __device__ void putmem_nbi_wave(void* dest, const void* source, size_t nelems,
+                                  int pe);
+
+  __device__ void getmem_nbi_wave(void* dest, const void* source, size_t size,
+                                  int pe);
+
+  template <typename T>
+  __device__ void put_wg(T* dest, const T* source, size_t nelems, int pe);
+
+  template <typename T>
+  __device__ void put_nbi_wg(T* dest, const T* source, size_t nelems, int pe);
+
+  template <typename T>
+  __device__ void get_wg(T* dest, const T* source, size_t nelems, int pe);
+
+  template <typename T>
+  __device__ void get_nbi_wg(T* dest, const T* source, size_t nelems, int pe);
+
+  template <typename T>
+  __device__ void put_wave(T* dest, const T* source, size_t nelems, int pe);
+
+  template <typename T>
+  __device__ void put_nbi_wave(T* dest, const T* source, size_t nelems, int pe);
+
+  template <typename T>
+  __device__ void get_wave(T* dest, const T* source, size_t nelems, int pe);
+
+  template <typename T>
+  __device__ void get_nbi_wave(T* dest, const T* source, size_t nelems, int pe);
+
+  /**************************************************************************
+   ****************************** HOST METHODS ******************************
+   *************************************************************************/
+  template <typename T>
+  __host__ void p(T* dest, T value, int pe);
+
+  template <typename T>
+  __host__ T g(const T* source, int pe);
+
+  template <typename T>
+  __host__ void put(T* dest, const T* source, size_t nelems, int pe);
+
+  template <typename T>
+  __host__ void get(T* dest, const T* source, size_t nelems, int pe);
+
+  template <typename T>
+  __host__ void put_nbi(T* dest, const T* source, size_t nelems, int pe);
+
+  template <typename T>
+  __host__ void get_nbi(T* dest, const T* source, size_t nelems, int pe);
+
+  __host__ void putmem(void* dest, const void* source, size_t nelems, int pe);
+
+  __host__ void getmem(void* dest, const void* source, size_t nelems, int pe);
+
+  __host__ void putmem_nbi(void* dest, const void* source, size_t nelems,
+                           int pe);
+
+  __host__ void getmem_nbi(void* dest, const void* source, size_t size, int pe);
+
+  template <typename T>
+  __host__ void amo_add(void* dst, T value, int pe);
+
+  template <typename T>
+  __host__ void amo_set(void* dst, T value, int pe);
+
+  template <typename T>
+  __host__ T amo_swap(void* dst, T value, int pe);
+
+  template <typename T>
+  __host__ T amo_fetch_and(void* dst, T value, int pe);
+
+  template <typename T>
+  __host__ void amo_and(void* dst, T value, int pe);
+
+  template <typename T>
+  __host__ T amo_fetch_or(void* dst, T value, int pe);
+
+  template <typename T>
+  __host__ void amo_or(void* dst, T value, int pe);
+
+  template <typename T>
+  __host__ T amo_fetch_xor(void* dst, T value, int pe);
+
+  template <typename T>
+  __host__ void amo_xor(void* dst, T value, int pe);
+
+  template <typename T>
+  __host__ void amo_cas(void* dst, T value, T cond, int pe);
+
+  template <typename T>
+  __host__ T amo_fetch_add(void* dst, T value, int pe);
+
+  template <typename T>
+  __host__ T amo_fetch_cas(void* dst, T value, T cond, int pe);
+
+  __host__ void fence();
+
+  __host__ void quiet();
+
+  __host__ void barrier_all();
+
+  __host__ void sync_all();
+
+  template <typename T>
+  __host__ void broadcast(T* dest, const T* source, int nelems, int pe_root,
+                          int pe_start, int log_pe_stride, int pe_size,
+                          long* p_sync);  // NOLINT(runtime/int)
+
+  template <typename T>
+  __host__ void broadcast(roc_shmem_team_t team, T* dest, const T* source,
+                          int nelems, int pe_root);
+
+  template <typename T, ROC_SHMEM_OP Op>
+  __host__ void to_all(T* dest, const T* source, int nreduce, int PE_start,
+                       int logPE_stride, int PE_size, T* pWrk,
+                       long* pSync);  // NOLINT(runtime/int)
+
+  template <typename T, ROC_SHMEM_OP Op>
+  __host__ void to_all(roc_shmem_team_t team, T* dest, const T* source,
+                       int nreduce);
+
+  template <typename T>
+  __host__ void wait_until(T* ptr, roc_shmem_cmps cmp, T val);
+
+  template <typename T>
+  __host__ int test(T* ptr, roc_shmem_cmps cmp, T val);
 
  public:
-    /**
-     * @brief Set the fence policy using a runtime option
-     *
-     * @param[in] options interpreted as a bitfield using bitwise operations
-     */
-    __device__ void
-    setFence(long options) {
-        fence_ = Fence(options);
-    };
+  /**
+   * @brief Set the fence policy using a runtime option
+   *
+   * @param[in] options interpreted as a bitfield using bitwise operations
+   */
+  __device__ void setFence(long options) { fence_ = Fence(options); }
 
-    /**************************************************************************
-     ***************************** PUBLIC MEMBERS *****************************
-     *************************************************************************/
-    /**
-     * @brief Duplicated local copy of backend's num_pes
-     */
-    int num_pes {0};
+  /**************************************************************************
+   ***************************** PUBLIC MEMBERS *****************************
+   *************************************************************************/
+  /**
+   * @brief Duplicated local copy of backend's num_pes
+   */
+  int num_pes{0};
 
-    /**
-     * @brief Duplicated local copy of backend's my_pe
-     */
-    int my_pe {-1};
+  /**
+   * @brief Duplicated local copy of backend's my_pe
+   */
+  int my_pe{-1};
 
-    /**
-     * @brief Used to static dispatch to correct context type
-     *
-     * Used only to dispatch to the correct derived type. This is used to
-     * get around the fact that there are no virtual functions for device code.
-     * See the 'DISPATCH' macro and usage for more details.
-     */
-    BackendType type {BackendType::GPU_IB_BACKEND};
+  /**
+   * @brief Stats common to all types of device contexts.
+   */
+  ROCStats ctxStats{};
 
-    /**
-     * @brief Stats common to all types of device contexts.
-     */
-    ROCStats ctxStats {};
+  /**
+   * @brief Stats common to all types of host contexts.
+   */
+  ROCHostStats ctxHostStats{};
 
-    /**
-     * @brief Stats common to all types of host contexts.
-     */
-    ROCHostStats ctxHostStats {};
+  /**
+   * @brief Lock to prevent data races on shared data
+   */
+  SpinEBOBlockMutex dev_mtx_{};
 
  protected:
-    /**************************************************************************
-     ***************************** POLICY MEMBERS *****************************
-     *************************************************************************/
-    /**
-     * @brief Lock to prevent data races on shared data
-     */
-    OldDeviceMutex dev_mtx_ {};
+  /**************************************************************************
+   ***************************** POLICY MEMBERS *****************************
+   *************************************************************************/
 
-    /**
-     * @brief Coalesce policy for 'multi' configuration builds
-     */
-    WavefrontCoalescer wf_coal_ {};
+  /**
+   * @brief Coalesce policy for 'multi' configuration builds
+   */
+  WavefrontCoalescer wf_coal_{};
 
-    /**
-     * @brief Inter-Process Communication (IPC) interface for context class
-     *
-     * This member is an interface to allow intra-node interprocess
-     * communication through shared memory.
-     */
-    IpcImpl ipcImpl_ {};
+  /**
+   * @brief Controls fence behavior in device code
+   */
+  Fence fence_{};
 
-    /**
-     * @brief Controls fence behavior in device code
-     */
-    Fence fence_ {};
+ public:
+  /**
+   * @brief Inter-Process Communication (IPC) interface for context class
+   *
+   * This member is an interface to allow intra-node interprocess
+   * communication through shared memory.
+   */
+  IpcImpl ipcImpl_{};
 };
 
-} // namespace rocshmem
+}  // namespace rocshmem
 
-#endif  // ROCSHMEM_LIBRARY_SRC_CONTEXT_HPP
+#endif  // LIBRARY_SRC_CONTEXT_HPP_

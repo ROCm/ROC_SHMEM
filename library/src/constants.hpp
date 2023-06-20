@@ -20,8 +20,8 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef ROCSHMEM_LIBRARY_SRC_CONSTANTS_HPP
-#define ROCSHMEM_LIBRARY_SRC_CONSTANTS_HPP
+#ifndef LIBRARY_SRC_CONSTANTS_HPP_
+#define LIBRARY_SRC_CONSTANTS_HPP_
 
 /**
  * @file constants.hpp
@@ -36,7 +36,7 @@ namespace rocshmem {
  *
  * @note Cache line size on most systems is either 64 or 128.
  */
-inline const unsigned ALIGNMENT {128};
+inline const unsigned ALIGNMENT{128};
 
 /**
  * @brief Constant number which holds maximum workgroup size.
@@ -48,15 +48,15 @@ inline const unsigned ALIGNMENT {128};
  * hard-coded fields by querying the rocm runtime during our library
  * initialization.
  */
-inline const unsigned MAX_WG_SIZE {1024};
+inline const unsigned MAX_WG_SIZE{1024};
 
 /**
  * @brief Constant number which holds the wavefront size
  *
  * @note Wavefront size on most systems is either 32 or 64.
  */
-inline const unsigned WF_SIZE {64};
+inline const unsigned WF_SIZE{64};
 
-} // namespace rocshmem
+}  // namespace rocshmem
 
-#endif  // ROCSHMEM_LIBRARY_SRC_CONSTANTS_HPP
+#endif  // LIBRARY_SRC_CONSTANTS_HPP_

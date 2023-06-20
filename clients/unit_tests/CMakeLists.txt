@@ -25,10 +25,12 @@ cmake_minimum_required(VERSION 3.16.3 FATAL_ERROR)
 ###############################################################################
 # GLOBAL COMPILE FLAGS
 ###############################################################################
+if (NOT DEFINED CMAKE_CXX_COMPILER)
+    set(CMAKE_CXX_COMPILER /opt/rocm/bin/hipcc)
+endif()
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_COMPILER /opt/rocm/bin/hipcc)
 set(CMAKE_CXX_FLAGS_DEBUG "-O0 -ggdb")
 
 ###############################################################################
@@ -71,13 +73,19 @@ target_sources(
     heap_memory_gtest.cpp
     bin_gtest.cpp
     binner_gtest.cpp
+    bitwise_gtest.cpp
     address_record_gtest.cpp
+    index_strategy_gtest.cpp
     single_heap_gtest.cpp
+    slab_heap_gtest.cpp
     symmetric_heap_gtest.cpp
     pow2_bins_gtest.cpp
     remote_heap_info_gtest.cpp
     mpi_init_singleton_gtest.cpp
-    device_mutex_gtest.cpp
+    spin_ebo_block_mutex_gtest.cpp
+    abql_block_mutex_gtest.cpp
+    notifier_gtest.cpp
+    forward_list_gtest.cpp
 )
 
 ###############################################################################

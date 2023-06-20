@@ -20,13 +20,13 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef ROCSHMEM_LIBRARY_SRC_SINGLE_HEAP_HPP
-#define ROCSHMEM_LIBRARY_SRC_SINGLE_HEAP_HPP
+#ifndef LIBRARY_SRC_MEMORY_SINGLE_HEAP_HPP_
+#define LIBRARY_SRC_MEMORY_SINGLE_HEAP_HPP_
 
-#include "address_record.hpp"
-#include "heap_memory.hpp"
-#include "heap_type.hpp"
-#include "pow2_bins.hpp"
+#include "src/memory/address_record.hpp"
+#include "src/memory/heap_memory.hpp"
+#include "src/memory/heap_type.hpp"
+#include "src/memory/pow2_bins.hpp"
 
 /**
  * @file single_heap.hpp
@@ -40,117 +40,123 @@
 namespace rocshmem {
 
 class SingleHeap {
-    /**
-     * @brief Helper type for address records
-     */
-    using AR_T = AddressRecord;
+  /**
+   * @brief Helper type for address records
+   */
+  using AR_T = AddressRecord;
 
-    /**
-     * @brief Helper type for allocation strategy
-     */
-    using STRAT_T = Pow2Bins<AR_T, HEAP_T>;
+  /**
+   * @brief Helper type for allocation strategy
+   */
+  using STRAT_T = Pow2Bins<AR_T, HEAP_T>;
 
-  public:
-    /**
-     * @brief Primary constructor
-     */
-    SingleHeap();
+ public:
+  /**
+   * @brief Primary constructor
+   */
+  SingleHeap();
 
-    /**
-     * @brief Allocates memory from the heap
-     *
-     * @param[in,out] A pointer to memory handle
-     * @param[in] Size in bytes of memory allocation
-     */
-    void
-    malloc(void** ptr,
-           size_t size);
+  /**
+   * @brief Allocates memory from the heap
+   *
+   * @param[in,out] A pointer to memory handle
+   * @param[in] Size in bytes of memory allocation
+   */
+  void malloc(void** ptr, size_t size);
 
-    /**
-     * @brief Frees memory from the heap
-     *
-     * @param[in] Raw pointer to heap memory
-     */
-    void
-    free(void* ptr);
+  /**
+   * @brief Allocates memory from the heap
+   *
+   * @param[in,out] A pointer to memory handle
+   * @param[in] Size in bytes of memory allocation
+   *
+   * @note Not implemented
+   */
+  __device__ void malloc(void** ptr, size_t size);
 
-    /**
-     * @brief
-     *
-     * @param[in]
-     * @param[in]
-     *
-     * @return
-     */
-    void*
-    realloc(void* ptr, size_t size);
+  /**
+   * @brief Frees memory from the heap
+   *
+   * @param[in] Raw pointer to heap memory
+   */
+  void free(void* ptr);
 
-    /**
-     * @brief
-     *
-     * @param[in]
-     * @param[in]
-     *
-     * @return
-     */
-    void*
-    malign(size_t alignment,
-           size_t size);
+  /**
+   * @brief Frees memory from the heap
+   *
+   * @param[in] Raw pointer to heap memory
+   *
+   * @note Not implemented
+   */
+  __device__ void free(void* ptr);
 
-    /**
-     * @brief Accessor for heap base ptr
-     *
-     * @return Pointer to base of my heap
-     */
-    char*
-    get_base_ptr();
+  /**
+   * @brief
+   *
+   * @param[in]
+   * @param[in]
+   *
+   * @return
+   */
+  void* realloc(void* ptr, size_t size);
 
-    /**
-     * @brief Accessor for heap size
-     *
-     * @return Amount of bytes in heap
-     */
-    size_t
-    get_size();
+  /**
+   * @brief
+   *
+   * @param[in]
+   * @param[in]
+   *
+   * @return
+   */
+  void* malign(size_t alignment, size_t size);
 
-    /**
-     * @brief Accessor for heap usage
-     *
-     * @return Amount of used bytes in heap
-     */
-    size_t
-    get_used();
+  /**
+   * @brief Accessor for heap base ptr
+   *
+   * @return Pointer to base of my heap
+   */
+  char* get_base_ptr();
 
-    /**
-     * @brief Accessor for heap available
-     *
-     * @return Amount of available bytes in heap
-     */
-    size_t
-    get_avail();
+  /**
+   * @brief Accessor for heap size
+   *
+   * @return Amount of bytes in heap
+   */
+  size_t get_size();
 
-    /**
-     * @brief Returns is the heap is allocated with managed memory
-     *
-     * @return bool
-     */
-    bool
-    is_managed() {
-        return heap_mem_.is_managed();
-    }
+  /**
+   * @brief Accessor for heap usage
+   *
+   * @return Amount of used bytes in heap
+   */
+  size_t get_used();
 
-  private:
-    /**
-     * @brief Heap memory object
-     */
-    HEAP_T heap_mem_ {};
+  /**
+   * @brief Accessor for heap available
+   *
+   * @return Amount of available bytes in heap
+   */
+  size_t get_avail();
 
-    /**
-     * @brief Allocation strategy object
-     */
-    STRAT_T strat_ {&heap_mem_};
+  /**
+   * @brief Returns is the heap is allocated with managed memory
+   *
+   * @return bool
+   */
+  bool is_managed() { return heap_mem_.is_managed(); }
+
+ private:
+  /**
+   * @brief Heap memory object
+   */
+  HEAP_T heap_mem_{};
+
+  /**
+   * @brief Allocation strategy object
+   */
+  STRAT_T strat_{&heap_mem_};
 };
 
-} // namespace rocshmem
+}  // namespace rocshmem
 
-#endif  // ROCSHMEM_LIBRARY_SRC_SINGLE_HEAP_HPP
+#endif  // LIBRARY_SRC_MEMORY_SINGLE_HEAP_HPP_

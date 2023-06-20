@@ -28,30 +28,23 @@
 /******************************************************************************
  * DEVICE TEST KERNEL
  *****************************************************************************/
-__global__ void
-BarrierAllTest(TestType type);
+__global__ void BarrierAllTest(TestType type);
 
 /******************************************************************************
  * HOST TESTER CLASS
  *****************************************************************************/
-class BarrierAllTester : public Tester
-{
-  public:
-    explicit BarrierAllTester(TesterArguments args);
-    virtual ~BarrierAllTester();
+class BarrierAllTester : public Tester {
+ public:
+  explicit BarrierAllTester(TesterArguments args);
+  virtual ~BarrierAllTester();
 
-  protected:
-    virtual void
-    resetBuffers(uint64_t size) override;
+ protected:
+  virtual void resetBuffers(uint64_t size) override;
 
-    virtual void
-    launchKernel(dim3 gridSize,
-                 dim3 blockSize,
-                 int loop,
-                 uint64_t size) override;
+  virtual void launchKernel(dim3 gridSize, dim3 blockSize, int loop,
+                            uint64_t size) override;
 
-    virtual void
-    verifyResults(uint64_t size) override;
+  virtual void verifyResults(uint64_t size) override;
 };
 
 #endif

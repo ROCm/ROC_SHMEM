@@ -28,32 +28,22 @@
 /******************************************************************************
  * DEVICE TEST KERNEL
  *****************************************************************************/
-__global__ void
-GetSwarmTest(int loop,
-             int skip,
-             uint64_t *timer,
-             char *s_buf,
-             char *r_buf,
-             int size);
+__global__ void GetSwarmTest(int loop, int skip, uint64_t *timer, char *s_buf,
+                             char *r_buf, int size);
 
 /******************************************************************************
  * HOST TESTER CLASS
  *****************************************************************************/
-class GetSwarmTester : public PrimitiveTester
-{
-  public:
-    explicit GetSwarmTester(TesterArguments args);
-    virtual ~GetSwarmTester();
+class GetSwarmTester : public PrimitiveTester {
+ public:
+  explicit GetSwarmTester(TesterArguments args);
+  virtual ~GetSwarmTester();
 
-  protected:
-    virtual void
-    launchKernel(dim3 gridSize,
-                 dim3 blockSize,
-                 int loop,
-                 uint64_t size) override;
+ protected:
+  virtual void launchKernel(dim3 gridSize, dim3 blockSize, int loop,
+                            uint64_t size) override;
 
-    virtual void
-    verifyResults(uint64_t size) override;
+  virtual void verifyResults(uint64_t size) override;
 };
 
 #endif

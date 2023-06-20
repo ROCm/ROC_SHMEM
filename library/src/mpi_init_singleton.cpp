@@ -20,53 +20,43 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#include "mpi_init_singleton.hpp"
+#include "src/mpi_init_singleton.hpp"
 
 namespace rocshmem {
 
-MPIInitSingleton* MPIInitSingleton::instance {nullptr};
+MPIInitSingleton* MPIInitSingleton::instance{nullptr};
 
 MPIInitSingleton::MPIInitSingleton() {
-    int pre_init_done {0};
-    MPI_Initialized(&pre_init_done);
+  int pre_init_done{0};
+  MPI_Initialized(&pre_init_done);
 
-    if (!pre_init_done) {
-        int provided;
-        MPI_Init_thread(nullptr,
-                        nullptr,
-                        MPI_THREAD_MULTIPLE,
-                        &provided);
-    }
+  if (!pre_init_done) {
+    int provided;
+    MPI_Init_thread(nullptr, nullptr, MPI_THREAD_MULTIPLE, &provided);
+  }
 
-    MPI_Comm_size(MPI_COMM_WORLD, &nprocs_);
-    MPI_Comm_rank(MPI_COMM_WORLD, &my_rank_);
+  MPI_Comm_size(MPI_COMM_WORLD, &nprocs_);
+  MPI_Comm_rank(MPI_COMM_WORLD, &my_rank_);
 }
 
 MPIInitSingleton::~MPIInitSingleton() {
-    int finalized {0};
-    MPI_Finalized(&finalized);
-    if (!finalized) {
-        MPI_Finalize();
-    }
+  int finalized{0};
+  MPI_Finalized(&finalized);
+  if (!finalized) {
+    MPI_Finalize();
+  }
 }
 
-MPIInitSingleton*
-MPIInitSingleton::GetInstance(){
-    if (!instance) {
-        instance = new MPIInitSingleton();
-        return instance;
-    }
+MPIInitSingleton* MPIInitSingleton::GetInstance() {
+  if (!instance) {
+    instance = new MPIInitSingleton();
     return instance;
+  }
+  return instance;
 }
 
-int
-MPIInitSingleton::get_rank() {
-    return my_rank_;
-}
+int MPIInitSingleton::get_rank() { return my_rank_; }
 
-int
-MPIInitSingleton::get_nprocs() {
-    return nprocs_;
-}
+int MPIInitSingleton::get_nprocs() { return nprocs_; }
 
 }  // namespace rocshmem

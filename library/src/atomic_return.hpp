@@ -20,35 +20,30 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef ROCSHMEM_LIBRARY_SRC_ATOMIC_RETURN_HPP
-#define ROCSHMEM_LIBRARY_SRC_ATOMIC_RETURN_HPP
+#ifndef LIBRARY_SRC_ATOMIC_RETURN_HPP_
+#define LIBRARY_SRC_ATOMIC_RETURN_HPP_
 
 #include <hip/hip_runtime.h>
-
 #include <mpi.h>
-#include "util.hpp"
-#include "symmetric_heap.hpp"
+
+#include "src/memory/symmetric_heap.hpp"
+#include "src/util.hpp"
 
 namespace rocshmem {
 
 const int max_nb_atomic = 4096;
 
 struct atomic_ret_t {
-    uint64_t *atomic_base_ptr;
-    uint32_t atomic_lkey;
-    uint64_t atomic_counter;
+  uint64_t* atomic_base_ptr;
+  uint32_t atomic_lkey;
+  uint64_t atomic_counter;
 };
 
-void
-allocate_atomic_region(atomic_ret_t** atomic_ret,
-                       int num_wg);
+void allocate_atomic_region(atomic_ret_t** atomic_ret, int num_wg);
 
-void
-init_g_ret(SymmetricHeap* heap_handle,
-           MPI_Comm thread_comm,
-           int num_wg,
-           char** g_ret);
+void init_g_ret(SymmetricHeap* heap_handle, MPI_Comm thread_comm, int num_wg,
+                char** g_ret);
 
-} // namespace rocshmem
+}  // namespace rocshmem
 
-#endif  // ROCSHMEM_LIBRARY_SRC_ATOMIC_RETURN_HPP
+#endif  // LIBRARY_SRC_ATOMIC_RETURN_HPP_

@@ -29,131 +29,101 @@ using namespace rocshmem;
 /******************************************************************************
  * DEVICE TEST KERNEL
  *****************************************************************************/
-__global__ void
-PrimitiveTest(int loop,
-              int skip,
-              uint64_t *timer,
-              char *s_buf,
-              char *r_buf,
-              int size,
-              TestType type,
-              ShmemContextType ctx_type)
-{
-    __shared__ roc_shmem_ctx_t ctx;
-    roc_shmem_wg_init();
-    roc_shmem_wg_ctx_create(ctx_type, &ctx);
+__global__ void PrimitiveTest(int loop, int skip, uint64_t *timer, char *s_buf,
+                              char *r_buf, int size, TestType type,
+                              ShmemContextType ctx_type) {
+  __shared__ roc_shmem_ctx_t ctx;
+  roc_shmem_wg_init();
+  roc_shmem_wg_ctx_create(ctx_type, &ctx);
 
-    if (hipThreadIdx_x == 0) {
-        uint64_t start;
+  uint64_t start;
 
-        for (int i = 0; i < loop + skip; i++) {
-            if (i == skip)
-                start = roc_shmem_timer();
+  for (int i = 0; i < loop + skip; i++) {
+    if (i == skip) start = roc_shmem_timer();
 
-            switch (type) {
-                case GetTestType:
-                    roc_shmem_ctx_getmem(ctx, r_buf, s_buf, size, 1);
-                    break;
-                case GetNBITestType:
-                    roc_shmem_ctx_getmem_nbi(ctx, r_buf, s_buf, size, 1);
-                    break;
-                case PutTestType:
-                    roc_shmem_ctx_putmem(ctx, r_buf, s_buf, size, 1);
-                    break;
-                case PutNBITestType:
-                    roc_shmem_ctx_putmem_nbi(ctx, r_buf, s_buf, size, 1);
-                    break;
-                case PTestType:
-                    for(int s = 0; s <size; s++ ){
-                        char val = s_buf[s];
-                        roc_shmem_ctx_char_p(ctx, &r_buf[s], val , 1);
-                    }
-                    break;
-                case GTestType:
-                    for(int s = 0; s <size; s++ ){
-                        char ret= roc_shmem_ctx_char_g(ctx, &s_buf[s], 1);
-                        r_buf[s]=ret;
-                    }
-                    break;
-                default:
-                    break;
-            }
+    switch (type) {
+      case GetTestType:
+        roc_shmem_ctx_getmem(ctx, r_buf, s_buf, size, 1);
+        break;
+      case GetNBITestType:
+        roc_shmem_ctx_getmem_nbi(ctx, r_buf, s_buf, size, 1);
+        break;
+      case PutTestType:
+        roc_shmem_ctx_putmem(ctx, r_buf, s_buf, size, 1);
+        break;
+      case PutNBITestType:
+        roc_shmem_ctx_putmem_nbi(ctx, r_buf, s_buf, size, 1);
+        break;
+      case PTestType:
+        for (int s = 0; s < size; s++) {
+          char val = s_buf[s];
+          roc_shmem_ctx_char_p(ctx, &r_buf[s], val, 1);
         }
-
-        roc_shmem_ctx_quiet(ctx);
-
-        timer[hipBlockIdx_x] =  roc_shmem_timer() - start;
+        break;
+      case GTestType:
+        for (int s = 0; s < size; s++) {
+          char ret = roc_shmem_ctx_char_g(ctx, &s_buf[s], 1);
+          r_buf[s] = ret;
+        }
+        break;
+      default:
+        break;
     }
+  }
 
-    roc_shmem_wg_ctx_destroy(ctx);
-    roc_shmem_wg_finalize();
+  roc_shmem_ctx_quiet(ctx);
+
+  if (hipThreadIdx_x == 0) {
+    timer[hipBlockIdx_x] = roc_shmem_timer() - start;
+  }
+
+  roc_shmem_wg_ctx_destroy(ctx);
+  roc_shmem_wg_finalize();
 }
 
 /******************************************************************************
  * HOST TESTER CLASS METHODS
  *****************************************************************************/
-PrimitiveTester::PrimitiveTester(TesterArguments args)
-    : Tester(args)
-{
-    s_buf = (char *)roc_shmem_malloc(args.max_msg_size * args.wg_size);
-    r_buf = (char *)roc_shmem_malloc(args.max_msg_size * args.wg_size);
+PrimitiveTester::PrimitiveTester(TesterArguments args) : Tester(args) {
+  s_buf = (char *)roc_shmem_malloc(args.max_msg_size * args.wg_size);
+  r_buf = (char *)roc_shmem_malloc(args.max_msg_size * args.wg_size);
 }
 
-PrimitiveTester::~PrimitiveTester()
-{
-    roc_shmem_free(s_buf);
-    roc_shmem_free(r_buf);
+PrimitiveTester::~PrimitiveTester() {
+  roc_shmem_free(s_buf);
+  roc_shmem_free(r_buf);
 }
 
-void
-PrimitiveTester::resetBuffers(uint64_t size)
-{
-    memset(s_buf, '0', args.max_msg_size * args.wg_size);
-    memset(r_buf, '1', args.max_msg_size * args.wg_size);
+void PrimitiveTester::resetBuffers(uint64_t size) {
+  memset(s_buf, '0', args.max_msg_size * args.wg_size);
+  memset(r_buf, '1', args.max_msg_size * args.wg_size);
 }
 
-void
-PrimitiveTester::launchKernel(dim3 gridSize,
-                              dim3 blockSize,
-                              int loop,
-                              uint64_t size)
-{
-    size_t shared_bytes;
-    roc_shmem_dynamic_shared(&shared_bytes);
+void PrimitiveTester::launchKernel(dim3 gridSize, dim3 blockSize, int loop,
+                                   uint64_t size) {
+  size_t shared_bytes = 0;
 
-    hipLaunchKernelGGL(PrimitiveTest,
-                       gridSize,
-                       blockSize,
-                       shared_bytes,
-                       stream,
-                       loop,
-                       args.skip,
-                       timer,
-                       s_buf,
-                       r_buf,
-                       size,
-                       _type,
-                       _shmem_context);
+  hipLaunchKernelGGL(PrimitiveTest, gridSize, blockSize, shared_bytes, stream,
+                     loop, args.skip, timer, s_buf, r_buf, size, _type,
+                     _shmem_context);
 
-    num_msgs = (loop + args.skip) * gridSize.x;
-    num_timed_msgs = loop ;
+  num_msgs = (loop + args.skip) * gridSize.x;
+  num_timed_msgs = loop;
 }
 
-void
-PrimitiveTester::verifyResults(uint64_t size)
-{
-    int check_id = (_type == GetTestType    ||
-                    _type == GetNBITestType ||
-                    _type == GTestType)
-                    ? 0 : 1;
+void PrimitiveTester::verifyResults(uint64_t size) {
+  int check_id =
+      (_type == GetTestType || _type == GetNBITestType || _type == GTestType)
+          ? 0
+          : 1;
 
-    if (args.myid == check_id) {
-        for (int i = 0; i < size; i++) {
-            if (r_buf[i] != '0') {
-                fprintf(stderr, "Data validation error at idx %d\n", i);
-                fprintf(stderr, "Got %c, Expected %c\n", r_buf[i], '0');
-                exit(-1);
-            }
-        }
+  if (args.myid == check_id) {
+    for (int i = 0; i < size; i++) {
+      if (r_buf[i] != '0') {
+        fprintf(stderr, "Data validation error at idx %d\n", i);
+        fprintf(stderr, "Got %c, Expected %c\n", r_buf[i], '0');
+        exit(-1);
+      }
     }
+  }
 }

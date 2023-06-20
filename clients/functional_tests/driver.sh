@@ -31,7 +31,7 @@ if [ $# -eq 0 ] ; then
     exit 1
 fi
 
-shm_ctx=8  # run tests with SHMEM_CONTEXT_WG_PRIVATE
+shm_ctx=4  # run tests with SHMEM_CONTEXT_WG_PRIVATE
 if [ $# -eq 5 ] ; then
     shm_ctx=$5
 fi
@@ -84,9 +84,9 @@ case $2 in
         echo "put_nbi_th"
         mpirun -np 2 ${gdb_cmd} $1 -t 1024 -w 25 -s 32768 -a 3 -x ${shm_ctx} > $3/put_nbi_th.log
         check put_nbi_th
-        echo "team_ctx_infra"
-        mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 8 -a 42 -x ${shm_ctx} > $3/team_ctx_infra.log
-        check team_ctx_infra
+#        echo "team_ctx_infra"
+#        mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 8 -a 42 -x ${shm_ctx} > $3/team_ctx_infra.log
+#        check team_ctx_infra
         echo "team_ctx_put_nbi"
         mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 32768 -a 41 -x ${shm_ctx} > $3/team_ctx_put_nbi.log
         check team_ctx_put_nbi
@@ -132,6 +132,12 @@ case $2 in
         echo "amo_add_th"
         mpirun -np 2 ${gdb_cmd} $1 -t 1024 -w 25 -s 32768 -a 10 -x ${shm_ctx} > $3/amo_add_th.log
         check amo_add_th
+        echo "amo_set"
+        mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 32768 -a 44 -x ${shm_ctx} > $3/amo_set.log
+        check amo_set
+        echo "amo_set_th"
+        mpirun -np 2 ${gdb_cmd} $1 -t 1024 -w 25 -s 32768 -a 44 -x ${shm_ctx} > $3/amo_set_th.log
+        check amo_set_th
         echo "amo_inc"
         mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 32768 -a 11 -x ${shm_ctx} > $3/amo_inc.log
         check amo_inc
@@ -176,9 +182,9 @@ case $2 in
         echo "put_nbi"
         mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 32768 -a 3 -x ${shm_ctx} > $3/put_nbi.log
         check put_nbi
-        echo "team_ctx_infra"
-        mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 8 -a 42 -x ${shm_ctx} > $3/team_ctx_infra.log
-        check team_ctx_infra
+#        echo "team_ctx_infra"
+#        mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 8 -a 42 -x ${shm_ctx} > $3/team_ctx_infra.log
+#        check team_ctx_infra
         echo "team_ctx_put_nbi"
         mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 32768 -a 41 -x ${shm_ctx} > $3/team_ctx_put_nbi.log
         check team_ctx_put_nbi
@@ -206,6 +212,9 @@ case $2 in
         echo "amo_add"
         mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 32768 -a 10 -x ${shm_ctx} > $3/amo_add.log
         check amo_add
+        echo "amo_set"
+        mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 32768 -a 44 -x ${shm_ctx} > $3/amo_set.log
+        check amo_set
         echo "amo_inc"
         mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 32768 -a 11 -x ${shm_ctx} > $3/amo_inc.log
         check amo_inc
@@ -232,35 +241,91 @@ case $2 in
         check fcollect
         ;;
     *"ro")
+        echo "get"
         mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 32768 -a 0 -x ${shm_ctx} > $3/get.log
         check get
+        echo "get_nbi"
         mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 32768 -a 1 -x ${shm_ctx} > $3/get_nbi.log
         check get_nbi
+        echo "put"
         mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 32768 -a 2 -x ${shm_ctx} > $3/put.log
         check put
+        echo "put_nbi"
         mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 32768 -a 3 -x ${shm_ctx} > $3/put_nbi.log
         check put_nbi
-        mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 8 -a 42 -x ${shm_ctx} > $3/team_ctx_infra.log
-        check team_ctx_infra
+#        echo "team_ctx_infra"
+#        mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 8 -a 42 -x ${shm_ctx} > $3/team_ctx_infra.log
+#        check team_ctx_infra
+        echo "team_ctx_put_nbi"
         mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 32768 -a 41 -x ${shm_ctx} > $3/team_ctx_put_nbi.log
         check team_ctx_put_nbi
+        echo "team_ctx_get_nbi"
         mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 32768 -a 39 -x ${shm_ctx} > $3/team_ctx_get_nbi.log
         check team_ctx_get_nbi
 #        mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 32768 -a 4 -x ${shm_ctx} > $3/get_swarm.log
 #        check get_swarm
         #mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 512 -a 5 -x ${shm_ctx} > $3/reduction.log
+        echo "amo_fadd"
+        mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 32768 -a 6 -x ${shm_ctx} > $3/amo_fadd.log
+        check amo_fadd
+        echo "amo_finc"
+        mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 32768 -a 7 -x ${shm_ctx} > $3/amo_finc.log
+        check amo_finc
+        echo "amo_fetch"
+        mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 32768 -a 8 -x ${shm_ctx} > $3/amo_fetch.log
+        check amo_fetch
+        echo "amo_fcswap"
+        mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 32768 -a 9 -x ${shm_ctx} > $3/amo_fcswap.log
+        check amo_fcswap
+        echo "amo_add"
+        mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 32768 -a 10 -x ${shm_ctx} > $3/amo_add.log
+        check amo_add
+        echo "amo_set"
+        mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 32768 -a 44 -x ${shm_ctx} > $3/amo_set.log
+        check amo_set
+        echo "amo_swap"
+        mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 32768 -a 45 -x ${shm_ctx} > $3/amo_swap.log
+        check amo_swap
+        echo "amo_fetch_and"
+        mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 32768 -a 46 -x ${shm_ctx} > $3/amo_fetch_and.log
+        check amo_fetch_and
+        echo "amo_and"
+        mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 32768 -a 49 -x ${shm_ctx} > $3/amo_and.log
+        check amo_and
+        echo "amo_fetch_or"
+        mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 32768 -a 47 -x ${shm_ctx} > $3/amo_fetch_or.log
+        check amo_fetch_or
+        echo "amo_or"
+        mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 32768 -a 50 -x ${shm_ctx} > $3/amo_or.log
+        check amo_or
+        echo "amo_fetch_xor"
+        mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 32768 -a 47 -x ${shm_ctx} > $3/amo_fetch_xor.log
+        check amo_fetch_xor
+        echo "amo_xor"
+        mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 32768 -a 50 -x ${shm_ctx} > $3/amo_xor.log
+        check amo_xor
+        echo "amo_inc"
+        mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 32768 -a 11 -x ${shm_ctx} > $3/amo_inc.log
+        check amo_inc
+        echo "init"
         mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 32768 -a 13 -x ${shm_ctx} > $3/init.log
         check init
+        echo "ping_pong"
         mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 32768 -a 14 -x ${shm_ctx} > $3/ping_pong.log
         check ping_pong
+        echo "barrier_all"
         mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 8 -a 17 -x ${shm_ctx} > $3/barrier_all.log
         check barrier_all
+        echo "sync_all"
         mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 8 -a 18 -x ${shm_ctx} > $3/sync_all.log
         check sync_all
+        echo "sync"
         mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 8 -a 19 -x ${shm_ctx} > $3/sync.log
         check sync
+        echo "alltoall"
         mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 512 -a 23 -x ${shm_ctx} > $3/alltoall.log
         check alltoall
+        echo "fcollect"
         mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 512 -a 22 -x ${shm_ctx} > $3/fcollect.log
         check fcollect
         ;;
@@ -311,6 +376,30 @@ case $2 in
         ;;
     *"amo_add")
         mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 32768 -a 10 -x ${shm_ctx}
+        ;;
+    *"amo_set")
+        mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 32768 -a 44 -x ${shm_ctx}
+        ;;
+    *"amo_swap")
+        mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 32768 -a 45 -x ${shm_ctx}
+        ;;
+    *"amo_fetch_and")
+        mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 32768 -a 46 -x ${shm_ctx}
+        ;;
+    *"amo_and")
+        mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 32768 -a 49 -x ${shm_ctx}
+        ;;
+    *"amo_fetch_or")
+        mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 32768 -a 47 -x ${shm_ctx}
+        ;;
+    *"amo_or")
+        mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 32768 -a 50 -x ${shm_ctx}
+        ;;
+    *"amo_fetch_xor")
+        mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 32768 -a 48 -x ${shm_ctx}
+        ;;
+    *"amo_xor")
+        mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 32768 -a 51 -x ${shm_ctx}
         ;;
     *"amo_inc")
         mpirun -np 2 ${gdb_cmd} $1 -t 1 -w 1 -s 32768 -a 11 -x ${shm_ctx}

@@ -23,43 +23,39 @@
 #ifndef _REDUCTION_TESTER_HPP_
 #define _REDUCTION_TESTER_HPP_
 
-#include "tester.hpp"
-
 #include <functional>
 #include <utility>
+
+#include "tester.hpp"
 
 /******************************************************************************
  * HOST TESTER CLASS
  *****************************************************************************/
-template<typename T1, ROC_SHMEM_OP T2>
-class ReductionTester : public Tester
-{
-  public:
-    explicit ReductionTester(TesterArguments args, std::function<void(T1&, T1&)> f1,
-                std::function<std::pair<bool, std::string>(const T1&, const T1&)> f2);
-    virtual ~ReductionTester();
+template <typename T1, ROC_SHMEM_OP T2>
+class ReductionTester : public Tester {
+ public:
+  explicit ReductionTester(
+      TesterArguments args, std::function<void(T1 &, T1 &)> f1,
+      std::function<std::pair<bool, std::string>(const T1 &, const T1 &)> f2);
+  virtual ~ReductionTester();
 
-  protected:
-    virtual void
-    resetBuffers(uint64_t size) override;
+ protected:
+  virtual void resetBuffers(uint64_t size) override;
 
-    virtual void
-    launchKernel(dim3 gridSize,
-                 dim3 blockSize,
-                 int loop,
-                 uint64_t size) override;
+  virtual void launchKernel(dim3 gridSize, dim3 blockSize, int loop,
+                            uint64_t size) override;
 
-    virtual void
-    verifyResults(uint64_t size) override;
+  virtual void verifyResults(uint64_t size) override;
 
-    T1 *s_buf;
-    T1 *r_buf;
-    T1 *pWrk;
-    long *pSync;
+  T1 *s_buf;
+  T1 *r_buf;
+  T1 *pWrk;
+  long *pSync;
 
-  private:
-    std::function<void(T1&, T1&)> init_buf;
-    std::function<std::pair<bool, std::string>(const T1&, const T1&)> verify_buf;
+ private:
+  std::function<void(T1 &, T1 &)> init_buf;
+  std::function<std::pair<bool, std::string>(const T1 &, const T1 &)>
+      verify_buf;
 };
 
 #include "reduction_tester.cpp"

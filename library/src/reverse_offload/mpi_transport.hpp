@@ -20,394 +20,211 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef ROCSHMEM_LIBRARY_SRC_REVERSE_OFFLOAD_MPI_TRANSPORT_HPP
-#define ROCSHMEM_LIBRARY_SRC_REVERSE_OFFLOAD_MPI_TRANSPORT_HPP
+#ifndef LIBRARY_SRC_REVERSE_OFFLOAD_MPI_TRANSPORT_HPP_
+#define LIBRARY_SRC_REVERSE_OFFLOAD_MPI_TRANSPORT_HPP_
 
 #include <map>
-#include <mutex>
+#include <mutex>  // NOLINT
 #include <queue>
 #include <vector>
 
-#include "transport.hpp"
+#include "src/reverse_offload/queue.hpp"
+#include "src/reverse_offload/transport.hpp"
 
 namespace rocshmem {
 
 class HostInterface;
 
 class MPITransport : public Transport {
-  public:
-    MPITransport();
+ public:
+  explicit MPITransport(MPI_Comm com, Queue* queue);
 
-    virtual ~MPITransport();
+  virtual ~MPITransport();
 
-    Status
-    initTransport(int num_queues,
-                  BackendProxyT *proxy) override;
+  void initTransport(int num_queues, BackendProxyT *proxy) override;
 
-    Status
-    finalizeTransport() override;
+  void finalizeTransport() override;
 
-    Status
-    allocateMemory(void **ptr,
-                   size_t size) override {
-        return Status::ROC_SHMEM_SUCCESS;
-    };
+  void createNewTeam(ROBackend *backend, Team *parent_team,
+                       TeamInfo *team_info_wrt_parent,
+                       TeamInfo *team_info_wrt_world, int num_pes,
+                       int my_pe_in_new_team, MPI_Comm team_comm,
+                       roc_shmem_team_t *new_team) override;
 
-    Status
-    deallocateMemory(void *ptr) override {
-        return Status::ROC_SHMEM_SUCCESS;
-    };
+  void barrier(int blockId, int threadId, bool blocking,
+                 MPI_Comm team) override;
 
-    Status
-    createNewTeam(ROBackend *backend,
-                  Team *parent_team,
-                  TeamInfo *team_info_wrt_parent,
-                  TeamInfo *team_info_wrt_world,
-                  int num_pes,
-                  int my_pe_in_new_team,
-                  MPI_Comm team_comm,
-                  roc_shmem_team_t *new_team) override;
+  void reduction(void *dst, void *src, int size, int pe, int win_id,
+                   int blockId, int start, int logPstride, int sizePE, void *pWrk,
+                   long *pSync, ROC_SHMEM_OP op, ro_net_types type,
+                   int threadId, bool blocking) override;
 
-    Status
-    barrier(int wg_id,
-            int threadId,
-            bool blocking,
-            MPI_Comm team) override;
+  void team_reduction(void *dst, void *src, int size, int win_id, int blockId,
+                        MPI_Comm team, ROC_SHMEM_OP op, ro_net_types type,
+                        int threadId, bool blocking) override;
 
-    Status
-    reduction(void *dst,
-              void *src,
-              int size,
-              int pe,
-              int wg_id,
-              int start,
-              int logPstride,
-              int sizePE,
-              void *pWrk,
-              long *pSync,
-              ROC_SHMEM_OP op,
-              ro_net_types type,
-              int threadId,
-              bool blocking) override;
-
-    Status
-    team_reduction(void *dst,
-                   void *src,
-                   int size,
-                   int wg_id,
-                   MPI_Comm team,
-                   ROC_SHMEM_OP op,
-                   ro_net_types type,
-                   int threadId,
+  void broadcast(void *dst, void *src, int size, int pe, int win_id,
+                   int blockId, int start, int logPstride, int sizePE,
+                   int PE_root, long *pSync, ro_net_types type, int threadId,
                    bool blocking) override;
 
-    Status
-    broadcast(void *dst,
-              void *src,
-              int size,
-              int pe,
-              int wg_id,
-              int start,
-              int logPstride,
-              int sizePE,
-              int PE_root,
-              long *pSync,
-              ro_net_types type,
-              int threadId,
-              bool blocking) override;
+  void team_broadcast(void *dst, void *src, int size, int win_id, int blockId,
+                        MPI_Comm team, int PE_root, ro_net_types type,
+                        int threadId, bool blocking) override;
 
-    Status
-    team_broadcast(void *dst,
-                   void *src,
-                   int size,
-                   int wg_id,
-                   MPI_Comm team,
-                   int PE_root,
-                   ro_net_types type,
-                   int threadId,
-                   bool blocking) override;
+  void alltoall(void *dst, void *src, int size, int win_id, int blockId,
+                  MPI_Comm team, void *ata_buffptr, ro_net_types type,
+                  int threadId, bool blocking) override;
 
-    Status
-    alltoall(void *dst,
-             void *src,
-             int size,
-             int wg_id,
-             MPI_Comm team,
-             void *ata_buffptr,
-             ro_net_types type,
-             int threadId,
-             bool blocking) override;
+  void alltoall_broadcast(void *dst, void *src, int size, int win_id,
+                            int blockId, MPI_Comm team, void *ata_buffptr,
+                            ro_net_types type, int threadId, bool blocking);
 
-    Status
-    alltoall_broadcast(void *dst,
-             void *src,
-             int size,
-             int wg_id,
-             MPI_Comm team,
-             void *ata_buffptr,
-             ro_net_types type,
-             int threadId,
-             bool blocking);
+  void alltoall_mpi(void *dst, void *src, int size, int blockId, MPI_Comm team,
+                      void *ata_buffptr, ro_net_types type, int threadId,
+                      bool blocking);
 
-    Status
-    alltoall_mpi(void *dst,
-             void *src,
-             int size,
-             int wg_id,
-             MPI_Comm team,
-             void *ata_buffptr,
-             ro_net_types type,
-             int threadId,
-             bool blocking);
+  void alltoall_gcen(void *dst, void *src, int size, int win_id, int blockId,
+                       MPI_Comm team, void *ata_buffptr, ro_net_types type,
+                       int threadId, bool blocking);
 
-    Status
-    alltoall_gcen(void *dst,
-             void *src,
-             int size,
-             int wg_id,
-             MPI_Comm team,
-             void *ata_buffptr,
-             ro_net_types type,
-             int threadId,
-             bool blocking);
+  void alltoall_gcen2(void *dst, void *src, int size, int win_id, int blockId,
+                        MPI_Comm team, void *ata_buffptr, ro_net_types type,
+                        int threadId, bool blocking);
 
-    Status
-    alltoall_gcen2(void *dst,
-             void *src,
-             int size,
-             int wg_id,
-             MPI_Comm team,
-             void *ata_buffptr,
-             ro_net_types type,
-             int threadId,
-             bool blocking);
+  void fcollect(void *dst, void *src, int size, int win_id, int blockId,
+                  MPI_Comm team, void *ata_buffptr, ro_net_types type,
+                  int threadId, bool blocking) override;
 
-    Status
-    fcollect(void *dst,
-             void *src,
-             int size,
-             int wg_id,
-             MPI_Comm team,
-             void *ata_buffptr,
-             ro_net_types type,
-             int threadId,
-             bool blocking) override;
+  void fcollect_broadcast(void *dst, void *src, int size, int win_id,
+                            int blockId, MPI_Comm team, void *ata_buffptr,
+                            ro_net_types type, int threadId, bool blocking);
 
-    Status
-    fcollect_broadcast(void *dst,
-             void *src,
-             int size,
-             int wg_id,
-             MPI_Comm team,
-             void *ata_buffptr,
-             ro_net_types type,
-             int threadId,
-             bool blocking);
+  void fcollect_mpi(void *dst, void *src, int size, int blockId, MPI_Comm team,
+                      void *ata_buffptr, ro_net_types type, int threadId,
+                      bool blocking);
 
-    Status
-    fcollect_mpi(void *dst,
-             void *src,
-             int size,
-             int wg_id,
-             MPI_Comm team,
-             void *ata_buffptr,
-             ro_net_types type,
-             int threadId,
-             bool blocking);
+  void fcollect_gcen(void *dst, void *src, int size, int win_id, int blockId,
+                       MPI_Comm team, void *ata_buffptr, ro_net_types type,
+                       int threadId, bool blocking);
 
-    Status
-    fcollect_gcen(void *dst,
-             void *src,
-             int size,
-             int wg_id,
-             MPI_Comm team,
-             void *ata_buffptr,
-             ro_net_types type,
-             int threadId,
-             bool blocking);
+  void fcollect_gcen2(void *dst, void *src, int size, int win_id, int blockId,
+                        MPI_Comm team, void *ata_buffptr, ro_net_types type,
+                        int threadId, bool blocking);
 
-    Status
-    fcollect_gcen2(void *dst,
-             void *src,
-             int size,
-             int wg_id,
-             MPI_Comm team,
-             void *ata_buffptr,
-             ro_net_types type,
-             int threadId,
-             bool blocking);
+  void putMem(void *dst, void *src, int size, int pe, int win_id, int blockId,
+                int threadId, bool blocking, bool inline_data = false) override;
 
-    Status
-    putMem(void *dst,
-           void *src,
-           int size,
-           int pe,
-           int wg_id,
-           int threadId,
-           bool blocking,
-           bool inline_data = false) override;
+  void amoFOP(void *dst, void *src, void *val, int pe, int win_id, int blockId,
+                int threadId, bool blocking, ROC_SHMEM_OP op,
+                ro_net_types type) override;
 
-    Status
-    amoFOP(void *dst,
-           void *src,
-           int64_t val,
-           int pe,
-           int wg_id,
-           int threadId,
-           bool blocking,
-           ROC_SHMEM_OP op) override;
+  void amoFCAS(void *dst, void *src, void *val, int pe, int win_id, int blockId,
+                 int threadId, bool blocking, void *cond,
+                 ro_net_types type) override;
 
-    Status
-    amoFCAS(void *dst,
-            void *src,
-            int64_t val,
-            int pe,
-            int wg_id,
-            int threadId,
-            bool blocking,
-            int64_t cond) override;
+  void getMem(void *dst, void *src, int size, int pe, int win_id, int blockId,
+                int threadId, bool blocking) override;
 
-    Status
-    getMem(void *dst,
-           void *src,
-           int size,
-           int pe,
-           int wg_id,
-           int threadId,
-           bool blocking) override;
+  void quiet(int blockId, int threadId) override;
 
-    Status
-    quiet(int wg_id,
-          int threadId) override;
+  void progress() override;
 
-    Status
-    progress() override;
+  int numOutstandingRequests() override;
 
-    virtual int
-    numOutstandingRequests() override;
+  void insertRequest(const queue_element_t *element, int queue_id) override;
 
-    virtual void
-    insertRequest(const queue_element_t *element,
-                  int queue_id) override;
+  bool readyForFinalize() override { return !transport_up; }
 
-    virtual bool
-    readyForFinalize() override {
-        return !transport_up;
+  void global_exit(int status) override;
+
+  MPI_Comm get_world_comm() override { return ro_net_comm_world; }
+
+  HostInterface *host_interface{nullptr};
+
+ private:
+  struct CommKey {
+    CommKey(int _start, int _logPstride, int _size)
+        : start(_start), logPstride(_logPstride), size(_size) {}
+
+    bool operator<(const CommKey &key) const {
+      return start < key.start ||
+             (start == key.start && logPstride < key.logPstride) ||
+             (start == key.start && logPstride == key.logPstride &&
+              size < key.size);
     }
 
-    MPI_Comm ro_net_comm_world {};
+    int start{-1};
+    int logPstride{-1};
+    int size{-1};
+  };
 
-    virtual MPI_Comm
-    get_world_comm() override {
-        return ro_net_comm_world;
-    }
+  struct RequestProperties {
+    RequestProperties(int _threadId, int _blockId, bool _blocking, void *_src,
+                      bool _inline_data)
+        : threadId(_threadId),
+          blockId(_blockId),
+          blocking(_blocking),
+          src(_src),
+          inline_data(_inline_data) {}
 
-    HostInterface *host_interface {nullptr};
+    RequestProperties(int _threadId, int _blockId, bool _blocking)
+        : threadId(_threadId),
+          blockId(_blockId),
+          blocking(_blocking),
+          src(nullptr),
+          inline_data(false) {}
 
-    void
-    global_exit(int status) override;
+    int threadId{-1};
+    int blockId{-1};
+    bool blocking{};
+    void *src{nullptr};
+    bool inline_data{};
+  };
 
-    MPI_Op
-    get_mpi_op(ROC_SHMEM_OP op);
+  struct Request {
+    MPI_Request request;
+    RequestProperties properties;
+  };
 
-  private:
-    struct CommKey
-    {
-        CommKey(int _start,
-                int _logPstride,
-                int _size)
-            : start(_start),
-              logPstride(_logPstride),
-              size(_size) {
-        }
+  MPI_Comm createComm(int start, int logPstride, int size);
 
-        bool
-        operator< (const CommKey& key) const {
-            return start < key.start ||
-                   (start == key.start && logPstride < key.logPstride) ||
-                   (start == key.start && logPstride == key.logPstride &&
-                    size < key.size);
-        }
+  void threadProgressEngine();
 
-        int start {-1};
+  void submitRequestsToMPI();
 
-        int logPstride {-1};
+  MPI_Op get_mpi_op(ROC_SHMEM_OP op);
 
-        int size {-1};
-    };
+  Queue *queue{nullptr};
 
-    struct RequestProperties
-    {
-        RequestProperties(int _threadId,
-                          int _wgId,
-                          bool _blocking,
-                          void *_src,
-                          bool _inline_data)
-            : threadId(_threadId),
-              wgId(_wgId),
-              blocking(_blocking),
-              src(_src),
-              inline_data(_inline_data) {
-        }
+  std::unique_ptr<MPI_Request[]> raw_requests();
 
-        RequestProperties(int _threadId,
-                          int _wgId,
-                          bool _blocking)
-            : threadId(_threadId),
-              wgId(_wgId),
-              blocking(_blocking),
-              src(nullptr),
-              inline_data(false) {
-        }
+  // Unordered vector of in-flight MPI Requests. Can complete out of order.
+  std::vector<Request> requests{};
 
-        int threadId {-1};
-        int wgId {-1};
-        bool blocking {};
-        void *src {nullptr};
-        bool inline_data {};
-    };
+  std::vector<std::vector<int> > waiting_quiet{};
 
-    MPI_Comm
-    createComm(int start,
-               int logPstride,
-               int size);
+  std::vector<int> outstanding{};
 
-    void
-    threadProgressEngine();
+  MPI_Comm ro_net_comm_world{};
 
-    void
-    submitRequestsToMPI();
+  std::map<CommKey, MPI_Comm> comm_map{};
 
-    // Unordered vector of in-flight MPI Requests. Can complete out of order.
-    std::vector<RequestProperties> req_prop_vec {};
+  std::queue<queue_element_t> q{};
 
-    std::vector<MPI_Request> req_vec {};
+  std::queue<int> q_wgid{};
 
-    std::vector<std::vector<int> > waiting_quiet {};
+  std::mutex queue_mutex{};
 
-    std::vector<int> outstanding {};
+  std::atomic<bool> transport_up{false};
 
-    std::map<CommKey, MPI_Comm> comm_map {};
+  BackendProxyT *backend_proxy{nullptr};
 
-    std::queue<const queue_element_t *> q {};
+  std::thread progress_thread{};
 
-    std::queue<int> q_wgid {};
-
-    std::mutex queue_mutex {};
-
-    volatile int hostBarrierDone {false};
-
-    volatile bool transport_up {false};
-
-    BackendProxyT *backend_proxy {nullptr};
-
-    std::thread *progress_thread {nullptr};
-
-    int *indices {nullptr};
-
-    const int INDICES_SIZE {128};
+  std::array<int, 128> testsome_indices;
 };
 
 }  // namespace rocshmem
 
-#endif  // ROCSHMEM_LIBRARY_SRC_REVERSE_OFFLOAD_MPI_TRANSPORT_HPP
+#endif  // LIBRARY_SRC_REVERSE_OFFLOAD_MPI_TRANSPORT_HPP_

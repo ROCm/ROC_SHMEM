@@ -20,30 +20,30 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef ROCSHMEM_LIBRARY_SRC_GPU_IB_INFINIBAND_STRUCTS_HPP
-#define ROCSHMEM_LIBRARY_SRC_GPU_IB_INFINIBAND_STRUCTS_HPP
+#ifndef LIBRARY_SRC_GPU_IB_INFINIBAND_STRUCTS_HPP_
+#define LIBRARY_SRC_GPU_IB_INFINIBAND_STRUCTS_HPP_
 
 #include <infiniband/mlx5dv.h>
 
 namespace rocshmem {
 
 typedef struct ib_mlx5_base_av {
-    uint64_t dc_key;
-    uint32_t dqp_dct;
-    uint8_t stat_rate_sl;
-    uint8_t fl_mlid;
-    uint16_t rlid;
+  uint64_t dc_key;
+  uint32_t dqp_dct;
+  uint8_t stat_rate_sl;
+  uint8_t fl_mlid;
+  uint16_t rlid;
 } ib_mlx5_base_av_t;
 
 union mlx5_segment {
-    mlx5_wqe_ctrl_seg ctrl_seg;
-    mlx5_wqe_raddr_seg raddr_seg;
-    mlx5_wqe_atomic_seg atomic_seg;
-    mlx5_wqe_data_seg data_seg;
-    mlx5_wqe_inl_data_seg inl_data_seg;
-    ib_mlx5_base_av_t base_av;
+  mlx5_wqe_ctrl_seg ctrl_seg;
+  mlx5_wqe_raddr_seg raddr_seg;
+  mlx5_wqe_atomic_seg atomic_seg;
+  mlx5_wqe_data_seg data_seg;
+  mlx5_wqe_inl_data_seg inl_data_seg;
+  ib_mlx5_base_av_t base_av;
 };
 
 }  // namespace rocshmem
 
-#endif  // ROCSHMEM_LIBRARY_SRC_GPU_IB_INFINIBAND_STRUCTS_HPP
+#endif  // LIBRARY_SRC_GPU_IB_INFINIBAND_STRUCTS_HPP_

@@ -20,211 +20,318 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef ROCSHMEM_LIBRARY_SRC_UTIL_HPP
-#define ROCSHMEM_LIBRARY_SRC_UTIL_HPP
+#ifndef LIBRARY_SRC_UTIL_HPP_
+#define LIBRARY_SRC_UTIL_HPP_
 
 #include <hip/hip_runtime.h>
-
 #include <hsa/hsa.h>
 #include <hsa/hsa_ext_amd.h>
 
-#include "config.h"
-#include "constants.hpp"
+#include <cstdio>
+
+#include "config.h"  // NOLINT(build/include_subdir)
+#include "src/constants.hpp"
 
 namespace rocshmem {
 
-__device__  inline int
-uncached_load_ubyte(uint8_t* src) {
-    int ret;
-    __asm__  volatile("global_load_ubyte %0 %1 off glc slc \n"
-                       "s_waitcnt vmcnt(0)"
-                : "=v" (ret)
-                : "v" (src));
-    return ret;
+#define DO_PRAGMA(x) _Pragma(#x)
+#define NOWARN(warnoption, ...)                 \
+  DO_PRAGMA(GCC diagnostic push)                \
+  DO_PRAGMA(GCC diagnostic ignored #warnoption) \
+  __VA_ARGS__                                   \
+  DO_PRAGMA(GCC diagnostic pop)
+
+__device__ __forceinline__ int uncached_load_ubyte(uint8_t* src) {
+  int ret;
+  __asm__ volatile(
+      "global_load_ubyte %0 %1 off glc slc \n"
+      "s_waitcnt vmcnt(0)"
+      : "=v"(ret)
+      : "v"(src));
+  return ret;
 }
 
-template <typename T>
-__device__ inline T
-uncached_load(T* src) {
+/* Ignore the warning about deprecated volatile.
+ * The only usage of volatile is to force the compiler to generate
+ * the assembly instruction. If volatile is omitted, the compiler
+ * will NOT generate the non-temporal load or the waitcnt.
+ */
+// clang-format off
+NOWARN(-Wdeprecated-volatile,
+  template <typename T> __device__ __forceinline__ T uncached_load(T* src) {
     T ret;
-    switch(sizeof(T)) {
+    switch (sizeof(T)) {
       case 4:
-        __asm__  volatile("global_load_dword %0 %1 off glc slc \n"
-                          "s_waitcnt vmcnt(0)"
-                    : "=v" (ret)
-                    : "v" (src));
+        __asm__ volatile(
+            "global_load_dword %0 %1 off glc slc \n"
+            "s_waitcnt vmcnt(0)"
+            : "=v"(ret)
+            : "v"(src));
         break;
       case 8:
-        __asm__  volatile("global_load_dwordx2 %0 %1 off glc slc \n"
-                          "s_waitcnt vmcnt(0)"
-                    : "=v" (ret)
-                    : "v" (src));
-            break;
+        __asm__ volatile(
+            "global_load_dwordx2 %0 %1 off glc slc \n"
+            "s_waitcnt vmcnt(0)"
+            : "=v"(ret)
+            : "v"(src));
+        break;
       default:
         break;
     }
     return ret;
-}
+  }
+)
+// clang-format on
 
 #define LOAD(VAR) __atomic_load_n((VAR), __ATOMIC_SEQ_CST)
 #define STORE(DST, SRC) __atomic_store_n((DST), (SRC), __ATOMIC_SEQ_CST)
 
-#define CHECK_HIP(cmd) {\
-    hipError_t error = cmd;\
-    if (error != hipSuccess) { \
-        fprintf(stderr, "error: '%s'(%d) at %s:%d\n", \
-                hipGetErrorString(error), error, __FILE__, __LINE__); \
-        exit(EXIT_FAILURE);\
-    }\
-}
+#define CHECK_HIP(cmd)                                                        \
+  {                                                                           \
+    hipError_t error = cmd;                                                   \
+    if (error != hipSuccess) {                                                \
+      fprintf(stderr, "error: '%s'(%d) at %s:%d\n", hipGetErrorString(error), \
+              error, __FILE__, __LINE__);                                     \
+      exit(EXIT_FAILURE);                                                     \
+    }                                                                         \
+  }
 
 #define SFENCE() asm volatile("sfence" ::: "memory")
 
 #ifdef DEBUG
-# define DPRINTF(...) do {\
-    printf(__VA_ARGS__);\
-} while (0);
+#define DPRINTF(...)     \
+  do {                   \
+    printf(__VA_ARGS__); \
+  } while (0);
 #else
-# define DPRINTF(...) do {\
-} while (0);
+#define DPRINTF(...) \
+  do {               \
+  } while (0);
 #endif
 
 #ifdef DEBUG
-#define GPU_DPRINTF(...) do {\
-        gpu_dprintf(__VA_ARGS__);\
-} while (0);
+#define GPU_DPRINTF(...)      \
+  do {                        \
+    gpu_dprintf(__VA_ARGS__); \
+  } while (0);
 #else
-#define GPU_DPRINTF(...) do {\
-} while (0);
+#define GPU_DPRINTF(...) \
+  do {                   \
+  } while (0);
 #endif
 
-const extern int gpu_clock_freq_mhz;
+extern const int gpu_clock_freq_mhz;
 
 /* Device-side internal functions */
-__device__ void __roc_inv();
-__device__ void __roc_flush();
+__device__ __forceinline__ void __roc_inv() { asm volatile("buffer_wbinvl1;"); }
+
+__device__ __forceinline__ void __roc_flush() {
+#if defined USE_COHERENT_HEAP || defined USE_CACHED_HEAP
+#if __gfx90a__
+  asm volatile("s_dcache_wb;");
+  asm volatile("buffer_wbl2;");
+#endif
+#endif
+}
+
 __device__ uint64_t __read_clock();
 
-#define HW_ID_WV_ID_OFFSET 0
-#define HW_ID_SD_ID_OFFSET 4
-#define HW_ID_CU_ID_OFFSET 8
-#define HW_ID_SE_ID_OFFSET 13
+__device__ __forceinline__ uint32_t lowerID() {
+  return __ffsll(__ballot(1)) - 1;
+}
 
-#define HW_ID_WV_ID_SIZE 4
-#define HW_ID_SD_ID_SIZE 2
-#define HW_ID_CU_ID_SIZE 4
-#define HW_ID_SE_ID_SIZE 2
-
-#define WVS_PER_SD 10
-#define WVS_PER_CU 40
-#define WVS_PER_SE 640
-
-__device__ int
-get_hw_wv_index();
-
-__device__ int
-get_hw_cu_index();
+__device__ __forceinline__ int wave_SZ() { return __popcll(__ballot(1)); }
 
 /*
  * Returns true if the caller's thread index is (0, 0, 0) in its block.
  */
-__device__ bool
-is_thread_zero_in_block();
+__device__ __forceinline__ bool is_thread_zero_in_block() {
+  return hipThreadIdx_x == 0 && hipThreadIdx_y == 0 && hipThreadIdx_z == 0;
+}
 
 /*
  * Returns true if the caller's block index is (0, 0, 0) in its grid.  All
  * threads in the same block will return the same answer.
  */
-__device__ bool
-is_block_zero_in_grid();
-
+__device__ __forceinline__ bool is_block_zero_in_grid() {
+  return hipBlockIdx_x == 0 && hipBlockIdx_y == 0 && hipBlockIdx_z == 0;
+}
 /*
  * Returns the number of threads in the caller's flattened thread block.
  */
-__device__ int
-get_flat_block_size();
+__device__ __forceinline__ int get_flat_block_size() {
+  return hipBlockDim_x * hipBlockDim_y * hipBlockDim_z;
+}
 
 /*
  * Returns the flattened thread index of the calling thread within its
  * thread block.
  */
-__device__ int
-get_flat_block_id();
+__device__ __forceinline__ int get_flat_block_id() {
+  return hipThreadIdx_x + hipThreadIdx_y * hipBlockDim_x +
+         hipThreadIdx_z * hipBlockDim_x * hipBlockDim_y;
+}
 
 /*
  * Returns the flattened block index that the calling thread is a member of in
  * in the grid. Callers from the same block will have the same index.
  */
-__device__ int
-get_flat_grid_id();
+__device__ __forceinline__ int get_flat_grid_id() {
+  return hipBlockIdx_x + hipBlockIdx_y * hipGridDim_x +
+         hipBlockIdx_z * hipGridDim_x * hipGridDim_y;
+}
+
+/*
+ * Returns the flattened thread index of the calling thread within the grid.
+ */
+__device__ __forceinline__ int get_flat_id() {
+    return get_flat_grid_id() * (hipBlockDim_x * hipBlockDim_y * hipBlockDim_z) + get_flat_block_id();
+}
 
 /*
  * Returns true if the caller's thread flad_id is 0 in its wave.
  */
-__device__ bool
-is_thread_zero_in_wave();
-
-
-__device__ uint32_t
-lowerID();
-
-__device__ int
-wave_SZ();
-
-extern __constant__ int *print_lock;
-
-template <typename ...Args>
-__device__ void
-gpu_dprintf(const char* fmt,
-            const Args &...args) {
-    for (int i {0}; i < WF_SIZE; i ++) {
-        if ((get_flat_block_id() % WF_SIZE) == i) {
-            /*
-             * GPU-wide global lock that ensures that both prints are executed
-             * by a single thread atomically.  We deliberately break control
-             * flow so that only a single thread in a WF accesses the lock at a
-             * time.  If multiple threads in the same WF attempt to gain the
-             * lock at the same time, you have a classic GPU control flow
-             * deadlock caused by threads in the same WF waiting on each other.
-             */
-            while (atomicCAS(print_lock, 0, 1) == 1);
-
-            printf("WG (%lu, %lu, %lu) TH (%lu, %lu, %lu) ",
-                    hipBlockIdx_x,
-                    hipBlockIdx_y,
-                    hipBlockIdx_z,
-                    hipThreadIdx_x,
-                    hipThreadIdx_y,
-                    hipThreadIdx_z);
-            printf(fmt, args...);
-
-            *print_lock = 0;
-        }
-    }
+__device__ __forceinline__ bool is_thread_zero_in_wave() {
+  return get_flat_block_id() % WF_SIZE;
 }
 
-__device__ void
-memcpy(void* dst, void* src, size_t size);
+extern __constant__ int* print_lock;
 
-__device__ void
-memcpy_wg(void* dst, void* src, size_t size);
+template <typename... Args>
+__device__ void gpu_dprintf(const char* fmt, const Args&... args) {
+  for (int i{0}; i < WF_SIZE; i++) {
+    if ((get_flat_block_id() % WF_SIZE) == i) {
+      /*
+       * GPU-wide global lock that ensures that both prints are executed
+       * by a single thread atomically.  We deliberately break control
+       * flow so that only a single thread in a WF accesses the lock at a
+       * time.  If multiple threads in the same WF attempt to gain the
+       * lock at the same time, you have a classic GPU control flow
+       * deadlock caused by threads in the same WF waiting on each other.
+       */
+      while (atomicCAS(print_lock, 0, 1) == 1) {
+      }
 
-__device__ void
-memcpy_wave(void* dst, void* src, size_t size);
+      printf("WG (%lu, %lu, %lu) TH (%lu, %lu, %lu) ", hipBlockIdx_x,
+             hipBlockIdx_y, hipBlockIdx_z, hipThreadIdx_x, hipThreadIdx_y,
+             hipThreadIdx_z);
+      printf(fmt, args...);
 
-int
-rocm_init();
+      *print_lock = 0;
+    }
+  }
+}
 
-void
-rocm_memory_lock_to_fine_grain(void* ptr,
-                               size_t size,
-                               void** gpu_ptr,
-                               int gpu_id);
+__device__ __forceinline__ void store_asm(uint8_t* val, uint8_t* dst,
+                                          int size) {
+  switch (size) {
+    case 2: {
+      int16_t val16{*(reinterpret_cast<int16_t*>(val))};
+      asm volatile("flat_store_short %0 %1 glc slc" : : "v"(dst), "v"(val16));
+      break;
+    }
+    case 4: {
+      int32_t val32{*(reinterpret_cast<int32_t*>(val))};
+      asm volatile("flat_store_dword %0 %1 glc slc" : : "v"(dst), "v"(val32));
+      break;
+    }
+    case 8: {
+      int64_t val64{*(reinterpret_cast<int64_t*>(val))};
+      asm volatile("flat_store_dwordx2 %0 %1 glc slc" : : "v"(dst), "v"(val64));
+      break;
+    }
+    default:
+      break;
+  }
+}
+
+__device__ __forceinline__ void memcpy(void* dst, void* src, size_t size) {
+  uint8_t* dst_bytes{static_cast<uint8_t*>(dst)};
+  uint8_t* src_bytes{static_cast<uint8_t*>(src)};
+
+  for (int i = 8; i > 1; i >>= 1) {
+    while (size >= i) {
+      store_asm(src_bytes, dst_bytes, i);
+      src_bytes += i;
+      dst_bytes += i;
+      size -= i;
+    }
+  }
+
+  if (size == 1) {
+    *dst_bytes = *src_bytes;
+  }
+}
+
+__device__ __forceinline__ void memcpy_wg(void* dst, void* src, size_t size) {
+  int thread_id{get_flat_block_id()};
+  int block_size{get_flat_block_size()};
+
+  int cpy_size{};
+  uint8_t* dst_bytes{nullptr};
+  uint8_t* dst_def{nullptr};
+  uint8_t* src_bytes{nullptr};
+  uint8_t* src_def{nullptr};
+
+  dst_def = reinterpret_cast<uint8_t*>(dst);
+  src_def = reinterpret_cast<uint8_t*>(src);
+  dst_bytes = dst_def;
+  src_bytes = src_def;
+
+  for (int j{8}; j > 1; j >>= 1) {
+    cpy_size = size / j;
+    for (int i{thread_id}; i < cpy_size; i += block_size) {
+      dst_bytes = dst_def;
+      src_bytes = src_def;
+
+      src_bytes += i * j;
+      dst_bytes += i * j;
+
+      store_asm(src_bytes, dst_bytes, j);
+    }
+    size -= cpy_size * j;
+    dst_def += cpy_size * j;
+    src_def += cpy_size * j;
+  }
+
+  if (size == 1) {
+    if (is_thread_zero_in_block()) {
+      *dst_bytes = *src_bytes;
+    }
+  }
+}
+
+__device__ __forceinline__ void memcpy_wave(void* dst, void* src, size_t size) {
+  uint8_t* dst_bytes{static_cast<uint8_t*>(dst)};
+  uint8_t* src_bytes{static_cast<uint8_t*>(src)};
+
+  int cpy_size{};
+  int thread_id{get_flat_block_id()};
+  for (int j{8}; j > 1; j >>= 1) {
+    cpy_size = size / j;
+    for (int i{thread_id}; i < cpy_size; i += WF_SIZE) {
+      store_asm(src_bytes, dst_bytes, j);
+      src_bytes += i * j;
+      dst_bytes += i * j;
+      size -= cpy_size * j;
+    }
+  }
+
+  if (size == 1) {
+    if (is_thread_zero_in_wave()) {
+      *dst_bytes = *src_bytes;
+    }
+  }
+}
+
+int rocm_init();
+
+void rocm_memory_lock_to_fine_grain(void* ptr, size_t size, void** gpu_ptr,
+                                    int gpu_id);
 
 // Returns clock frequency used by s_memrealtime() in Mhz
-int
-wallClk_freq_mhz();
+uint64_t wallClk_freq_mhz();
 
 }  // namespace rocshmem
 
-#endif  // ROCSHMEM_LIBRARY_SRC_UTIL_HPP
+#endif  // LIBRARY_SRC_UTIL_HPP_

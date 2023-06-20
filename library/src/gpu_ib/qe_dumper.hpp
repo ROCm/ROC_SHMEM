@@ -20,52 +20,47 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef ROCSHMEM_LIBRARY_SRC_GPU_IB_QE_DUMPER_HPP
-#define ROCSHMEM_LIBRARY_SRC_GPU_IB_QE_DUMPER_HPP
+#ifndef LIBRARY_SRC_GPU_IB_QE_DUMPER_HPP_
+#define LIBRARY_SRC_GPU_IB_QE_DUMPER_HPP_
 
 #include <hip/hip_runtime.h>
 #include <infiniband/mlx5dv.h>
 
 #include <string>
 
-#include "backend_ib.hpp"
-#include "queue_pair.hpp"
+#include "src/gpu_ib/backend_ib.hpp"
+#include "src/gpu_ib/queue_pair.hpp"
 
 namespace rocshmem {
 
 class QeDumper {
  public:
-    QeDumper(int dest_pe,
-             int src_wg,
-             int index);
+  QeDumper(int dest_pe, int src_wg, int index);
 
-    ~QeDumper();
+  ~QeDumper();
 
-    void
-    dump_cq();
+  void dump_cq();
 
-    void
-    dump_sq();
+  void dump_sq();
 
  private:
-    void
-    dump_uint64_(size_t num_elems) const;
+  void dump_uint64_(size_t num_elems) const;
 
-    int dest_pe_ {-1};
+  int dest_pe_{-1};
 
-    int src_wg_ {-1};
+  int src_wg_{-1};
 
-    int index_ {-1};
+  int index_{-1};
 
-    GPUIBBackend* gpu_backend_ {nullptr};
+  GPUIBBackend* gpu_backend_{nullptr};
 
-    std::string type_ {};
+  std::string type_{};
 
-    QueuePair* qp_ {nullptr};
+  QueuePair* qp_{nullptr};
 
-    uint64_t* raw_u64_ {nullptr};
+  uint64_t* raw_u64_{nullptr};
 };
 
 }  // namespace rocshmem
 
-#endif  // ROCSHMEM_LIBRARY_SRC_GPU_IB_QE_DUMPER_HPP
+#endif  // LIBRARY_SRC_GPU_IB_QE_DUMPER_HPP_

@@ -20,35 +20,28 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#include "ro_net_team.hpp"
+#include "src/reverse_offload/ro_net_team.hpp"
 
-#include "backend_ro.hpp"
-#include "backend_type.hpp"
+#include "src/backend_type.hpp"
+#include "src/reverse_offload/backend_ro.hpp"
 
 namespace rocshmem {
 
-ROTeam::ROTeam(Backend* backend,
-               TeamInfo* team_info_wrt_parent,
-               TeamInfo* team_info_wrt_world,
-               int num_pes,
-               int my_pe,
+ROTeam::ROTeam(Backend* backend, TeamInfo* team_info_wrt_parent,
+               TeamInfo* team_info_wrt_world, int num_pes, int my_pe,
                MPI_Comm mpi_comm)
-    : Team(backend,
-           team_info_wrt_parent,
-           team_info_wrt_world,
-           num_pes,
-           my_pe,
+    : Team(backend, team_info_wrt_parent, team_info_wrt_world, num_pes, my_pe,
            mpi_comm) {
-    type = BackendType::RO_BACKEND;
+  type = BackendType::RO_BACKEND;
 
-    ata_buffer = malloc(MAX_ATA_BUFF_SIZE);
+  ata_buffer = malloc(MAX_ATA_BUFF_SIZE);
 }
 
 ROTeam::~ROTeam() {
-    if(ata_buffer != NULL) {
-        free(ata_buffer);
-        ata_buffer = NULL;
-    }
+  if (ata_buffer != nullptr) {
+    free(ata_buffer);
+    ata_buffer = nullptr;
+  }
 }
 
 }  // namespace rocshmem

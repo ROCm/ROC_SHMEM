@@ -24,128 +24,119 @@
 
 using namespace rocshmem;
 
-TEST_F(SingleHeapTestFixture, unallocated_size_check)
-{
-    ASSERT_EQ(single_heap_.get_size(), 1 << 30);
+TEST_F(SingleHeapTestFixture, unallocated_size_check) {
+  ASSERT_EQ(single_heap_.get_size(), 1 << 30);
 }
 
-TEST_F(SingleHeapTestFixture, unallocated_avail_check)
-{
-    ASSERT_EQ(single_heap_.get_avail(), 1 << 30);
+TEST_F(SingleHeapTestFixture, unallocated_avail_check) {
+  ASSERT_EQ(single_heap_.get_avail(), 1 << 30);
 }
 
-TEST_F(SingleHeapTestFixture, unallocated_used_check)
-{
-    ASSERT_EQ(single_heap_.get_used(), 0);
+TEST_F(SingleHeapTestFixture, unallocated_used_check) {
+  ASSERT_EQ(single_heap_.get_used(), 0);
 }
 
-TEST_F(SingleHeapTestFixture, free_null)
-{
-    void* ptr {nullptr};
-    single_heap_.free(ptr);
+TEST_F(SingleHeapTestFixture, free_null) {
+  void* ptr{nullptr};
+  single_heap_.free(ptr);
 }
 
-TEST_F(SingleHeapTestFixture, alloc_0)
-{
-    size_t request_size {0};
-    void* ptr {nullptr};
+TEST_F(SingleHeapTestFixture, alloc_0) {
+  size_t request_size{0};
+  void* ptr{nullptr};
 
-    single_heap_.malloc(&ptr, request_size);
-    ASSERT_EQ(ptr, nullptr);
+  single_heap_.malloc(&ptr, request_size);
+  ASSERT_EQ(ptr, nullptr);
 
-    size_t expected_used {request_size};
-    ASSERT_EQ(single_heap_.get_used(), expected_used);
-    size_t expected_avail {single_heap_.get_size() - expected_used};
-    ASSERT_EQ(single_heap_.get_avail(), expected_avail);
+  size_t expected_used{request_size};
+  ASSERT_EQ(single_heap_.get_used(), expected_used);
+  size_t expected_avail{single_heap_.get_size() - expected_used};
+  ASSERT_EQ(single_heap_.get_avail(), expected_avail);
 
-    single_heap_.free(ptr);
+  single_heap_.free(ptr);
 
-    expected_used = 0;
-    ASSERT_EQ(single_heap_.get_used(), expected_used);
-    expected_avail = single_heap_.get_size();
-    ASSERT_EQ(single_heap_.get_avail(), expected_avail);
+  expected_used = 0;
+  ASSERT_EQ(single_heap_.get_used(), expected_used);
+  expected_avail = single_heap_.get_size();
+  ASSERT_EQ(single_heap_.get_avail(), expected_avail);
 }
 
-TEST_F(SingleHeapTestFixture, alloc_1)
-{
-    size_t request_size {1};
-    void* ptr {nullptr};
+TEST_F(SingleHeapTestFixture, alloc_1) {
+  size_t request_size{1};
+  void* ptr{nullptr};
 
-    single_heap_.malloc(&ptr, request_size);
-    ASSERT_NE(ptr, nullptr);
+  single_heap_.malloc(&ptr, request_size);
+  ASSERT_NE(ptr, nullptr);
 
-    size_t expected_used {128};
-    ASSERT_EQ(single_heap_.get_used(), expected_used);
-    size_t expected_avail {single_heap_.get_size() - expected_used};
-    ASSERT_EQ(single_heap_.get_avail(), expected_avail);
+  size_t expected_used{128};
+  ASSERT_EQ(single_heap_.get_used(), expected_used);
+  size_t expected_avail{single_heap_.get_size() - expected_used};
+  ASSERT_EQ(single_heap_.get_avail(), expected_avail);
 
-    single_heap_.free(ptr);
+  single_heap_.free(ptr);
 
-    expected_used = 0;
-    ASSERT_EQ(single_heap_.get_used(), expected_used);
-    expected_avail = single_heap_.get_size();
-    ASSERT_EQ(single_heap_.get_avail(), expected_avail);
+  expected_used = 0;
+  ASSERT_EQ(single_heap_.get_used(), expected_used);
+  expected_avail = single_heap_.get_size();
+  ASSERT_EQ(single_heap_.get_avail(), expected_avail);
 }
 
-TEST_F(SingleHeapTestFixture, alloc_256)
-{
-    size_t request_size {256};
-    void* ptr {nullptr};
+TEST_F(SingleHeapTestFixture, alloc_256) {
+  size_t request_size{256};
+  void* ptr{nullptr};
 
-    single_heap_.malloc(&ptr, request_size);
-    ASSERT_NE(ptr, nullptr);
+  single_heap_.malloc(&ptr, request_size);
+  ASSERT_NE(ptr, nullptr);
 
-    size_t expected_used {request_size};
-    ASSERT_EQ(single_heap_.get_used(), expected_used);
-    size_t expected_avail {single_heap_.get_size() - expected_used};
-    ASSERT_EQ(single_heap_.get_avail(), expected_avail);
+  size_t expected_used{request_size};
+  ASSERT_EQ(single_heap_.get_used(), expected_used);
+  size_t expected_avail{single_heap_.get_size() - expected_used};
+  ASSERT_EQ(single_heap_.get_avail(), expected_avail);
 
-    single_heap_.free(ptr);
+  single_heap_.free(ptr);
 
-    expected_used = 0;
-    ASSERT_EQ(single_heap_.get_used(), expected_used);
-    expected_avail = single_heap_.get_size();
-    ASSERT_EQ(single_heap_.get_avail(), expected_avail);
+  expected_used = 0;
+  ASSERT_EQ(single_heap_.get_used(), expected_used);
+  expected_avail = single_heap_.get_size();
+  ASSERT_EQ(single_heap_.get_avail(), expected_avail);
 }
 
-TEST_F(SingleHeapTestFixture, alloc_1024)
-{
-    size_t request_size {1024};
-    void* ptr {nullptr};
+TEST_F(SingleHeapTestFixture, alloc_1024) {
+  size_t request_size{1024};
+  void* ptr{nullptr};
 
-    single_heap_.malloc(&ptr, request_size);
-    ASSERT_NE(ptr, nullptr);
+  single_heap_.malloc(&ptr, request_size);
+  ASSERT_NE(ptr, nullptr);
 
-    size_t expected_used {request_size};
-    ASSERT_EQ(single_heap_.get_used(), expected_used);
-    size_t expected_avail {single_heap_.get_size() - expected_used};
-    ASSERT_EQ(single_heap_.get_avail(), expected_avail);
+  size_t expected_used{request_size};
+  ASSERT_EQ(single_heap_.get_used(), expected_used);
+  size_t expected_avail{single_heap_.get_size() - expected_used};
+  ASSERT_EQ(single_heap_.get_avail(), expected_avail);
 
-    single_heap_.free(ptr);
+  single_heap_.free(ptr);
 
-    expected_used = 0;
-    ASSERT_EQ(single_heap_.get_used(), expected_used);
-    expected_avail = single_heap_.get_size();
-    ASSERT_EQ(single_heap_.get_avail(), expected_avail);
+  expected_used = 0;
+  ASSERT_EQ(single_heap_.get_used(), expected_used);
+  expected_avail = single_heap_.get_size();
+  ASSERT_EQ(single_heap_.get_avail(), expected_avail);
 }
 
-TEST_F(SingleHeapTestFixture, alloc_4097)
-{
-    size_t request_size {4097};
-    void* ptr {nullptr};
+TEST_F(SingleHeapTestFixture, alloc_4097) {
+  size_t request_size{4097};
+  void* ptr{nullptr};
 
-    single_heap_.malloc(&ptr, request_size);
-    ASSERT_NE(ptr, nullptr);
+  single_heap_.malloc(&ptr, request_size);
+  ASSERT_NE(ptr, nullptr);
 
-    size_t expected_used {8192};
-    ASSERT_EQ(single_heap_.get_used(), expected_used);
-    size_t expected_avail {single_heap_.get_size() - expected_used};
-    ASSERT_EQ(single_heap_.get_avail(), expected_avail);
+  size_t expected_used{8192};
+  ASSERT_EQ(single_heap_.get_used(), expected_used);
+  size_t expected_avail{single_heap_.get_size() - expected_used};
+  ASSERT_EQ(single_heap_.get_avail(), expected_avail);
 
-    single_heap_.free(ptr);
+  single_heap_.free(ptr);
 
-    expected_used = 0;
-    ASSERT_EQ(single_heap_.get_used(), expected_used);
-    expected_avail = single_heap_.get_size();
-    ASSERT_EQ(single_heap_.get_avail(), expected_avail);
+  expected_used = 0;
+  ASSERT_EQ(single_heap_.get_used(), expected_used);
+  expected_avail = single_heap_.get_size();
+  ASSERT_EQ(single_heap_.get_avail(), expected_avail);
 }

@@ -35,31 +35,29 @@
 
 using namespace rocshmem;
 
-int
-main(int argc, char* argv[])
-{
-    int me, neighbor;
-    int ret = 0;
-    int aaa, *bbb;
+int main(int argc, char* argv[]) {
+  int me, neighbor;
+  int ret = 0;
+  int aaa, *bbb;
 
-    roc_shmem_init(1);
+  roc_shmem_init();
 
-    bbb = (int *) roc_shmem_malloc(sizeof(int));
+  bbb = (int*)roc_shmem_malloc(sizeof(int));
 
-    *bbb = me = roc_shmem_my_pe();
-    neighbor = (me + 1) % roc_shmem_n_pes();
+  *bbb = me = roc_shmem_my_pe();
+  neighbor = (me + 1) % roc_shmem_n_pes();
 
-    roc_shmem_barrier_all();
+  roc_shmem_barrier_all();
 
-    roc_shmem_int_get( &aaa, bbb, 1, neighbor );
+  roc_shmem_int_get(&aaa, bbb, 1, neighbor);
 
-    roc_shmem_barrier_all();
+  roc_shmem_barrier_all();
 
-    if (aaa != neighbor ) ret = 1;
+  if (aaa != neighbor) ret = 1;
 
-    roc_shmem_free(bbb);
+  roc_shmem_free(bbb);
 
-    roc_shmem_finalize();
+  roc_shmem_finalize();
 
-    return ret;
+  return ret;
 }

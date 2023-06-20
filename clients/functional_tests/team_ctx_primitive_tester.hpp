@@ -28,33 +28,25 @@
 /******************************************************************************
  * HOST TESTER CLASS
  *****************************************************************************/
-class TeamCtxPrimitiveTester : public Tester
-{
-  public:
-    explicit TeamCtxPrimitiveTester(TesterArguments args);
-    virtual ~TeamCtxPrimitiveTester();
+class TeamCtxPrimitiveTester : public Tester {
+ public:
+  explicit TeamCtxPrimitiveTester(TesterArguments args);
+  virtual ~TeamCtxPrimitiveTester();
 
-  protected:
-    virtual void
-    resetBuffers(uint64_t size) override;
+ protected:
+  virtual void resetBuffers(uint64_t size) override;
 
-    virtual void
-    preLaunchKernel() override;
+  virtual void preLaunchKernel() override;
 
-    virtual void
-    launchKernel(dim3 gridSize,
-                 dim3 blockSize,
-                 int loop,
-                 uint64_t size) override;
+  virtual void launchKernel(dim3 gridSize, dim3 blockSize, int loop,
+                            uint64_t size) override;
 
-    virtual void
-    postLaunchKernel() override;
+  virtual void postLaunchKernel() override;
 
-    virtual void
-    verifyResults(uint64_t size) override;
+  virtual void verifyResults(uint64_t size) override;
 
-    char *s_buf = nullptr;
-    char *r_buf = nullptr;
+  char *s_buf = nullptr;
+  char *r_buf = nullptr;
 };
 
 #endif

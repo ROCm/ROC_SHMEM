@@ -20,55 +20,46 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef ROCSHMEM_LIBRARY_SRC_REVERSE_OFFLOAD_TEAM_INFO_PROXY_HPP
-#define ROCSHMEM_LIBRARY_SRC_REVERSE_OFFLOAD_TEAM_INFO_PROXY_HPP
+#ifndef LIBRARY_SRC_REVERSE_OFFLOAD_TEAM_INFO_PROXY_HPP_
+#define LIBRARY_SRC_REVERSE_OFFLOAD_TEAM_INFO_PROXY_HPP_
 
-#include "team.hpp"
-#include "device_proxy.hpp"
+#include "src/device_proxy.hpp"
+#include "src/team.hpp"
 
 namespace rocshmem {
 
 template <typename ALLOCATOR>
 class TeamInfoProxy {
-    using ProxyT = DeviceProxy<ALLOCATOR, TeamInfo>;
+  using ProxyT = DeviceProxy<ALLOCATOR, TeamInfo>;
 
-  public:
-    /*
-     * Placement new the memory which is allocated by proxy_
-     */
-    TeamInfoProxy(Team* parent_team,
-                  int pe_start,
-                  int stride,
-                  int size) {
-        new (proxy_.get()) TeamInfo(parent_team, pe_start, stride, size);
-    }
+ public:
+  /*
+   * Placement new the memory which is allocated by proxy_
+   */
+  TeamInfoProxy(Team* parent_team, int pe_start, int stride, int size) {
+    new (proxy_.get()) TeamInfo(parent_team, pe_start, stride, size);
+  }
 
-    /*
-     * Since placement new is called in the constructor, then
-     * delete must be called manually.
-     */
-    ~TeamInfoProxy() {
-        proxy_.get()->~TeamInfo();
-    }
+  /*
+   * Since placement new is called in the constructor, then
+   * delete must be called manually.
+   */
+  ~TeamInfoProxy() { proxy_.get()->~TeamInfo(); }
 
-    /*
-     * @brief Provide access to the memory referenced by the proxy
-     */
-    __host__ __device__
-    TeamInfo*
-    get() {
-        return proxy_.get();
-    }
+  /*
+   * @brief Provide access to the memory referenced by the proxy
+   */
+  __host__ __device__ TeamInfo* get() { return proxy_.get(); }
 
-  private:
-    /*
-     * @brief Memory managed by the lifetime of this object
-     */
-    ProxyT proxy_ {};
+ private:
+  /*
+   * @brief Memory managed by the lifetime of this object
+   */
+  ProxyT proxy_{};
 };
 
 using TeamInfoProxyT = TeamInfoProxy<HIPAllocator>;
 
 }  // namespace rocshmem
 
-#endif  // ROCSHMEM_LIBRARY_SRC_REVERSE_OFFLOAD_TEAM_INFO_PROXY_HPP
+#endif  // LIBRARY_SRC_REVERSE_OFFLOAD_TEAM_INFO_PROXY_HPP_

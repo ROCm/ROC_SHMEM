@@ -20,79 +20,54 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef ROCSHMEM_LIBRARY_SRC_HDP_POLICY_HPP
-#define ROCSHMEM_LIBRARY_SRC_HDP_POLICY_HPP
+#ifndef LIBRARY_SRC_HDP_POLICY_HPP_
+#define LIBRARY_SRC_HDP_POLICY_HPP_
 
 #include <hip/hip_runtime.h>
 #include <hsa/hsa_ext_amd.h>
 
 #include "config.h"  // NOLINT(build/include_subdir)
-#include "util.hpp"
+#include "src/util.hpp"
 
 namespace rocshmem {
 
 class HdpRocmPolicy {
-  public:
-    HdpRocmPolicy() {
-        set_hdp_flush_ptr();
-    }
+ public:
+  HdpRocmPolicy() { set_hdp_flush_ptr(); }
 
-    __host__ void
-    hdp_flush() {
-        *hdp_flush_ptr_ = HDP_FLUSH_VAL;
-    }
+  __host__ void hdp_flush() { *hdp_flush_ptr_ = HDP_FLUSH_VAL; }
 
-    __host__ unsigned int*
-    get_hdp_flush_ptr() const {
-        return hdp_flush_ptr_;
-    }
+  __host__ unsigned int* get_hdp_flush_ptr() const { return hdp_flush_ptr_; }
 
-    __device__ void
-    hdp_flush() {
-        STORE(hdp_flush_ptr_, HDP_FLUSH_VAL);
-    }
+  __device__ void hdp_flush() { STORE(hdp_flush_ptr_, HDP_FLUSH_VAL); }
 
-    __device__ void
-    flushCoherency() {
-        hdp_flush();
-    }
+  __device__ void flushCoherency() { hdp_flush(); }
 
-    static const int HDP_FLUSH_VAL {0x01};
+  static const int HDP_FLUSH_VAL{0x01};
 
  private:
-    void
-    set_hdp_flush_ptr() {
-        int hip_dev_id {};
-        CHECK_HIP(hipGetDevice(&hip_dev_id));
-        CHECK_HIP(hipDeviceGetAttribute(reinterpret_cast<int*>(&hdp_flush_ptr_),
-                                        hipDeviceAttributeHdpMemFlushCntl,
-                                        hip_dev_id));
-    }
+  void set_hdp_flush_ptr() {
+    int hip_dev_id{};
+    CHECK_HIP(hipGetDevice(&hip_dev_id));
+    CHECK_HIP(hipDeviceGetAttribute(reinterpret_cast<int*>(&hdp_flush_ptr_),
+                                    hipDeviceAttributeHdpMemFlushCntl,
+                                    hip_dev_id));
+  }
 
-    unsigned int *hdp_flush_ptr_ {nullptr};
+  unsigned int* hdp_flush_ptr_{nullptr};
 };
 
 class NoHdpPolicy {
-  public:
-    NoHdpPolicy() = default;
+ public:
+  NoHdpPolicy() = default;
 
-    __host__ void
-    hdp_flush() {
-    }
+  __host__ void hdp_flush() {}
 
-    __host__ unsigned int*
-    get_hdp_flush_ptr() const {
-        return nullptr;
-    }
+  __host__ unsigned int* get_hdp_flush_ptr() const { return nullptr; }
 
-    __device__
-    void hdp_flush() {
-    }
+  __device__ void hdp_flush() {}
 
-    __device__ void
-    flushCoherency() {
-        __roc_flush();
-    }
+  __device__ void flushCoherency() { __roc_flush(); }
 };
 
 /*
@@ -104,6 +79,6 @@ typedef NoHdpPolicy HdpPolicy;
 typedef HdpRocmPolicy HdpPolicy;
 #endif
 
-} // namespace rocshmem
+}  // namespace rocshmem
 
-#endif  // ROCSHMEM_LIBRARY_SRC_HDP_POLICY_HPP
+#endif  // LIBRARY_SRC_HDP_POLICY_HPP_

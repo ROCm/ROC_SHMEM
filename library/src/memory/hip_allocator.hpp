@@ -20,8 +20,8 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef ROCSHMEM_LIBRARY_SRC_HIP_ALLOCATOR_HPP
-#define ROCSHMEM_LIBRARY_SRC_HIP_ALLOCATOR_HPP
+#ifndef LIBRARY_SRC_MEMORY_HIP_ALLOCATOR_HPP_
+#define LIBRARY_SRC_MEMORY_HIP_ALLOCATOR_HPP_
 
 /**
  * @file hip_allocator.hpp
@@ -29,124 +29,93 @@
  * @brief Contains HIP wrapper class for memory allocator
  */
 
-#include <cstdlib>
-
 #include <hip/hip_runtime_api.h>
 
-#include "memory_allocator.hpp"
+#include <cstdlib>
+#include <limits>
+
+#include "src/memory/memory_allocator.hpp"
 
 namespace rocshmem {
 
-class HIPAllocator : public MemoryAllocator
-{
-  public:
-    HIPAllocator()
-        : MemoryAllocator(hipMalloc, hipFree)
-    {
-    }
+class HIPAllocator : public MemoryAllocator {
+ public:
+  HIPAllocator() : MemoryAllocator(hipMalloc, hipFree) {}
 };
 
-class HIPAllocatorFinegrained : public MemoryAllocator
-{
-  public:
-    HIPAllocatorFinegrained()
-        : MemoryAllocator(hipExtMallocWithFlags,
-                          hipFree,
-                          hipDeviceMallocFinegrained)
-    {
-    }
+class HIPAllocatorFinegrained : public MemoryAllocator {
+ public:
+  HIPAllocatorFinegrained()
+      : MemoryAllocator(hipExtMallocWithFlags, hipFree,
+                        hipDeviceMallocFinegrained) {}
 };
 
-class HIPAllocatorManaged : public MemoryAllocator
-{
-  public:
-    HIPAllocatorManaged()
-        : MemoryAllocator(hipMallocManaged,
-                          hipFree,
-                          hipMemAttachHost)
-    {
-        _managed = true;
-    }
+class HIPAllocatorManaged : public MemoryAllocator {
+ public:
+  HIPAllocatorManaged()
+      : MemoryAllocator(hipMallocManaged, hipFree, hipMemAttachHost) {
+    _managed = true;
+  }
 };
 
-class HIPHostAllocator : public MemoryAllocator
-{
-  public:
-    HIPHostAllocator()
-        : MemoryAllocator(hipHostMalloc,
-                          hipFree,
-                          hipHostMallocCoherent)
-    {
-    }
+class HIPHostAllocator : public MemoryAllocator {
+ public:
+  HIPHostAllocator()
+      : MemoryAllocator(hipHostMalloc, hipFree, hipHostMallocCoherent) {}
 };
 
-class HostAllocator : public MemoryAllocator
-{
-  public:
-    HostAllocator()
-        : MemoryAllocator(std::malloc,
-                          std::free)
-    {
-    }
+class HostAllocator : public MemoryAllocator {
+ public:
+  HostAllocator() : MemoryAllocator(std::malloc, std::free) {}
 };
 
-class PosixAligned64Allocator : public MemoryAllocator
-{
-  public:
-    PosixAligned64Allocator()
-        : MemoryAllocator(posix_memalign,
-                          std::free,
-                          64)
-    {
-    }
+class PosixAligned64Allocator : public MemoryAllocator {
+ public:
+  PosixAligned64Allocator() : MemoryAllocator(posix_memalign, std::free, 64) {}
 };
 
 template <class T>
-class StdAllocatorHIP
-{
-  public:
-    typedef T value_type;
+class StdAllocatorHIP {
+ public:
+  typedef T value_type;
 
-    StdAllocatorHIP () = default;
+  StdAllocatorHIP() = default;
 
-    template <class U>
-    constexpr StdAllocatorHIP(const StdAllocatorHIP <U>&) noexcept {
+  template <class U>
+  constexpr StdAllocatorHIP(const StdAllocatorHIP<U>&) noexcept {}
+
+  [[nodiscard]] T* allocate(size_t n) {
+    if (n > std::numeric_limits<size_t>::max() / sizeof(T)) {
+      throw std::bad_array_new_length();
     }
 
-    [[nodiscard]] T* allocate(size_t n) {
-        if (n > std::numeric_limits<size_t>::max() / sizeof(T)) {
-            throw std::bad_array_new_length();
-        }
-
-        T* p {nullptr};
-        allocator_.allocate(reinterpret_cast<void**>(&p), n * sizeof(T));
-        if (p) {
-            return p;
-        }
-
-        throw std::bad_alloc();
+    T* p{nullptr};
+    allocator_.allocate(reinterpret_cast<void**>(&p), n * sizeof(T));
+    if (p) {
+      return p;
     }
 
-    void deallocate(T* p, size_t n) noexcept {
-        allocator_.deallocate(p);
-    }
+    throw std::bad_alloc();
+  }
 
-  private:
-    HIPAllocatorFinegrained allocator_ {};
+  void deallocate(T* p, [[maybe_unused]] size_t n) noexcept {
+    allocator_.deallocate(p);
+  }
+
+ private:
+  HIPAllocatorFinegrained allocator_{};
 };
 
 template <class T, class U>
-bool operator==(const StdAllocatorHIP <T>&,
-                const StdAllocatorHIP <U>&) {
-    return true;
+bool operator==(const StdAllocatorHIP<T>&, const StdAllocatorHIP<U>&) {
+  return true;
 }
 
 template <class T, class U>
-bool operator!=(const StdAllocatorHIP <T>&,
-                const StdAllocatorHIP <U>&) {
-    return false;
+bool operator!=(const StdAllocatorHIP<T>&, const StdAllocatorHIP<U>&) {
+  return false;
 }
 
-} // namespace rocshmem
+}  // namespace rocshmem
 
-#endif  // ROCSHMEM_LIBRARY_SRC_HIP_ALLOCATOR_HPP
+#endif  // LIBRARY_SRC_MEMORY_HIP_ALLOCATOR_HPP_

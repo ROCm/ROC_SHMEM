@@ -20,93 +20,89 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef ROCSHMEM_LIBRARY_SRC_DEVICE_PROXY_HPP
-#define ROCSHMEM_LIBRARY_SRC_DEVICE_PROXY_HPP
+#ifndef LIBRARY_SRC_DEVICE_PROXY_HPP_
+#define LIBRARY_SRC_DEVICE_PROXY_HPP_
 
 #include <hip/hip_runtime.h>
+
 #include <memory>
+#include <utility>
 
 namespace rocshmem {
 
 template <typename ALLOCATOR, typename T, size_t SIZE_IN = 1>
 class DeviceProxy {
-  public:
-    DeviceProxy() {
-        /*
-         * Allocate memory and verify that the allocation worked.
-         */
-        T *temp {nullptr};
-        allocator_.allocate(reinterpret_cast<void**>(&temp), SIZE_BYTES_);
-        assert(temp);
-
-        /*
-         * Default memory provided by the allocation to recognizable bytes.
-         */
-        memset(static_cast<void*>(temp), 0xBC, SIZE_BYTES_);
-
-        /*
-         * Pass the memory into a unique ptr for tracking.
-         */
-        std::unique_ptr<T, Deleter> up {temp};
-        up_ = std::move(up);
-
-        /*
-         * Set a c-style ptr for access by the device.
-         */
-        ptr_ = up_.get();
-    }
-
-    /**
-     * @brief Return internal storage tracked by the Proxy.
-     *
-     * @note Do not try to free this memory yourself. The proxy maintains
-     * the lifetime of the data itself.
+ public:
+  DeviceProxy() {
+    /*
+     * Allocate memory and verify that the allocation worked.
      */
-    __host__ __device__
-    T*
-    get() {
-        return ptr_;
-    }
+    T* temp{nullptr};
+    allocator_.allocate(reinterpret_cast<void**>(&temp), SIZE_BYTES_);
+    assert(temp);
 
-  private:
-    /**
-     * @brief Internal Deleter functor is required by up_ member
+    /*
+     * Default memory provided by the allocation to recognizable bytes.
      */
-    class Deleter {
-      public:
-        void operator()(void* x) {
-            a_.deallocate(x);
-        }
+    memset(static_cast<void*>(temp), 0xBC, SIZE_BYTES_);
 
-      private:
-        ALLOCATOR a_;
-    };
-
-    /**
-     * @brief Externally provided allocator type.
+    /*
+     * Pass the memory into a unique ptr for tracking.
      */
-    ALLOCATOR allocator_ {};
+    std::unique_ptr<T, Deleter> up{temp};
+    up_ = std::move(up);
 
-    /**
-     * @brief Unique pointer for tracking the proxy.
+    /*
+     * Set a c-style ptr for access by the device.
      */
-    std::unique_ptr<T, Deleter> up_ {nullptr};
+    ptr_ = up_.get();
+  }
 
-    /**
-     * @brief A handle to access the internal memory.
-     *
-     * In general, device code cannot access standard library routines
-     * like std::unique_ptr::get(). Circumvent this problem by caching
-     * the pointer manually in this class.
-     */
-    T *ptr_ {nullptr};
+  /**
+   * @brief Return internal storage tracked by the Proxy.
+   *
+   * @note Do not try to free this memory yourself. The proxy maintains
+   * the lifetime of the data itself.
+   */
+  __host__ __device__ T* get() { return ptr_; }
 
-    /**
-     * @brief The allocation size for the internal memory
-     */
-    static constexpr size_t SIZE_BYTES_ {sizeof(T) * SIZE_IN};
+ private:
+  /**
+   * @brief Internal Deleter functor is required by up_ member
+   */
+  class Deleter {
+   public:
+    void operator()(void* x) { a_.deallocate(x); }
+
+   private:
+    ALLOCATOR a_;
+  };
+
+  /**
+   * @brief Externally provided allocator type.
+   */
+  ALLOCATOR allocator_{};
+
+  /**
+   * @brief Unique pointer for tracking the proxy.
+   */
+  std::unique_ptr<T, Deleter> up_{nullptr};
+
+  /**
+   * @brief A handle to access the internal memory.
+   *
+   * In general, device code cannot access standard library routines
+   * like std::unique_ptr::get(). Circumvent this problem by caching
+   * the pointer manually in this class.
+   */
+  T* ptr_{nullptr};
+
+  /**
+   * @brief The allocation size for the internal memory
+   */
+  static constexpr size_t SIZE_BYTES_{sizeof(T) * SIZE_IN};
 };
 
-} // namespace rocshmem
+}  // namespace rocshmem
 
-#endif  // ROCSHMEM_LIBRARY_SRC_DEVICE_PROXY_HPP
+#endif  // LIBRARY_SRC_DEVICE_PROXY_HPP_

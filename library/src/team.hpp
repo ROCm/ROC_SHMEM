@@ -20,12 +20,13 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef ROCSHMEM_LIBRARY_SRC_TEAMS_HPP
-#define ROCSHMEM_LIBRARY_SRC_TEAMS_HPP
+#ifndef LIBRARY_SRC_TEAM_HPP_
+#define LIBRARY_SRC_TEAM_HPP_
 
-#include "backend_type.hpp"
-#include "mpi.h"
-#include "roc_shmem.hpp"
+#include <mpi.h>
+
+#include "include/roc_shmem.hpp"
+#include "src/backend_type.hpp"
 
 namespace rocshmem {
 
@@ -36,148 +37,134 @@ class GPUIBTeam;
 
 class TeamInfo {
  public:
-    /**
-     * @brief Secondary constructor
-     */
-    __host__ __device__
-    TeamInfo() = default;
+  /**
+   * @brief Secondary constructor
+   */
+  __host__ __device__ TeamInfo() = default;
 
-    /**
-     * @brief Primary constructor
-     */
-    __host__ __device__
-    TeamInfo(Team* parent_team,
-             int pe_start,
-             int stride,
-             int size);
+  /**
+   * @brief Primary constructor
+   */
+  __host__ __device__ TeamInfo(Team* parent_team, int pe_start, int stride,
+                               int size);
 
-    /**
-     * @brief The team from which this team was created.
-     */
-    Team* parent_team {nullptr};
+  /**
+   * @brief The team from which this team was created.
+   */
+  Team* parent_team{nullptr};
 
-    /**
-     * @brief My position within the team.
-     */
-    int pe_start {-1};
+  /**
+   * @brief My position within the team.
+   */
+  int pe_start{-1};
 
-    /**
-     * @brief The stride used calculate team members.
-     */
-    int stride {-1};
+  /**
+   * @brief The stride used calculate team members.
+   */
+  int stride{-1};
 
-    /**
-     * @brief The log2 stride used to calculate team members.
-     */
-    double log_stride {-1};
+  /**
+   * @brief The log2 stride used to calculate team members.
+   */
+  double log_stride{-1};
 
-    /**
-     * @brief The size of this team.
-     */
-    int size {-1};
+  /**
+   * @brief The size of this team.
+   */
+  int size{-1};
 };
 
 class Team {
  public:
-    /**
-     * @brief Constructor.
-     *
-     * @param handle The handle to the backend
-     * @param team_info_wrt_parent information about this team wrt parent
-     * @param team_info_wrt_world information about this team wrt TEAM_WORLD
-     * @param num_pes number of PEs in this team
-     * @param _my_pe the index of this PE in the team
-     * @param _mpi_comm MPI Communicator representing the team
-     */
-    Team(Backend *handle,
-         TeamInfo* team_info_wrt_parent,
-         TeamInfo* team_info_wrt_world,
-         int num_pes,
-         int my_pe,
-         MPI_Comm mpi_comm);
+  /**
+   * @brief Constructor.
+   *
+   * @param handle The handle to the backend
+   * @param team_info_wrt_parent information about this team wrt parent
+   * @param team_info_wrt_world information about this team wrt TEAM_WORLD
+   * @param num_pes number of PEs in this team
+   * @param _my_pe the index of this PE in the team
+   * @param _mpi_comm MPI Communicator representing the team
+   */
+  Team(Backend* handle, TeamInfo* team_info_wrt_parent,
+       TeamInfo* team_info_wrt_world, int num_pes, int my_pe,
+       MPI_Comm mpi_comm);
 
-    /**
-     * @brief Destructor.
-     */
-    virtual ~Team();
+  /**
+   * @brief Destructor.
+   */
+  virtual ~Team();
 
-    /**
-     * @brief Returns the corresponding PE in team world.
-     *
-     * @param[in] PE in my team.
-     *
-     * @return The PE of the process in team world.
-     */
-    __host__ __device__ int
-    get_pe_in_world(int pe);
+  /**
+   * @brief Returns the corresponding PE in team world.
+   *
+   * @param[in] PE in my team.
+   *
+   * @return The PE of the process in team world.
+   */
+  __host__ __device__ int get_pe_in_world(int pe);
 
-    /**
-     * @brief Checks if a PE in team_world is in my team.
-     *
-     * @param[in] pe_in_world Index of a PE in team_world.
-     *
-     * @return The PE of the process in my team. -1 if not in my team.
-     */
-    __host__ __device__ int
-    get_pe_in_my_team(int pe_in_world);
+  /**
+   * @brief Checks if a PE in team_world is in my team.
+   *
+   * @param[in] pe_in_world Index of a PE in team_world.
+   *
+   * @return The PE of the process in my team. -1 if not in my team.
+   */
+  __host__ __device__ int get_pe_in_my_team(int pe_in_world);
 
-    /**
-     * @brief Info about team world size.
-     */
-    int world_size {0};
+  /**
+   * @brief Info about team world size.
+   */
+  int world_size{0};
 
-    /**
-     * @brief Info about this PE with respect to team_world.
-     */
-    int my_pe_in_world {-1};
+  /**
+   * @brief Info about this PE with respect to team_world.
+   */
+  int my_pe_in_world{-1};
 
-    /**
-     * @brief Info about team with respect to team_world.
-     */
-    TeamInfo* tinfo_wrt_world {nullptr};
+  /**
+   * @brief Info about team with respect to team_world.
+   */
+  TeamInfo* tinfo_wrt_world{nullptr};
 
-    /**
-     * @brief This team's info with respect to parent team.
-     */
-    TeamInfo* tinfo_wrt_parent {nullptr};
+  /**
+   * @brief This team's info with respect to parent team.
+   */
+  TeamInfo* tinfo_wrt_parent{nullptr};
 
-    /**
-     * @brief The numbers of PEs within the team.
-     */
-    int num_pes {-1};
+  /**
+   * @brief The numbers of PEs within the team.
+   */
+  int num_pes{-1};
 
-    /**
-     * @brief My PE within the team.
-     */
-    int my_pe {-1};
+  /**
+   * @brief My PE within the team.
+   */
+  int my_pe{-1};
 
-    /**
-     * @brief This teams mpi communicator.
-     */
-    MPI_Comm mpi_comm {MPI_COMM_NULL};
+  /**
+   * @brief This teams mpi communicator.
+   */
+  MPI_Comm mpi_comm{MPI_COMM_NULL};
 
-    /**
-     * @brief The backend type.
-     *
-     * @note This is required to do some reinterpret_casts.
-     */
-    BackendType type {BackendType::GPU_IB_BACKEND};
+  /**
+   * @brief The backend type.
+   *
+   * @note This is required to do some reinterpret_casts.
+   */
+  BackendType type{BackendType::GPU_IB_BACKEND};
 };
 
-__host__ __device__ Team*
-get_internal_team(roc_shmem_team_t team);
+__host__ __device__ Team* get_internal_team(roc_shmem_team_t team);
 
-GPUIBTeam*
-get_internal_gpu_ib_team(roc_shmem_team_t team);
+GPUIBTeam* get_internal_gpu_ib_team(roc_shmem_team_t team);
 
-ROTeam*
-get_internal_ro_team(roc_shmem_team_t team);
+ROTeam* get_internal_ro_team(roc_shmem_team_t team);
 
-__host__ __device__ int
-team_translate_pe(roc_shmem_team_t src_team,
-                  int src_pe,
-                  roc_shmem_team_t dst_team);
+__host__ __device__ int team_translate_pe(roc_shmem_team_t src_team, int src_pe,
+                                          roc_shmem_team_t dst_team);
 
 }  // namespace rocshmem
 
-#endif  // ROCSHMEM_LIBRARY_SRC_TEAMS_HPP
+#endif  // LIBRARY_SRC_TEAM_HPP_

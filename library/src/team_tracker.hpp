@@ -20,15 +20,17 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef ROCSHMEM_LIBRARY_SRC_TEAM_TRACKER_HPP
-#define ROCSHMEM_LIBRARY_SRC_TEAM_TRACKER_HPP
+#ifndef LIBRARY_SRC_TEAM_TRACKER_HPP_
+#define LIBRARY_SRC_TEAM_TRACKER_HPP_
 
 /**
  * @file team_tracker.hpp
  * Defines the TeamTracker class
  */
 
-#include <roc_shmem.hpp>
+#include <vector>
+
+#include "include/roc_shmem.hpp"
 
 namespace rocshmem {
 
@@ -40,109 +42,94 @@ class Team;
  * @brief Container class for team information
  */
 class TeamTracker {
-  public:
-    /**
-     * @brief Primary constructor
-     */
-    TeamTracker();
+ public:
+  /**
+   * @brief Primary constructor
+   */
+  TeamTracker();
 
-    /**
-     * @brief Add team from the list of user-created teams
-     *
-     * @param[in] team which needs to be added to tracker
-     *
-     * @param void
-     */
-    void
-    track(roc_shmem_team_t team);
+  /**
+   * @brief Add team from the list of user-created teams
+   *
+   * @param[in] team which needs to be added to tracker
+   *
+   * @param void
+   */
+  void track(roc_shmem_team_t team);
 
-    /**
-     * @brief Remove team from the list of user-created teams
-     *
-     * @param[in] team which needs to be removed from tracker
-     *
-     * @return void
-     */
-    void
-    untrack(roc_shmem_team_t team);
+  /**
+   * @brief Remove team from the list of user-created teams
+   *
+   * @param[in] team which needs to be removed from tracker
+   *
+   * @return void
+   */
+  void untrack(roc_shmem_team_t team);
 
-    /**
-     * @brief Remove all teams from the list of user-created teams
-     *
-     * @return void
-     */
-    template <typename FN_T>
-    void
-    destroy_all(FN_T&& team_destroy) {
-        while (!teams_.empty()) {
-            team_destroy(teams_.back());
-            teams_.pop_back();
-        }
+  /**
+   * @brief Remove all teams from the list of user-created teams
+   *
+   * @return void
+   */
+  template <typename FN_T>
+  void destroy_all(FN_T&& team_destroy) {
+    while (!teams_.empty()) {
+      team_destroy(teams_.back());
+      teams_.pop_back();
     }
+  }
 
-    /**
-     * @brief Get the number of teams created by the user
-     *
-     * @return number of teams currently being tracked
-     */
-    int
-    get_num_user_teams() {
-        return teams_.size();
-    }
+  /**
+   * @brief Get the number of teams created by the user
+   *
+   * @return number of teams currently being tracked
+   */
+  int get_num_user_teams() { return teams_.size(); }
 
-    /**
-     * @brief Get maximum number of teams supported by tracker
-     *
-     * @return number of teams supported by tracker
-     */
-    __host__ __device__ int
-    get_max_num_teams() {
-        return max_num_teams_;
-    }
+  /**
+   * @brief Get maximum number of teams supported by tracker
+   *
+   * @return number of teams supported by tracker
+   */
+  __host__ __device__ int get_max_num_teams() { return max_num_teams_; }
 
-    /**
-     * @brief Get team world pointer
-     *
-     * @return team world pointer
-     */
-    __host__ Team*
-    get_team_world() {
-        return team_world_;
-    }
+  /**
+   * @brief Get team world pointer
+   *
+   * @return team world pointer
+   */
+  __host__ Team* get_team_world() { return team_world_; }
 
-    /**
-     * @brief Set team world pointer
-     *
-     * @param[in] team_world pointer
-     *
-     * @return void
-     */
-    __host__ void
-    set_team_world(Team* team_world) {
-        team_world_ = team_world;
-    }
+  /**
+   * @brief Set team world pointer
+   *
+   * @param[in] team_world pointer
+   *
+   * @return void
+   */
+  __host__ void set_team_world(Team* team_world) { team_world_ = team_world; }
 
-  private:
-    /**
-     * @brief List of teams created by the user.
-     */
-    std::vector<roc_shmem_team_t> teams_ {};
+ private:
+  /**
+   * @brief List of teams created by the user.
+   */
+  std::vector<roc_shmem_team_t> teams_{};
 
-    /**
-     * @brief The maximum number of teams the user can create.
-     *
-     * This constraint is required since the library needs to
-     * pre-allocate resources (e.g. LDS, working arrays, etc.)
-     * for teams.
-     */
-    int max_num_teams_ {40};
+  /**
+   * @brief The maximum number of teams the user can create.
+   *
+   * This constraint is required since the library needs to
+   * pre-allocate resources (e.g. LDS, working arrays, etc.)
+   * for teams.
+   */
+  int max_num_teams_{40};
 
-    /**
-     * @brief Pointer to implementation of ROC_SHMEM_TEAM_WORLD
-     */
-    Team* team_world_ {nullptr};
+  /**
+   * @brief Pointer to implementation of ROC_SHMEM_TEAM_WORLD
+   */
+  Team* team_world_{nullptr};
 };
 
 }  // namespace rocshmem
 
-#endif  // ROCSHMEM_LIBRARY_SRC_TEAM_TRACKER_HPP
+#endif  // LIBRARY_SRC_TEAM_TRACKER_HPP_

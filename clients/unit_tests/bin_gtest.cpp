@@ -24,35 +24,29 @@
 
 using namespace rocshmem;
 
-TEST_F(BinTestFixture, is_empty_check)
-{
-    ASSERT_TRUE(bin_.empty());
+TEST_F(BinTestFixture, is_empty_check) { ASSERT_TRUE(bin_.empty()); }
+
+TEST_F(BinTestFixture, is_not_empty_check) {
+  bin_.put(nullptr);
+
+  ASSERT_FALSE(bin_.empty());
 }
 
-TEST_F(BinTestFixture, is_not_empty_check)
-{
-    bin_.put(nullptr);
-
-    ASSERT_FALSE(bin_.empty());
+TEST_F(BinTestFixture, size_check) {
+  ASSERT_EQ(bin_.size(), 0);
+  bin_.put(nullptr);
+  ASSERT_EQ(bin_.size(), 1);
+  bin_.put(nullptr);
+  ASSERT_EQ(bin_.size(), 2);
 }
 
-TEST_F(BinTestFixture, size_check)
-{
-    ASSERT_EQ(bin_.size(), 0);
-    bin_.put(nullptr);
-    ASSERT_EQ(bin_.size(), 1);
-    bin_.put(nullptr);
-    ASSERT_EQ(bin_.size(), 2);
-}
-
-TEST_F(BinTestFixture, retrieval_check)
-{
-    char* p_xa {reinterpret_cast<char*>(0xa)};
-    char* p_xb {reinterpret_cast<char*>(0xb)};
-    bin_.put(p_xa);
-    bin_.put(p_xb);
-    auto g_xb = bin_.get();
-    auto g_xa = bin_.get();
-    ASSERT_EQ(p_xa, g_xa);
-    ASSERT_EQ(p_xb, g_xb);
+TEST_F(BinTestFixture, retrieval_check) {
+  char* p_xa{reinterpret_cast<char*>(0xa)};
+  char* p_xb{reinterpret_cast<char*>(0xb)};
+  bin_.put(p_xa);
+  bin_.put(p_xb);
+  auto g_xb = bin_.get();
+  auto g_xa = bin_.get();
+  ASSERT_EQ(p_xa, g_xa);
+  ASSERT_EQ(p_xb, g_xb);
 }

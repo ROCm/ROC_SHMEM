@@ -20,8 +20,8 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef ROCSHMEM_LIBRARY_SRC_BACKEND_TYPE_HPP
-#define ROCSHMEM_LIBRARY_SRC_BACKEND_TYPE_HPP
+#ifndef LIBRARY_SRC_BACKEND_TYPE_HPP_
+#define LIBRARY_SRC_BACKEND_TYPE_HPP_
 
 /**
  * @file backend_type.hpp
@@ -34,7 +34,7 @@
  * functions are not supported at this time.
  */
 
-#include "device_mutex.hpp"
+#include "config.h"  // NOLINT(build/include_subdir)
 
 namespace rocshmem {
 
@@ -44,10 +44,7 @@ namespace rocshmem {
  * @note Derived classes which use Backend as a base class must add
  * themselves to this enum class to support static polymorphism.
  */
-enum class BackendType {
-    RO_BACKEND,
-    GPU_IB_BACKEND
-};
+enum class BackendType { RO_BACKEND, GPU_IB_BACKEND };
 
 /**
  * @brief Helper macro for some dispatch calls
@@ -55,76 +52,52 @@ enum class BackendType {
 #define PAIR(A, B) A, B
 
 /**
- * @brief Static dispatch method call.
- *
- * @note This variant does not require a lock to protect the method call.
- */
-#define DISPATCH_NO_LOCK(Func) \
-    switch (type) { \
-        case BackendType::RO_BACKEND: \
-            static_cast<ROContext*>(this)->Func; \
-            break; \
-        case BackendType::GPU_IB_BACKEND: \
-            static_cast<GPUIBContext*>(this)->Func; \
-            break; \
-        default: \
-            break; \
-    }
-
-/**
  * @brief Device static dispatch method call.
  */
-#define DISPATCH(Func) \
-    dev_mtx_.lock(); \
-    switch (type) { \
-        case BackendType::RO_BACKEND: \
-            static_cast<ROContext*>(this)->Func; \
-            break; \
-        case BackendType::GPU_IB_BACKEND: \
-            static_cast<GPUIBContext*>(this)->Func; \
-            break; \
-        default: \
-            break; \
-    } \
-    dev_mtx_.unlock();
+#ifndef USE_GPU_IB
+#define DISPATCH(Func)                  \
+  dev_mtx_.lock();                      \
+  static_cast<ROContext *>(this)->Func; \
+  dev_mtx_.unlock();
+#else
+#define DISPATCH(Func)                     \
+  dev_mtx_.lock();                         \
+  static_cast<GPUIBContext *>(this)->Func; \
+  dev_mtx_.unlock();
+#endif
 
 /**
  * @brief Device static dispatch method call with a return value.
  */
-#define DISPATCH_RET(Func) \
-    dev_mtx_.lock(); \
-    auto ret_val {0}; \
-    switch (type) { \
-        case BackendType::RO_BACKEND: \
-            ret_val = static_cast<ROContext*>(this)->Func; \
-            break; \
-        case BackendType::GPU_IB_BACKEND: \
-            ret_val = static_cast<GPUIBContext*>(this)->Func; \
-            break; \
-        default: \
-            break; \
-    } \
-    dev_mtx_.unlock(); \
-    return ret_val;
-
+#ifndef USE_GPU_IB
+#define DISPATCH_RET(Func)                        \
+  dev_mtx_.lock();                                \
+  auto ret_val{0};                                \
+  ret_val = static_cast<ROContext *>(this)->Func; \
+  dev_mtx_.unlock();                              \
+  return ret_val;
+#else
+#define DISPATCH_RET(Func)                           \
+  dev_mtx_.lock();                                   \
+  auto ret_val{0};                                   \
+  ret_val = static_cast<GPUIBContext *>(this)->Func; \
+  dev_mtx_.unlock();                                 \
+  return ret_val;
+#endif
 /**
  * @brief Device static dispatch method call with a return type of pointer.
  */
-#define DISPATCH_RET_PTR(Func) \
-    dev_mtx_.lock(); \
-    void *ret_val {nullptr}; \
-    switch (type) { \
-        case BackendType::RO_BACKEND: \
-            ret_val = static_cast<ROContext*>(this)->Func; \
-            break; \
-        case BackendType::GPU_IB_BACKEND: \
-            ret_val = static_cast<GPUIBContext*>(this)->Func; \
-            break; \
-        default: \
-            break; \
-    } \
-    dev_mtx_.unlock(); \
-    return ret_val;
+#ifndef USE_GPU_IB
+#define DISPATCH_RET_PTR(Func)                    \
+  void *ret_val{nullptr};                         \
+  ret_val = static_cast<ROContext *>(this)->Func; \
+  return ret_val;
+#else
+#define DISPATCH_RET_PTR(Func)                       \
+  void *ret_val{nullptr};                            \
+  ret_val = static_cast<GPUIBContext *>(this)->Func; \
+  return ret_val;
+#endif
 
 /**
  * @brief Host static dispatch method call.
@@ -133,18 +106,11 @@ enum class BackendType {
  * MPI_THREAD_MULTIPLE (for RMA and AMO operations) and the ordering and
  * threading semantics of collectives in OpenSHMEM match those of MPI.
  */
-#define HOST_DISPATCH(Func) \
-    switch (type) { \
-        case BackendType::RO_BACKEND: \
-            static_cast<ROHostContext*>(this)->Func; \
-            break; \
-        case BackendType::GPU_IB_BACKEND: \
-            static_cast<GPUIBHostContext*>(this)->Func; \
-            break; \
-        default: \
-            break; \
-    }
-
+#ifndef USE_GPU_IB
+#define HOST_DISPATCH(Func) static_cast<ROHostContext *>(this)->Func;
+#else
+#define HOST_DISPATCH(Func) static_cast<GPUIBHostContext *>(this)->Func;
+#endif
 /**
  * @brief Host static dispatch method call with return value.
  *
@@ -152,20 +118,19 @@ enum class BackendType {
  * MPI_THREAD_MULTIPLE (for RMA and AMO operations) and the ordering and
  * threading semantics of collectives in OpenSHMEM match those of MPI.
  */
-#define HOST_DISPATCH_RET(Func) \
-    auto ret_val {0}; \
-    switch (type) { \
-        case BackendType::RO_BACKEND: \
-            ret_val = static_cast<ROHostContext*>(this)->Func; \
-            break; \
-        case BackendType::GPU_IB_BACKEND: \
-            ret_val = static_cast<GPUIBHostContext*>(this)->Func; \
-            break; \
-        default: \
-            break; \
-    } \
-    return ret_val;
 
-} // namespace rocshmem
+#ifndef USE_GPU_IB
+#define HOST_DISPATCH_RET(Func)                       \
+  auto ret_val{0};                                    \
+  ret_val = static_cast<ROHostContext *>(this)->Func; \
+  return ret_val;
+#else
+#define HOST_DISPATCH_RET(Func)                          \
+  auto ret_val{0};                                       \
+  ret_val = static_cast<GPUIBHostContext *>(this)->Func; \
+  return ret_val;
+#endif
 
-#endif  // ROCSHMEM_LIBRARY_SRC_BACKEND_TYPE_HPP
+}  // namespace rocshmem
+
+#endif  // LIBRARY_SRC_BACKEND_TYPE_HPP_

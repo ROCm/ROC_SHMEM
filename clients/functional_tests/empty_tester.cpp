@@ -29,62 +29,31 @@ using namespace rocshmem;
 /******************************************************************************
  * DEVICE TEST KERNEL
  *****************************************************************************/
-__global__ void
-EmptyTest(int loop,
-          int skip,
-          uint64_t *timer,
-          int size,
-          TestType type,
-          ShmemContextType ctx_type)
-{
-    __shared__ roc_shmem_ctx_t ctx;
-    roc_shmem_wg_init();
-    roc_shmem_wg_ctx_create(ctx_type, &ctx);
+__global__ void EmptyTest(int loop, int skip, uint64_t *timer, int size,
+                          TestType type, ShmemContextType ctx_type) {
+  __shared__ roc_shmem_ctx_t ctx;
+  roc_shmem_wg_init();
+  roc_shmem_wg_ctx_create(ctx_type, &ctx);
 
-    roc_shmem_wg_ctx_destroy(ctx);
-    roc_shmem_wg_finalize();
+  roc_shmem_wg_ctx_destroy(ctx);
+  roc_shmem_wg_finalize();
 }
 
 /******************************************************************************
  * HOST TESTER CLASS METHODS
  *****************************************************************************/
-EmptyTester::EmptyTester(TesterArguments args)
-    : Tester(args)
-{
+EmptyTester::EmptyTester(TesterArguments args) : Tester(args) {}
+
+EmptyTester::~EmptyTester() {}
+
+void EmptyTester::resetBuffers(uint64_t size) {}
+
+void EmptyTester::launchKernel(dim3 gridSize, dim3 blockSize, int loop,
+                               uint64_t size) {
+  size_t shared_bytes = 0;
+
+  hipLaunchKernelGGL(EmptyTest, gridSize, blockSize, shared_bytes, stream, loop,
+                     args.skip, timer, size, _type, _shmem_context);
 }
 
-EmptyTester::~EmptyTester()
-{
-}
-
-void
-EmptyTester::resetBuffers(uint64_t size)
-{
-}
-
-void
-EmptyTester::launchKernel(dim3 gridSize,
-                          dim3 blockSize,
-                          int loop,
-                          uint64_t size)
-{
-    size_t shared_bytes;
-    roc_shmem_dynamic_shared(&shared_bytes);
-
-    hipLaunchKernelGGL(EmptyTest,
-                       gridSize,
-                       blockSize,
-                       shared_bytes,
-                       stream,
-                       loop,
-                       args.skip,
-                       timer,
-                       size,
-                       _type,
-                       _shmem_context);
-}
-
-void
-EmptyTester::verifyResults(uint64_t size)
-{
-}
+void EmptyTester::verifyResults(uint64_t size) {}

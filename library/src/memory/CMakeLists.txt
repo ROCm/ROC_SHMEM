@@ -27,11 +27,6 @@ target_sources(
   ${PROJECT_NAME}
   PRIVATE
     single_heap.cpp
+    slab_heap.cpp
     memory_allocator.cpp
-)
-
-target_include_directories(
-  ${PROJECT_NAME}
-  PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}
 )

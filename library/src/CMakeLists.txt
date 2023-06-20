@@ -30,7 +30,6 @@ target_sources(
     backend_bc.cpp
     context_host.cpp
     context_device.cpp
-    device_mutex.cpp
     ipc_policy.cpp
     mpi_init_singleton.cpp
     roc_shmem_gpu.cpp
@@ -39,14 +38,6 @@ target_sources(
     team_tracker.cpp
     util.cpp
     wf_coal_policy.cpp
-    wg_state.cpp
-    wg_team_ctxs_policy.cpp
-)
-
-target_include_directories(
-  ${PROJECT_NAME}
-  PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
 target_compile_options(
@@ -67,7 +58,12 @@ target_compile_options(
 ###############################################################################
 # ROCSHMEM TARGET FOR BACKENDS
 ###############################################################################
+IF (USE_GPU_IB)
 add_subdirectory(gpu_ib)
+ELSE()
 add_subdirectory(reverse_offload)
+ENDIF()
+add_subdirectory(containers)
 add_subdirectory(host)
 add_subdirectory(memory)
+add_subdirectory(sync)

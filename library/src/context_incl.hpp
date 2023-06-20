@@ -20,15 +20,18 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef ROCSHMEM_LIBRARY_SRC_CONTEXT_INCL_HPP
-#define ROCSHMEM_LIBRARY_SRC_CONTEXT_INCL_HPP
+#ifndef LIBRARY_SRC_CONTEXT_INCL_HPP_
+#define LIBRARY_SRC_CONTEXT_INCL_HPP_
 
-#include "context.hpp"
-#include "context_tmpl_host.hpp"
-#include "context_tmpl_device.hpp"
-#include "reverse_offload/context_ro_host.hpp"
-#include "reverse_offload/context_ro_device.hpp"
-#include "gpu_ib/context_ib_host.hpp"
-#include "gpu_ib/context_ib_device.hpp"
+#include "src/context.hpp"
+#include "src/context_tmpl_device.hpp"
+#include "src/context_tmpl_host.hpp"
+#ifdef USE_GPU_IB
+#include "src/gpu_ib/context_ib_device.hpp"
+#include "src/gpu_ib/context_ib_host.hpp"
+#else
+#include "src/reverse_offload/context_ro_device.hpp"
+#include "src/reverse_offload/context_ro_host.hpp"
+#endif
 
-#endif  // ROCSHMEM_LIBRARY_SRC_CONTEXT_INCL_HPP
+#endif  // LIBRARY_SRC_CONTEXT_INCL_HPP_

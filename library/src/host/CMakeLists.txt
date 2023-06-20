@@ -28,9 +28,3 @@ target_sources(
   PRIVATE
     host.cpp
 )
-
-target_include_directories(
-  ${PROJECT_NAME}
-  PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}
-)

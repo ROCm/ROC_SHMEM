@@ -20,52 +20,60 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef ROCSHMEM_LIBRARY_SRC_REVERSE_OFFLOAD_BACKEND_PROXY_HPP
-#define ROCSHMEM_LIBRARY_SRC_REVERSE_OFFLOAD_BACKEND_PROXY_HPP
+#ifndef LIBRARY_SRC_REVERSE_OFFLOAD_BACKEND_PROXY_HPP_
+#define LIBRARY_SRC_REVERSE_OFFLOAD_BACKEND_PROXY_HPP_
 
-#include "backend_register.hpp"
-#include "device_proxy.hpp"
+#include <atomic>
+
+#include "src/device_proxy.hpp"
+#include "src/stats.hpp"
+#include "src/reverse_offload/queue.hpp"
 
 namespace rocshmem {
 
+struct BackendRegister {
+  ROStats *profiler{nullptr};
+  std::atomic<bool> worker_thread_exit{false};
+  unsigned int *barrier_ptr{nullptr};
+  bool *needs_quiet{nullptr};
+  bool *needs_blocking{nullptr};
+  char *g_ret{nullptr};
+  HdpPolicy *hdp_policy{nullptr};
+  WindowInfo **heap_window_info{nullptr};
+  atomic_ret_t *atomic_ret{nullptr};
+  SymmetricHeap *heap_ptr{nullptr};
+};
+
 template <typename ALLOCATOR>
 class BackendProxy {
-    using ProxyT = DeviceProxy<ALLOCATOR, BackendRegister>;
+  using ProxyT = DeviceProxy<ALLOCATOR, BackendRegister>;
 
-  public:
-    /*
-     * Placement new the memory which is allocated by proxy_
-     */
-    BackendProxy() {
-        new (proxy_.get()) BackendRegister();
-    }
+ public:
+  /*
+   * Placement new the memory which is allocated by proxy_
+   */
+  BackendProxy() { new (proxy_.get()) BackendRegister(); }
 
-    /*
-     * Since placement new is called in the constructor, then
-     * delete must be called manually.
-     */
-    ~BackendProxy() {
-        proxy_.get()->~BackendRegister();
-    }
+  /*
+   * Since placement new is called in the constructor, then
+   * delete must be called manually.
+   */
+  ~BackendProxy() { proxy_.get()->~BackendRegister(); }
 
-    /*
-     * @brief Provide access to the memory referenced by the proxy
-     */
-    __host__ __device__
-    BackendRegister*
-    get() {
-        return proxy_.get();
-    }
+  /*
+   * @brief Provide access to the memory referenced by the proxy
+   */
+  __host__ __device__ BackendRegister *get() { return proxy_.get(); }
 
-  private:
-    /*
-     * @brief Memory managed by the lifetime of this object
-     */
-    ProxyT proxy_ {};
+ private:
+  /*
+   * @brief Memory managed by the lifetime of this object
+   */
+  ProxyT proxy_{};
 };
 
 using BackendProxyT = BackendProxy<HIPHostAllocator>;
 
 }  // namespace rocshmem
 
-#endif  // ROCSHMEM_LIBRARY_SRC_REVERSE_OFFLOAD_BACKEND_PROXY_HPP
+#endif  // LIBRARY_SRC_REVERSE_OFFLOAD_BACKEND_PROXY_HPP_

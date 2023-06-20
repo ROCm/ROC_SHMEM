@@ -28,81 +28,59 @@ using namespace rocshmem;
 /******************************************************************************
  * DEVICE TEST KERNEL
  *****************************************************************************/
-__global__ void
-ShmemPtrTest( char *r_buf,
-              int *available)
-{
-    roc_shmem_wg_init();
+__global__ void ShmemPtrTest(char *r_buf, int *available) {
+  roc_shmem_wg_init();
 
-    if (hipThreadIdx_x == 0) {
-        char * local_addr = r_buf + 4;
-        void * remote_addr = roc_shmem_ptr((void*)local_addr, 1);
-        if( remote_addr != NULL){
-            *available = 1;
-            ((char*)remote_addr)[0] = '1';
-        }
+  if (hipThreadIdx_x == 0) {
+    char *local_addr = r_buf + 4;
+    void *remote_addr = roc_shmem_ptr((void *)local_addr, 1);
+    if (remote_addr != NULL) {
+      *available = 1;
+      ((char *)remote_addr)[0] = '1';
     }
+  }
 
-    roc_shmem_wg_finalize();
+  roc_shmem_wg_finalize();
 }
 
 /******************************************************************************
  * HOST TESTER CLASS METHODS
  *****************************************************************************/
-ShmemPtrTester::ShmemPtrTester(TesterArguments args)
-    : Tester(args)
-{
-    hipMalloc((void**)&_available, sizeof(int) );
-    r_buf = (char *)roc_shmem_malloc(args.max_msg_size);
-
+ShmemPtrTester::ShmemPtrTester(TesterArguments args) : Tester(args) {
+  hipMalloc((void **)&_available, sizeof(int));
+  r_buf = (char *)roc_shmem_malloc(args.max_msg_size);
 }
 
-ShmemPtrTester::~ShmemPtrTester()
-{
-    hipFree(_available);
-    roc_shmem_free(r_buf);
+ShmemPtrTester::~ShmemPtrTester() {
+  hipFree(_available);
+  roc_shmem_free(r_buf);
 }
 
-void
-ShmemPtrTester::resetBuffers(uint64_t size)
-{
-    memset(r_buf, '0', args.max_msg_size);
-    memset(_available, 0, sizeof(int));
+void ShmemPtrTester::resetBuffers(uint64_t size) {
+  memset(r_buf, '0', args.max_msg_size);
+  memset(_available, 0, sizeof(int));
 }
 
-void
-ShmemPtrTester::launchKernel(dim3 gridSize,
-                              dim3 blockSize,
-                              int loop,
-                              uint64_t size)
-{
-    size_t shared_bytes;
-    roc_shmem_dynamic_shared(&shared_bytes);
+void ShmemPtrTester::launchKernel(dim3 gridSize, dim3 blockSize, int loop,
+                                  uint64_t size) {
+  size_t shared_bytes = 0;
 
-    hipLaunchKernelGGL(ShmemPtrTest,
-                       gridSize,
-                       blockSize,
-                       shared_bytes,
-                       stream,
-                       r_buf,
-                       _available);
+  hipLaunchKernelGGL(ShmemPtrTest, gridSize, blockSize, shared_bytes, stream,
+                     r_buf, _available);
 
-    num_msgs = 0;
-    num_timed_msgs = 0;
+  num_msgs = 0;
+  num_timed_msgs = 0;
 }
 
-void
-ShmemPtrTester::verifyResults(uint64_t size)
-{
-
-    if (args.myid == 0) {
-        if(*_available ==0){
-            fprintf(stderr,"SHMEM_PTR NOT AVAILBLE \n");
-        }
-    }else{
-        if(r_buf[4]!='1'){
-            fprintf(stderr, "Data validation error \n");
-            fprintf(stderr, "Got %c, Expected %c\n", r_buf[4], '1');
-        }
+void ShmemPtrTester::verifyResults(uint64_t size) {
+  if (args.myid == 0) {
+    if (*_available == 0) {
+      fprintf(stderr, "SHMEM_PTR NOT AVAILBLE \n");
     }
+  } else {
+    if (r_buf[4] != '1') {
+      fprintf(stderr, "Data validation error \n");
+      fprintf(stderr, "Got %c, Expected %c\n", r_buf[4], '1');
+    }
+  }
 }

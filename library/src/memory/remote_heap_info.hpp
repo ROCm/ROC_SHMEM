@@ -20,16 +20,17 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef ROCSHMEM_LIBRARY_SRC_REMOTE_HEAP_INFO_HPP
-#define ROCSHMEM_LIBRARY_SRC_REMOTE_HEAP_INFO_HPP
+#ifndef LIBRARY_SRC_MEMORY_REMOTE_HEAP_INFO_HPP_
+#define LIBRARY_SRC_MEMORY_REMOTE_HEAP_INFO_HPP_
+
+#include <hip/hip_runtime_api.h>
+#include <mpi.h>
 
 #include <cassert>
-#include <hip/hip_runtime_api.h>
+#include <vector>
 
-#include "mpi.h"
-
-#include "hip_allocator.hpp"
-#include "window_info.hpp"
+#include "src/memory/hip_allocator.hpp"
+#include "src/memory/window_info.hpp"
 
 /**
  * @file remote_heap_info.hpp
@@ -40,230 +41,183 @@
 namespace rocshmem {
 
 class CommunicatorMPI {
-  public:
-    /**
-     * @brief Default constructor
-     */
-    CommunicatorMPI() = default;
+ public:
+  /**
+   * @brief Default constructor
+   */
+  CommunicatorMPI() = default;
 
-    /**
-     * @brief Primary constructor
-     */
-    CommunicatorMPI(char* heap_base,
-                    size_t heap_size) {
-        int initialized;
-        MPI_Initialized(&initialized);
-        if (!initialized) {
-            int provided;
-            MPI_Init_thread(nullptr,
-                            nullptr,
-                            MPI_THREAD_MULTIPLE,
-                            &provided);
-        }
-        MPI_Comm_rank(comm_, &my_pe_);
-        MPI_Comm_size(comm_, &num_pes_);
-
-        heap_window_info_ = std::move(WindowInfo(comm_,
-                                                 heap_base,
-                                                 heap_size));
+  /**
+   * @brief Primary constructor
+   */
+  CommunicatorMPI(char* heap_base, size_t heap_size) {
+    int initialized;
+    MPI_Initialized(&initialized);
+    if (!initialized) {
+      int provided;
+      MPI_Init_thread(nullptr, nullptr, MPI_THREAD_MULTIPLE, &provided);
     }
+    MPI_Comm_rank(comm_, &my_pe_);
+    MPI_Comm_size(comm_, &num_pes_);
 
-    /**
-     * @brief Destructor
-     */
-    ~CommunicatorMPI() {
-    }
+    heap_window_info_ = WindowInfo(comm_, heap_base, heap_size);
+  }
 
-    /**
-     * @brief Returns my processing element ID
-     */
-    int
-    my_pe() {
-        return my_pe_;
-    }
+  /**
+   * @brief Destructor
+   */
+  ~CommunicatorMPI() {}
 
-    /**
-     * @brief Returns number of processing elements
-     */
-    int
-    num_pes() {
-        return num_pes_;
-    }
+  /**
+   * @brief Returns my processing element ID
+   */
+  int my_pe() { return my_pe_; }
 
-    /**
-     * @brief Performs MPI_Barrier
-     */
-    void
-    barrier() {
-        MPI_Barrier(comm_);
-    }
+  /**
+   * @brief Returns number of processing elements
+   */
+  int num_pes() { return num_pes_; }
 
-    /**
-     * @brief Performs MPI_Allgather on recvbuf
-     */
-    void
-    allgather(void* recvbuf) {
-        MPI_Allgather(MPI_IN_PLACE,
-                      sizeof(void*),
-                      MPI_CHAR,
-                      recvbuf,
-                      sizeof(void*),
-                      MPI_CHAR,
-                      comm_);
-    }
+  /**
+   * @brief Performs MPI_Barrier
+   */
+  void barrier() { MPI_Barrier(comm_); }
 
-    /**
-     * @brief Accessor method for heap_window_info_
-     */
-    WindowInfo*
-    get_window_info() {
-        return &heap_window_info_;
-    }
+  /**
+   * @brief Performs MPI_Allgather on recvbuf
+   */
+  void allgather(void* recvbuf) {
+    MPI_Allgather(MPI_IN_PLACE, sizeof(void*), MPI_CHAR, recvbuf, sizeof(void*),
+                  MPI_CHAR, comm_);
+  }
 
-  private:
-    /**
-     * @brief Identifier for this processing element
-     */
-    MPI_Comm comm_ {MPI_COMM_WORLD};
+  /**
+   * @brief Accessor method for heap_window_info_
+   */
+  WindowInfo* get_window_info() { return &heap_window_info_; }
 
-    /**
-     * @brief Identifier for this processing element
-     */
-    int my_pe_ {-1};
+ private:
+  /**
+   * @brief Identifier for this processing element
+   */
+  MPI_Comm comm_{MPI_COMM_WORLD};
 
-    /**
-     * @brief The total number of processing elements
-     */
-    int num_pes_ {-1};
+  /**
+   * @brief Identifier for this processing element
+   */
+  int my_pe_{-1};
 
-    /**
-     * @brief MPI window on the symmetric GPU heap
-     */
-    WindowInfo heap_window_info_ {};
+  /**
+   * @brief The total number of processing elements
+   */
+  int num_pes_{-1};
+
+  /**
+   * @brief MPI window on the symmetric GPU heap
+   */
+  WindowInfo heap_window_info_{};
 };
 
 template <typename COMMUNICATOR_T>
 class RemoteHeapInfo {
-    /**
-     * @brief Helper type for heap_bases_ member
-     */
-    using HEAP_BASES_T =
-        std::vector<char*, StdAllocatorHIP<char*>>;
+  /**
+   * @brief Helper type for heap_bases_ member
+   */
+  using HEAP_BASES_T = std::vector<char*, StdAllocatorHIP<char*>>;
 
-  public:
-    /**
-     * @brief Required for default construction of other objects
-     *
-     * @note Not intended for direct usage
-     */
-    RemoteHeapInfo() = default;
+ public:
+  /**
+   * @brief Required for default construction of other objects
+   *
+   * @note Not intended for direct usage
+   */
+  RemoteHeapInfo() = default;
 
-    /**
-     * @brief Primary constructor
-     *
-     * @param[in] The identifier for this processing element
-     * @param[in] The total number of processing elements
-     */
-    RemoteHeapInfo(char* heap_ptr, size_t heap_size)
-        : communicator_ {heap_ptr, heap_size} {
-        heap_bases_.resize(communicator_.num_pes());
-        for (auto &base : heap_bases_) {
-            base = nullptr;
-        }
-        heap_bases_[communicator_.my_pe()] = heap_ptr;
-        communicator_.allgather(heap_bases_.data());
-
-        device_heap_bases_ = heap_bases_.data();
+  /**
+   * @brief Primary constructor
+   *
+   * @param[in] The identifier for this processing element
+   * @param[in] The total number of processing elements
+   */
+  RemoteHeapInfo(char* heap_ptr, size_t heap_size)
+      : communicator_{heap_ptr, heap_size} {
+    heap_bases_.resize(communicator_.num_pes());
+    for (auto& base : heap_bases_) {
+      base = nullptr;
     }
+    heap_bases_[communicator_.my_pe()] = heap_ptr;
+    communicator_.allgather(heap_bases_.data());
 
-    /**
-     * @brief Invoke barrier on communicator
-     */
-    void
-    barrier() {
-        communicator_.barrier();
-    }
+    device_heap_bases_ = heap_bases_.data();
+  }
 
-    /**
-     * @brief Accessor for my processing element identifier
-     *
-     * @return My processing element identifier
-     */
-    int
-    my_pe() {
-        return communicator_.my_pe();
-    }
+  /**
+   * @brief Invoke barrier on communicator
+   */
+  void barrier() { communicator_.barrier(); }
 
-    /**
-     * @brief Accessor for number of processing elements
-     *
-     * @return Number of processing elements
-     */
-    int
-    num_pes() {
-        return communicator_.num_pes();
-    }
+  /**
+   * @brief Accessor for my processing element identifier
+   *
+   * @return My processing element identifier
+   */
+  int my_pe() { return communicator_.my_pe(); }
 
-    /**
-     * @brief Accessor method for heap_window_info_
-     *
-     * @return Window info for Reverse Offload interface
-     */
-    auto
-    get_window_info() {
-        return communicator_.get_window_info();
-    }
+  /**
+   * @brief Accessor for number of processing elements
+   *
+   * @return Number of processing elements
+   */
+  int num_pes() { return communicator_.num_pes(); }
 
-    /**
-     * @brief Accessor for heap bases
-     *
-     * @return Vector containing the addresses of the symmetric heap bases
-     */
-    __host__
-    const HEAP_BASES_T&
-    get_heap_bases() {
-        return heap_bases_;
-    }
+  /**
+   * @brief Accessor method for heap_window_info_
+   *
+   * @return Window info for Reverse Offload interface
+   */
+  auto get_window_info() { return communicator_.get_window_info(); }
 
-    /**
-     * @brief Accessor for heap bases
-     *
-     * @return Vector containing the addresses of the symmetric heap bases
-     */
-    __device__
-    auto
-    get_heap_bases() {
-        return device_heap_bases_;
-    }
+  /**
+   * @brief Accessor for heap bases
+   *
+   * @return Vector containing the addresses of the symmetric heap bases
+   */
+  __host__ const HEAP_BASES_T& get_heap_bases() { return heap_bases_; }
 
+  /**
+   * @brief Accessor for heap bases
+   *
+   * @return Vector containing the addresses of the symmetric heap bases
+   */
+  __device__ auto get_heap_bases() { return device_heap_bases_; }
 
-  private:
-    /**
-     * @brief Communicator implementation
-     */
-    COMMUNICATOR_T communicator_ {};
+ private:
+  /**
+   * @brief Communicator implementation
+   */
+  COMMUNICATOR_T communicator_{};
 
-    /**
-     * @brief C-array of symmetric heap base pointers
-     *
-     * A vector of char* pointers corresponding to the heap_bases virtual
-     * address for all processing element that we can communicate with.
-     *
-     * @note Used by __host__ code
-     */
-    HEAP_BASES_T heap_bases_ {};
+  /**
+   * @brief C-array of symmetric heap base pointers
+   *
+   * A vector of char* pointers corresponding to the heap_bases virtual
+   * address for all processing element that we can communicate with.
+   *
+   * @note Used by __host__ code
+   */
+  HEAP_BASES_T heap_bases_{};
 
-    /**
-     * @brief C-array of symmetric heap base pointers
-     *
-     * A vector of char* pointers corresponding to the heap_bases virtual
-     * address for all processing element that we can communicate with.
-     *
-     * @note Used by __device__ code
-     */
-    char** device_heap_bases_ {nullptr};
+  /**
+   * @brief C-array of symmetric heap base pointers
+   *
+   * A vector of char* pointers corresponding to the heap_bases virtual
+   * address for all processing element that we can communicate with.
+   *
+   * @note Used by __device__ code
+   */
+  char** device_heap_bases_{nullptr};
 };
 
-} // namespace rocshmem
+}  // namespace rocshmem
 
-#endif  // ROCSHMEM_LIBRARY_SRC_REMOTE_HEAP_INFO_HPP
+#endif  // LIBRARY_SRC_MEMORY_REMOTE_HEAP_INFO_HPP_

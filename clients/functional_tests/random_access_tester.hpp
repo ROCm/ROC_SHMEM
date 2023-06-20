@@ -28,54 +28,38 @@
 /******************************************************************************
  * DEVICE TEST KERNEL
  *****************************************************************************/
-__global__ void
-RandomAccessTest(int loop,
-               int skip,
-               uint64_t *timer,
-               int *s_buf,
-               int *r_buf,
-               int size,
-               OpType type,
-               int coal_coef,
-               int num_bins,
-               int num_waves,
-               uint32_t * threads_bins,
-               uint32_t * off_bins,
-               uint32_t *PE_bins);
+__global__ void RandomAccessTest(int loop, int skip, uint64_t *timer,
+                                 int *s_buf, int *r_buf, int size, OpType type,
+                                 int coal_coef, int num_bins, int num_waves,
+                                 uint32_t *threads_bins, uint32_t *off_bins,
+                                 uint32_t *PE_bins);
 
 /******************************************************************************
  * HOST TESTER CLASS
  *****************************************************************************/
-class RandomAccessTester : public Tester
-{
-  public:
-    explicit RandomAccessTester(TesterArguments args);
-    virtual ~RandomAccessTester();
+class RandomAccessTester : public Tester {
+ public:
+  explicit RandomAccessTester(TesterArguments args);
+  virtual ~RandomAccessTester();
 
-  protected:
-    virtual void
-    resetBuffers(uint64_t size) override;
+ protected:
+  virtual void resetBuffers(uint64_t size) override;
 
-    virtual void
-    launchKernel(dim3 gridSize,
-                 dim3 blockSize,
-                 int loop,
-                 uint64_t size) override;
+  virtual void launchKernel(dim3 gridSize, dim3 blockSize, int loop,
+                            uint64_t size) override;
 
-    virtual void
-    verifyResults(uint64_t size) override;
+  virtual void verifyResults(uint64_t size) override;
 
-    int *r_buf;
-    int *s_buf;
-    int *h_buf;
-    int *h_dev_buf;
-    uint32_t * _threads_bins;
-    uint32_t * _off_bins;
-    uint32_t * _PE_bins;
-    int _num_waves;
-    int _num_bins;
-    static constexpr int space = 16 * 2;
-
+  int *r_buf;
+  int *s_buf;
+  int *h_buf;
+  int *h_dev_buf;
+  uint32_t *_threads_bins;
+  uint32_t *_off_bins;
+  uint32_t *_PE_bins;
+  int _num_waves;
+  int _num_bins;
+  static constexpr int space = 16 * 2;
 };
 
 #endif

@@ -20,66 +20,59 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
+#include "src/atomic_return.hpp"
+
 #include <cassert>
 
-#include "atomic_return.hpp"
-#include "constants.hpp"
+#include "src/constants.hpp"
 
 namespace rocshmem {
 
-void
-allocate_atomic_region(atomic_ret_t** atomic_ret,
-                       int num_wg) {
-    atomic_ret_t* tmp_ret {nullptr};
-    /*
-     * Allocate device-side control struct for the atomic return region.
-     */
-    CHECK_HIP(hipMalloc(reinterpret_cast<void**>(&tmp_ret),
-                        sizeof(atomic_ret_t)));
+void allocate_atomic_region(atomic_ret_t** atomic_ret, int num_wg) {
+  atomic_ret_t* tmp_ret{nullptr};
+  /*
+   * Allocate device-side control struct for the atomic return region.
+   */
+  CHECK_HIP(
+      hipMalloc(reinterpret_cast<void**>(&tmp_ret), sizeof(atomic_ret_t)));
 
-    /*
-     * Allocate fine-grained device-side memory for the atomic return
-     * region.
-     */
-    size_t size_bytes {max_nb_atomic * num_wg * sizeof(uint64_t)};
-    CHECK_HIP(hipExtMallocWithFlags(
-        reinterpret_cast<void**>(&tmp_ret->atomic_base_ptr),
-        size_bytes,
-        hipDeviceMallocFinegrained));
+  /*
+   * Allocate fine-grained device-side memory for the atomic return
+   * region.
+   */
+  size_t size_bytes{max_nb_atomic * num_wg * sizeof(uint64_t)};
+  CHECK_HIP(
+      hipExtMallocWithFlags(reinterpret_cast<void**>(&tmp_ret->atomic_base_ptr),
+                            size_bytes, hipDeviceMallocFinegrained));
 
-    /*
-     * Zero-initialize the entire atomic return region.
-     */
-    memset(tmp_ret->atomic_base_ptr,
-           0,
-           size_bytes);
+  /*
+   * Zero-initialize the entire atomic return region.
+   */
+  memset(tmp_ret->atomic_base_ptr, 0, size_bytes);
 
-    *atomic_ret = tmp_ret;
+  *atomic_ret = tmp_ret;
 }
 
-void
-init_g_ret(SymmetricHeap* heap_handle,
-           MPI_Comm thread_comm,
-           int num_wg,
-           char** g_ret) {
-    /*
-     * Create space on the symmetric heap
-     */
-    void *ptr {nullptr};
-    size_t size_bytes {sizeof(int64_t) * MAX_WG_SIZE * num_wg};
-    heap_handle->malloc(&ptr, size_bytes);
-    assert(ptr);
+void init_g_ret(SymmetricHeap* heap_handle, MPI_Comm thread_comm, int num_wg,
+                char** g_ret) {
+  /*
+   * Create space on the symmetric heap
+   */
+  void* ptr{nullptr};
+  size_t size_bytes{sizeof(int64_t) * MAX_WG_SIZE * num_wg};
+  heap_handle->malloc(&ptr, size_bytes);
+  assert(ptr);
 
-    /*
-     * Assign g_ret the output of the malloc
-     */
-    *g_ret = reinterpret_cast<char*>(ptr);
+  /*
+   * Assign g_ret the output of the malloc
+   */
+  *g_ret = reinterpret_cast<char*>(ptr);
 
-    /*
-     * Make sure that all processing elements have done this before
-     * continuing.
-     */
-    MPI_Barrier(thread_comm);
+  /*
+   * Make sure that all processing elements have done this before
+   * continuing.
+   */
+  MPI_Barrier(thread_comm);
 }
 
 }  // namespace rocshmem

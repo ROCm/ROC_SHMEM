@@ -20,10 +20,10 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef ROCSHMEM_LIBRARY_SRC_TEMPLATES_HOST_HPP
-#define ROCSHMEM_LIBRARY_SRC_TEMPLATES_HOST_HPP
+#ifndef LIBRARY_SRC_TEMPLATES_HOST_HPP_
+#define LIBRARY_SRC_TEMPLATES_HOST_HPP_
 
-#include <roc_shmem.hpp>
+#include "include/roc_shmem.hpp"
 
 /**
  * @file templates_host.hpp
@@ -71,27 +71,26 @@ __host__ void roc_shmem_put_nbi(roc_shmem_ctx_t ctx, T *dest, const T *src,
                                 size_t nelems, int pe);
 
 template <typename T>
-__host__ void roc_shmem_put_nbi(T *dest, const T *src,
+__host__ void roc_shmem_put_nbi(T *dest, const T *src, size_t nelems, int pe);
+
+template <typename T>
+__host__ void roc_shmem_get_nbi(roc_shmem_ctx_t ctx, T *dest, const T *source,
                                 size_t nelems, int pe);
 
 template <typename T>
-__host__ void roc_shmem_get_nbi(roc_shmem_ctx_t ctx, T *dest,
-                                const T *source, size_t nelems, int pe);
+__host__ void roc_shmem_get_nbi(T *dest, const T *source, size_t nelems,
+                                int pe);
 
 template <typename T>
-__host__ void roc_shmem_get_nbi(T *dest,
-                                const T *source, size_t nelems, int pe);
-
-template <typename T>
-__host__ T roc_shmem_atomic_fetch_add(roc_shmem_ctx_t ctx, T *dest,
-                                      T val, int pe);
+__host__ T roc_shmem_atomic_fetch_add(roc_shmem_ctx_t ctx, T *dest, T val,
+                                      int pe);
 
 template <typename T>
 __host__ T roc_shmem_atomic_fetch_add(T *dest, T val, int pe);
 
 template <typename T>
-__host__ T roc_shmem_atomic_compare_swap(roc_shmem_ctx_t ctx, T *dest,
-                                        T cond, T val, int pe);
+__host__ T roc_shmem_atomic_compare_swap(roc_shmem_ctx_t ctx, T *dest, T cond,
+                                         T val, int pe);
 
 template <typename T>
 __host__ T roc_shmem_atomic_compare_swap(T *dest, T cond, T val, int pe);
@@ -109,8 +108,7 @@ template <typename T>
 __host__ T roc_shmem_atomic_fetch(T *dest, int pe);
 
 template <typename T>
-__host__ void roc_shmem_atomic_add(roc_shmem_ctx_t ctx, T *dest,
-                                   T val, int pe);
+__host__ void roc_shmem_atomic_add(roc_shmem_ctx_t ctx, T *dest, T val, int pe);
 
 template <typename T>
 __host__ void roc_shmem_atomic_add(T *dest, T val, int pe);
@@ -122,28 +120,20 @@ template <typename T>
 __host__ void roc_shmem_atomic_inc(T *dest, int pe);
 
 template <typename T>
-__host__ void
-roc_shmem_broadcast(roc_shmem_ctx_t ctx,
-                    T *dest,
-                    const T *source,
-                    int nelement,
-                    int PE_root,
-                    int PE_start,
-                    int logPE_stride,
-                    int PE_size,
-                    long *pSync);
+__host__ void roc_shmem_atomic_set(T *dest, T val, int pe);
 
-template<typename T, ROC_SHMEM_OP Op>
-__host__ void
-roc_shmem_to_all(roc_shmem_ctx_t ctx,
-                 T *dest,
-                 const T *source,
-                 int nreduce,
-                 int PE_start,
-                 int logPE_stride,
-                 int PE_size,
-                 T *pWrk,
-                 long *pSync);
+template <typename T>
+__host__ void roc_shmem_atomic_set(roc_shmem_ctx_t ctx, T *dest, T val, int pe);
+
+template <typename T>
+__host__ void roc_shmem_broadcast(roc_shmem_ctx_t ctx, T *dest, const T *source,
+                                  int nelement, int PE_root, int PE_start,
+                                  int logPE_stride, int PE_size, long *pSync);
+
+template <typename T, ROC_SHMEM_OP Op>
+__host__ void roc_shmem_to_all(roc_shmem_ctx_t ctx, T *dest, const T *source,
+                               int nreduce, int PE_start, int logPE_stride,
+                               int PE_size, T *pWrk, long *pSync);
 
 template <typename T>
 __host__ void roc_shmem_wait_until(T *ptr, roc_shmem_cmps cmp, T val);
@@ -153,4 +143,4 @@ __device__ int roc_shmem_test(T *ptr, roc_shmem_cmps cmp, T val);
 
 }  // namespace rocshmem
 
-#endif  // ROCSHMEM_LIBRARY_SRC_TEMPLATES_HOST_HPP
+#endif  // LIBRARY_SRC_TEMPLATES_HOST_HPP_

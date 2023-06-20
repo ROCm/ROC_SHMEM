@@ -20,90 +20,80 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#include "memory_allocator.hpp"
-
-#include "util.hpp"
+#include "src/memory/memory_allocator.hpp"
 
 #include <cassert>
 
+#include "src/util.hpp"
+
 namespace rocshmem {
 
-MemoryAllocator::MemoryAllocator(hipError_t (*hip_alloc_fn)(void**, size_t, unsigned),
+MemoryAllocator::MemoryAllocator(hipError_t (*hip_alloc_fn)(void**, size_t,
+                                                            unsigned),
                                  hipError_t (*hip_free_fn)(void*),
                                  unsigned flags)
-    : _hip_alloc_with_flags(hip_alloc_fn), _hip_free(hip_free_fn), _flags(flags)
-{
-}
+    : _hip_alloc_with_flags(hip_alloc_fn),
+      _hip_free(hip_free_fn),
+      _flags(flags) {}
 
 MemoryAllocator::MemoryAllocator(hipError_t (*hip_alloc_fn)(void**, size_t),
                                  hipError_t (*hip_free_fn)(void*))
-    : _hip_alloc(hip_alloc_fn), _hip_free(hip_free_fn)
-{
-}
+    : _hip_alloc(hip_alloc_fn), _hip_free(hip_free_fn) {}
 
 MemoryAllocator::MemoryAllocator(std::function<void*(size_t)> alloc_fn,
                                  std::function<void(void*)> free_fn)
-    : _alloc(alloc_fn), _free(free_fn)
-{
+    : _alloc(alloc_fn), _free(free_fn) {}
+
+MemoryAllocator::MemoryAllocator(
+    std::function<int(void**, size_t, size_t)> posix_align_fn,
+    std::function<void(void*)> free_fn, size_t alignment)
+    : _alloc_posix_memalign(posix_align_fn),
+      _free(free_fn),
+      _alignment(alignment) {}
+
+void MemoryAllocator::allocate(void** void_ptr, size_t size) {
+  assert(void_ptr);
+
+  if (_alloc) {
+    *(reinterpret_cast<char**>(void_ptr)) =
+        reinterpret_cast<char*>(_alloc(size));
+    assert(*reinterpret_cast<char**>(void_ptr));
+    return;
+  }
+  if (_alloc_posix_memalign) {
+    assert(_alignment);
+    _alloc_posix_memalign(void_ptr, _alignment, size);
+    assert(*reinterpret_cast<char**>(void_ptr));
+    return;
+  }
+  if (_hip_alloc) {
+    CHECK_HIP(_hip_alloc(void_ptr, size));
+    return;
+  }
+  if (_hip_alloc_with_flags) {
+    CHECK_HIP(_hip_alloc_with_flags(void_ptr, size, _flags));
+    return;
+  }
+
+  assert(false);
 }
 
-MemoryAllocator::MemoryAllocator(std::function<int(void**, size_t, size_t)> posix_align_fn,
-                                 std::function<void(void*)> free_fn,
-                                 size_t alignment)
-    : _alloc_posix_memalign(posix_align_fn), _free(free_fn), _alignment(alignment)
-{
+void MemoryAllocator::deallocate(void* ptr) {
+  if (!ptr) {
+    return;
+  }
+  if (_free) {
+    _free(ptr);
+    return;
+  }
+  if (_hip_free) {
+    CHECK_HIP(_hip_free(ptr));
+    return;
+  }
+
+  assert(false);
 }
 
-void
-MemoryAllocator::allocate(void** void_ptr, size_t size)
-{
-    assert(void_ptr);
-
-    if (_alloc) {
-        *(reinterpret_cast<char**>(void_ptr)) =
-            reinterpret_cast<char*>(_alloc(size));
-        assert(*reinterpret_cast<char**>(void_ptr));
-        return;
-    }
-    if (_alloc_posix_memalign) {
-        assert(_alignment);
-        _alloc_posix_memalign(void_ptr, _alignment, size);
-        assert(*reinterpret_cast<char**>(void_ptr));
-        return;
-    }
-    if (_hip_alloc) {
-        CHECK_HIP(_hip_alloc(void_ptr, size));
-        return;
-    }
-    if (_hip_alloc_with_flags) {
-        CHECK_HIP(_hip_alloc_with_flags(void_ptr, size, _flags));
-        return;
-    }
-
-    assert(false);
-}
-
-void
-MemoryAllocator::deallocate(void* ptr)
-{
-    if (!ptr) {
-        return;
-    }
-    if (_free) {
-        _free(ptr);
-        return;
-    }
-    if (_hip_free) {
-        CHECK_HIP(_hip_free(ptr));
-        return;
-    }
-
-    assert(false);
-}
-
-bool
-MemoryAllocator::is_managed() {
-    return _managed;
-}
+bool MemoryAllocator::is_managed() { return _managed; }
 
 }  // namespace rocshmem

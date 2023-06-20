@@ -26,51 +26,53 @@
  */
 
 #include <stdio.h>
+
 #include <roc_shmem.hpp>
 
 using namespace rocshmem;
 
 #define NELEM 10
 
-int main(void)
-{
-    int me, npes;
-    int errors = 0;
-    long *psync, *pwrk, *src;
+int main(void) {
+  int me, npes;
+  int errors = 0;
+  long *psync, *pwrk, *src;
 
-    roc_shmem_init(1);
+  roc_shmem_init();
 
-    me = roc_shmem_my_pe();
-    npes = roc_shmem_n_pes();
+  me = roc_shmem_my_pe();
+  npes = roc_shmem_n_pes();
 
-    src = (long *) roc_shmem_malloc(NELEM * sizeof(long));
-    for (int i = 0; i < NELEM; i++)
-        src[i] = me;
+  src = (long *)roc_shmem_malloc(NELEM * sizeof(long));
+  for (int i = 0; i < NELEM; i++) src[i] = me;
 
-    psync = (long *) roc_shmem_malloc(ROC_SHMEM_REDUCE_SYNC_SIZE * sizeof(long));
-    for (int i = 0; i < ROC_SHMEM_REDUCE_SYNC_SIZE; i++)
-        psync[i] = ROC_SHMEM_SYNC_VALUE;
+  psync = (long *)roc_shmem_malloc(ROC_SHMEM_REDUCE_SYNC_SIZE * sizeof(long));
+  for (int i = 0; i < ROC_SHMEM_REDUCE_SYNC_SIZE; i++)
+    psync[i] = ROC_SHMEM_SYNC_VALUE;
 
-    pwrk = (long *) roc_shmem_malloc((NELEM/2 + ROC_SHMEM_REDUCE_MIN_WRKDATA_SIZE) * sizeof(long));
+  pwrk = (long *)roc_shmem_malloc(
+      (NELEM / 2 + ROC_SHMEM_REDUCE_MIN_WRKDATA_SIZE) * sizeof(long));
 
-    roc_shmem_barrier_all();
+  roc_shmem_barrier_all();
 
-    roc_shmem_ctx_long_max_to_all(ROC_SHMEM_CTX_DEFAULT, src, src, NELEM, 0, 0, npes, pwrk, psync);
+  roc_shmem_ctx_long_max_to_all(ROC_SHMEM_CTX_DEFAULT, src, src, NELEM, 0, 0,
+                                npes, pwrk, psync);
 
-    /* Validate reduced data */
-    for (int j = 0; j < NELEM; j++) {
-        long expected = npes-1;
-        if (src[j] != expected) {
-            printf("%d: Expected src[%d] = %ld, got src[%d] = %ld\n", me, j, expected, j, src[j]);
-            errors++;
-        }
+  /* Validate reduced data */
+  for (int j = 0; j < NELEM; j++) {
+    long expected = npes - 1;
+    if (src[j] != expected) {
+      printf("%d: Expected src[%d] = %ld, got src[%d] = %ld\n", me, j, expected,
+             j, src[j]);
+      errors++;
     }
+  }
 
-    roc_shmem_free(src);
-    roc_shmem_free(psync);
-    roc_shmem_free(pwrk);
+  roc_shmem_free(src);
+  roc_shmem_free(psync);
+  roc_shmem_free(pwrk);
 
-    roc_shmem_finalize();
+  roc_shmem_finalize();
 
-    return errors != 0;
+  return errors != 0;
 }

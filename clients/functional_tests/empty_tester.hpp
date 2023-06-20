@@ -28,24 +28,18 @@
 /******************************************************************************
  * HOST TESTER CLASS
  *****************************************************************************/
-class EmptyTester : public Tester
-{
-  public:
-    explicit EmptyTester(TesterArguments args);
-    virtual ~EmptyTester();
+class EmptyTester : public Tester {
+ public:
+  explicit EmptyTester(TesterArguments args);
+  virtual ~EmptyTester();
 
-  protected:
-    virtual void
-    resetBuffers(uint64_t size) override;
+ protected:
+  virtual void resetBuffers(uint64_t size) override;
 
-    virtual void
-    launchKernel(dim3 gridSize,
-                 dim3 blockSize,
-                 int loop,
-                 uint64_t size) override;
+  virtual void launchKernel(dim3 gridSize, dim3 blockSize, int loop,
+                            uint64_t size) override;
 
-    virtual void
-    verifyResults(uint64_t size) override;
+  virtual void verifyResults(uint64_t size) override;
 };
 
 #endif  // ROCSHMEM_CLIENTS_FUNCTIONAL_TESTS_EMPTY_TESTER_HPP

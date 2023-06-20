@@ -21,146 +21,87 @@
  *****************************************************************************/
 
 #include "config.h"  // NOLINT(build/include_subdir)
-
-#include "context_incl.hpp"
-#include "backend_bc.hpp"
+#include "src/backend_bc.hpp"
+#include "src/context_incl.hpp"
 
 namespace rocshmem {
 
-__host__
-Context::Context(Backend *handle,
-                 bool shareable)
+__host__ Context::Context(Backend* handle, bool shareable)
     : num_pes(handle->getNumPEs()),
       my_pe(handle->getMyPE()),
-      fence_(shareable) {
-}
+      fence_(shareable),
+      dev_mtx_(shareable) {}
 
 /******************************************************************************
  ********************** CONTEXT DISPATCH IMPLEMENTATIONS **********************
  *****************************************************************************/
 
-__host__ void
-Context::putmem(void* dest,
-                const void* source,
-                size_t nelems,
-                int pe) {
-    if (nelems == 0) {
-        return;
-    }
+__host__ void Context::putmem(void* dest, const void* source, size_t nelems,
+                              int pe) {
+  if (nelems == 0) {
+    return;
+  }
 
-    ctxHostStats.incStat(NUM_HOST_PUT);
+  ctxHostStats.incStat(NUM_HOST_PUT);
 
-    HOST_DISPATCH(putmem(dest, source, nelems, pe));
+  HOST_DISPATCH(putmem(dest, source, nelems, pe));
 }
 
-__host__ void
-Context::getmem(void* dest,
-                const void* source,
-                size_t nelems,
-                int pe) {
-    if (nelems == 0) {
-        return;
-    }
+__host__ void Context::getmem(void* dest, const void* source, size_t nelems,
+                              int pe) {
+  if (nelems == 0) {
+    return;
+  }
 
-    ctxHostStats.incStat(NUM_HOST_GET);
+  ctxHostStats.incStat(NUM_HOST_GET);
 
-    HOST_DISPATCH(getmem(dest, source, nelems, pe));
+  HOST_DISPATCH(getmem(dest, source, nelems, pe));
 }
 
-__host__ void
-Context::putmem_nbi(void* dest,
-                    const void* source,
-                    size_t nelems,
-                    int pe) {
-    if (nelems == 0) {
-        return;
-    }
+__host__ void Context::putmem_nbi(void* dest, const void* source, size_t nelems,
+                                  int pe) {
+  if (nelems == 0) {
+    return;
+  }
 
-    ctxHostStats.incStat(NUM_HOST_PUT_NBI);
+  ctxHostStats.incStat(NUM_HOST_PUT_NBI);
 
-    HOST_DISPATCH(putmem_nbi(dest, source, nelems, pe));
+  HOST_DISPATCH(putmem_nbi(dest, source, nelems, pe));
 }
 
-__host__ void
-Context::getmem_nbi(void* dest,
-                    const void* source,
-                    size_t nelems,
-                    int pe) {
-    if (nelems == 0) {
-        return;
-    }
+__host__ void Context::getmem_nbi(void* dest, const void* source, size_t nelems,
+                                  int pe) {
+  if (nelems == 0) {
+    return;
+  }
 
-    ctxHostStats.incStat(NUM_HOST_GET_NBI);
+  ctxHostStats.incStat(NUM_HOST_GET_NBI);
 
-    HOST_DISPATCH(getmem_nbi(dest, source, nelems, pe));
+  HOST_DISPATCH(getmem_nbi(dest, source, nelems, pe));
 }
 
-__host__ int64_t
-Context::amo_fetch_add(void* dst,
-                       int64_t value,
-                       int64_t cond,
-                       int pe) {
-    ctxHostStats.incStat(NUM_HOST_ATOMIC_FADD);
+__host__ void Context::fence() {
+  ctxHostStats.incStat(NUM_HOST_FENCE);
 
-    HOST_DISPATCH_RET(amo_fetch_add(dst, value, cond, pe));
+  HOST_DISPATCH(fence());
 }
 
-__host__ void
-Context::amo_add(void* dst,
-                 int64_t value,
-                 int64_t cond,
-                 int pe) {
-    ctxHostStats.incStat(NUM_HOST_ATOMIC_ADD);
+__host__ void Context::quiet() {
+  ctxHostStats.incStat(NUM_HOST_QUIET);
 
-    HOST_DISPATCH(amo_add(dst, value, cond, pe));
+  HOST_DISPATCH(quiet());
 }
 
-__host__ int64_t
-Context::amo_fetch_cas(void* dst,
-                       int64_t value,
-                       int64_t cond,
-                       int pe) {
-    ctxHostStats.incStat(NUM_HOST_ATOMIC_FCSWAP);
+__host__ void Context::sync_all() {
+  ctxHostStats.incStat(NUM_HOST_SYNC_ALL);
 
-    HOST_DISPATCH_RET(amo_fetch_cas(dst, value, cond, pe));
+  HOST_DISPATCH(sync_all());
 }
 
-__host__ void
-Context::amo_cas(void* dst,
-                 int64_t value,
-                 int64_t cond,
-                 int pe) {
-    ctxHostStats.incStat(NUM_HOST_ATOMIC_CSWAP);
+__host__ void Context::barrier_all() {
+  ctxHostStats.incStat(NUM_HOST_BARRIER_ALL);
 
-    HOST_DISPATCH(amo_cas(dst, value, cond, pe));
-}
-
-__host__ void
-Context::fence() {
-    ctxHostStats.incStat(NUM_HOST_FENCE);
-
-    HOST_DISPATCH(fence());
-}
-
-__host__ void
-Context::quiet() {
-    ctxHostStats.incStat(NUM_HOST_QUIET);
-
-    HOST_DISPATCH(quiet());
-}
-
-__host__ void
-Context::sync_all() {
-    ctxHostStats.incStat(NUM_HOST_SYNC_ALL);
-
-    HOST_DISPATCH(sync_all());
-}
-
-__host__ void
-Context::barrier_all() {
-    ctxHostStats.incStat(NUM_HOST_BARRIER_ALL);
-
-    HOST_DISPATCH(barrier_all());
+  HOST_DISPATCH(barrier_all());
 }
 
 }  // namespace rocshmem

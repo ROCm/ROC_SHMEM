@@ -20,50 +20,42 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef ROCSHMEM_LIBRARY_SRC_HDP_PROXY_HPP
-#define ROCSHMEM_LIBRARY_SRC_HDP_PROXY_HPP
+#ifndef LIBRARY_SRC_HDP_PROXY_HPP_
+#define LIBRARY_SRC_HDP_PROXY_HPP_
 
-#include "device_proxy.hpp"
-#include "hdp_policy.hpp"
+#include "src/device_proxy.hpp"
+#include "src/hdp_policy.hpp"
 
 namespace rocshmem {
 
 template <typename ALLOCATOR>
 class HdpProxy {
-    using HdpProxyT = DeviceProxy<ALLOCATOR, HdpPolicy>;
+  using HdpProxyT = DeviceProxy<ALLOCATOR, HdpPolicy>;
 
-  public:
-    /*
-     * Placement new the memory which is allocated by proxy_
-     */
-    HdpProxy() {
-        new (proxy_.get()) HdpPolicy();
-    }
+ public:
+  /*
+   * Placement new the memory which is allocated by proxy_
+   */
+  HdpProxy() { new (proxy_.get()) HdpPolicy(); }
 
-    /*
-     * Since placement new is called in the constructor, then
-     * delete must be called manually.
-     */
-    ~HdpProxy() {
-        proxy_.get()->~HdpPolicy();
-    }
+  /*
+   * Since placement new is called in the constructor, then
+   * delete must be called manually.
+   */
+  ~HdpProxy() { proxy_.get()->~HdpPolicy(); }
 
-    /*
-     * @brief Provide access to the memory referenced by the proxy
-     */
-    __host__ __device__
-    HdpPolicy*
-    get() {
-        return proxy_.get();
-    }
+  /*
+   * @brief Provide access to the memory referenced by the proxy
+   */
+  __host__ __device__ HdpPolicy* get() { return proxy_.get(); }
 
-  private:
-    /*
-     * @brief Memory managed by the lifetime of this object
-     */
-    HdpProxyT proxy_ {};
+ private:
+  /*
+   * @brief Memory managed by the lifetime of this object
+   */
+  HdpProxyT proxy_{};
 };
 
-} // namespace rocshmem
+}  // namespace rocshmem
 
-#endif  // ROCSHMEM_LIBRARY_SRC_HDP_PROXY_HPP
+#endif  // LIBRARY_SRC_HDP_PROXY_HPP_

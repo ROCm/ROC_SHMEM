@@ -25,9 +25,11 @@ cmake_minimum_required(VERSION 3.16.3 FATAL_ERROR)
 ###############################################################################
 # GLOBAL COMPILE FLAGS
 ###############################################################################
+if (NOT DEFINED CMAKE_CXX_COMPILER)
+    set(CMAKE_CXX_COMPILER /opt/rocm/bin/hipcc)
+endif()
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_COMPILER /opt/rocm/bin/hipcc)
 set(CMAKE_CXX_FLAGS_DEBUG "-O0 -ggdb")
 
 ###############################################################################
@@ -75,7 +77,9 @@ target_sources(
     primitive_mr_tester.cpp
     team_ctx_primitive_tester.cpp
     team_ctx_infra_tester.cpp
-    primitive_amo_tester.cpp
+    amo_bitwise_tester.cpp
+    amo_extended_tester.cpp
+    amo_standard_tester.cpp
     swarm_tester.cpp
     random_access_tester.cpp
     shmem_ptr_tester.cpp
@@ -101,6 +105,7 @@ target_link_libraries(
     rocshmem::rocshmem
     hip::host
     -fgpu-rdc
+    --hipcc-func-supp
 #   xnack allows address translation fault recovery
 #   required option for managed heap configs
 #    -mxnack

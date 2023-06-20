@@ -26,26 +26,20 @@
 target_sources(
   ${PROJECT_NAME}
   PRIVATE
+    backend_ib.cpp
     connection.cpp
     connection_policy.cpp
+    context_ib_device.cpp
+    context_ib_device_coll.cpp
+    context_ib_host.cpp
     debug.cpp
     dynamic_connection.cpp
     endian.cpp
-    backend_ib.cpp
-    gpu_ib_gpu.cpp
-    gpu_ib_host.cpp
     gpu_ib_team.cpp
-    gpu_ib_gpu_coll.cpp
     network_policy.cpp
     qe_dumper.cpp
     queue_pair.cpp
     reliable_connection.cpp
     segment_builder.cpp
     thread_policy.cpp
-)
-
-target_include_directories(
-  ${PROJECT_NAME}
-  PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}
 )

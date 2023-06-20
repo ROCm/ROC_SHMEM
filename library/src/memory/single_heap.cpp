@@ -20,65 +20,47 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#include "single_heap.hpp"
+#include "src/memory/single_heap.hpp"
 
 #include <sstream>
 
 namespace rocshmem {
 
 SingleHeap::SingleHeap() {
-    if (auto heap_size_cstr = getenv("ROC_SHMEM_HEAP_SIZE")) {
-        std::stringstream sstream(heap_size_cstr);
-        size_t heap_size;
-        sstream >> heap_size;
-        heap_mem_ = HEAP_T{heap_size};
-        strat_ = STRAT_T{&heap_mem_};
-    }
+  if (auto heap_size_cstr = getenv("ROC_SHMEM_HEAP_SIZE")) {
+    std::stringstream sstream(heap_size_cstr);
+    size_t heap_size;
+    sstream >> heap_size;
+    heap_mem_ = HEAP_T{heap_size};
+    strat_ = STRAT_T{&heap_mem_};
+  }
 }
 
-void
-SingleHeap::malloc(void** ptr,
-                   size_t size) {
-    strat_.alloc(reinterpret_cast<char**>(ptr), size);
+void SingleHeap::malloc(void** ptr, size_t size) {
+  strat_.alloc(reinterpret_cast<char**>(ptr), size);
 }
 
-void
-SingleHeap::free(void* ptr) {
-    if (!ptr) {
-        return;
-    }
-    strat_.free(reinterpret_cast<char*>(ptr));
+__device__ void SingleHeap::malloc(void** ptr, size_t size) {}
+
+void SingleHeap::free(void* ptr) {
+  if (!ptr) {
+    return;
+  }
+  strat_.free(reinterpret_cast<char*>(ptr));
 }
 
-void*
-SingleHeap::realloc(void* ptr, size_t size) {
-    return nullptr;
-}
+__device__ void SingleHeap::free(void* ptr) {}
 
-void*
-SingleHeap::malign(size_t alignment,
-                   size_t size) {
-    return nullptr;
-}
+void* SingleHeap::realloc(void* ptr, size_t size) { return nullptr; }
 
-char*
-SingleHeap::get_base_ptr() {
-    return heap_mem_.get_ptr();
-}
+void* SingleHeap::malign(size_t alignment, size_t size) { return nullptr; }
 
-size_t
-SingleHeap::get_size() {
-    return heap_mem_.get_size();
-}
+char* SingleHeap::get_base_ptr() { return heap_mem_.get_ptr(); }
 
-size_t
-SingleHeap::get_used() {
-    return strat_.amount_proffered();
-}
+size_t SingleHeap::get_size() { return heap_mem_.get_size(); }
 
-size_t
-SingleHeap::get_avail() {
-    return get_size() - get_used();
-}
+size_t SingleHeap::get_used() { return strat_.amount_proffered(); }
+
+size_t SingleHeap::get_avail() { return get_size() - get_used(); }
 
 }  // namespace rocshmem

@@ -20,8 +20,8 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef ROCSHMEM_LIBRARY_SRC_SHMEM_ALLOCATOR_STRATEGY_HPP
-#define ROCSHMEM_LIBRARY_SRC_SHMEM_ALLOCATOR_STRATEGY_HPP
+#ifndef LIBRARY_SRC_MEMORY_SHMEM_ALLOCATOR_STRATEGY_HPP_
+#define LIBRARY_SRC_MEMORY_SHMEM_ALLOCATOR_STRATEGY_HPP_
 
 /**
  * @file shmem_allocator_strategy.hpp
@@ -32,46 +32,59 @@
 namespace rocshmem {
 
 class ShmemAllocatorStrategy {
-  public:
-    /**
-     * @brief Default constructor
-     */
-    ShmemAllocatorStrategy() = default;
+ public:
+  /**
+   * @brief Default constructor
+   */
+  ShmemAllocatorStrategy() = default;
 
-    /**
-     * @brief Default destructor
-     */
-    virtual ~ShmemAllocatorStrategy() = default;
+  /**
+   * @brief Default destructor
+   */
+  virtual ~ShmemAllocatorStrategy() = default;
 
-    /**
-     * @brief Default copy construction
-     */
-    ShmemAllocatorStrategy(const ShmemAllocatorStrategy& other) = default;
+  /**
+   * @brief Default copy construction
+   */
+  ShmemAllocatorStrategy(const ShmemAllocatorStrategy& other) = default;
 
-    /**
-     * @brief Disable copy assignment
-     */
-    ShmemAllocatorStrategy&
-    operator=(const ShmemAllocatorStrategy& other) = default;
+  /**
+   * @brief Disable copy assignment
+   */
+  ShmemAllocatorStrategy& operator=(const ShmemAllocatorStrategy& other) =
+      default;
 
-    /**
-     * @brief Allocates memory from the symmetric heap
-     *
-     * @param[in, out] Address of raw pointer (&pointer_to_char)
-     * @param[in] Size in bytes of memory allocation
-     */
-    virtual void
-    alloc(char** ptr, size_t request_size) = 0;
+  /**
+   * @brief Allocates memory from the symmetric heap
+   *
+   * @param[in, out] Address of raw pointer (&pointer_to_char)
+   * @param[in] Size in bytes of memory allocation
+   */
+  virtual void alloc(char** ptr, size_t request_size) = 0;
 
-    /**
-     * @brief Frees memory from the symmetric heap
-     *
-     * @param[in] Raw pointer to symmetric heap memory
-     */
-    virtual void
-    free(char* ptr) = 0;
+  /**
+   * @brief Allocates memory from the symmetric heap
+   *
+   * @param[in, out] Address of raw pointer (&pointer_to_char)
+   * @param[in] Size in bytes of memory allocation
+   */
+  __device__ virtual void alloc(char** ptr, size_t request_size) = 0;
+
+  /**
+   * @brief Frees memory from the symmetric heap
+   *
+   * @param[in] Raw pointer to symmetric heap memory
+   */
+  virtual void free(char* ptr) = 0;
+
+  /**
+   * @brief Frees memory from the symmetric heap
+   *
+   * @param[in] Raw pointer to symmetric heap memory
+   */
+  __device__ virtual void free(char* ptr) = 0;
 };
 
-} // namespace rocshmem
+}  // namespace rocshmem
 
-#endif  // ROCSHMEM_LIBRARY_SRC_SHMEM_ALLOCATOR_STRATEGY_HPP
+#endif  // LIBRARY_SRC_MEMORY_SHMEM_ALLOCATOR_STRATEGY_HPP_

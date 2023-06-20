@@ -28,24 +28,23 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/wait.h>
+
 #include <roc_shmem.hpp>
 
 using namespace rocshmem;
 
-int
-main(int argc, char* argv[])
-{
-    roc_shmem_init(1);
+int main(int argc, char* argv[]) {
+  roc_shmem_init();
 
-    if (roc_shmem_my_pe() == 0) {
-        roc_shmem_global_exit(0);
-        abort();
-    }
+  if (roc_shmem_my_pe() == 0) {
+    roc_shmem_global_exit(0);
+    abort();
+  }
 
-    /* All other PEs wait in this barrier */
-    roc_shmem_barrier_all();
+  /* All other PEs wait in this barrier */
+  roc_shmem_barrier_all();
 
-    roc_shmem_finalize();
+  roc_shmem_finalize();
 
-    return 0;
+  return 0;
 }

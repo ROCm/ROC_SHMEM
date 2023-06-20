@@ -23,8 +23,8 @@
 #include <gtest/gtest.h>
 #include <mpi.h>
 
-#include "dynamic_connection.hpp"
-#include "reliable_connection.hpp"
+#include "src/gpu_ib/dynamic_connection.hpp"
+#include "src/gpu_ib/reliable_connection.hpp"
 
 namespace rocshmem {
 
@@ -34,22 +34,21 @@ namespace rocshmem {
 // test with different sq_size
 
 TEST(DynamicConnect, ToNothing) {
-    DynamicConnection connect;
-    connect.construct_init(1);
+  DynamicConnection connect;
+  connect.construct_init(1);
 }
 
 // test with different num_dcis
 // test with different num_dcts
 
 TEST(ReliableConnect, ToNothing) {
-    ReliableConnection connect;
-    connect.construct_init(1);
+  ReliableConnection connect;
+  connect.construct_init(1);
 }
 
-int
-main(int argc, char **argv) {
-    testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
+int main(int argc, char **argv) {
+  testing::InitGoogleTest(&argc, argv);
+  return RUN_ALL_TESTS();
 }
 
 }  // namespace rocshmem

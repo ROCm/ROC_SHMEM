@@ -29,95 +29,63 @@ using namespace rocshmem;
 /******************************************************************************
  * DEVICE TEST KERNEL
  *****************************************************************************/
-__global__ void
-GetSwarmTest(int loop,
-             int skip,
-             uint64_t *timer,
-             char *s_buf,
-             char *r_buf,
-             int size,
-             ShmemContextType ctx_type)
-{
-    __shared__ roc_shmem_ctx_t ctx;
+__global__ void GetSwarmTest(int loop, int skip, uint64_t *timer, char *s_buf,
+                             char *r_buf, int size, ShmemContextType ctx_type) {
+  __shared__ roc_shmem_ctx_t ctx;
 
-    int provided;
-    roc_shmem_wg_init_thread(ROC_SHMEM_THREAD_MULTIPLE, &provided);
-    assert(provided == ROC_SHMEM_THREAD_MULTIPLE);
+  int provided;
+  roc_shmem_wg_init_thread(ROC_SHMEM_THREAD_MULTIPLE, &provided);
+  assert(provided == ROC_SHMEM_THREAD_MULTIPLE);
 
-    roc_shmem_wg_ctx_create(ctx_type, &ctx);
+  roc_shmem_wg_ctx_create(ctx_type, &ctx);
+
+  __syncthreads();
+
+  int index = hipThreadIdx_x * size;
+  uint64_t start = 0;
+
+  for (int i = 0; i < loop + skip; i++) {
+    if (i == skip) start = roc_shmem_timer();
+
+    roc_shmem_ctx_getmem(ctx, &r_buf[index], &s_buf[index], size, 1);
 
     __syncthreads();
+  }
 
-    int index = hipThreadIdx_x * size;
-    uint64_t start = 0;
+  atomicAdd((unsigned long long *)&timer[hipBlockIdx_x],
+            roc_shmem_timer() - start);
 
-    for (int i = 0; i < loop + skip; i++) {
-
-        if (i == skip)
-            start = roc_shmem_timer();
-
-        roc_shmem_ctx_getmem(ctx, &r_buf[index], &s_buf[index], size, 1);
-
-        __syncthreads();
-
-    }
-
-    atomicAdd((unsigned long long *) &timer[hipBlockIdx_x],
-                roc_shmem_timer() - start);
-
-    roc_shmem_wg_ctx_destroy(ctx);
-    roc_shmem_wg_finalize();
+  roc_shmem_wg_ctx_destroy(ctx);
+  roc_shmem_wg_finalize();
 }
 
 /******************************************************************************
  * HOST TESTER CLASS METHODS
  *****************************************************************************/
-GetSwarmTester::GetSwarmTester(TesterArguments args)
-        : PrimitiveTester(args)
-{
+GetSwarmTester::GetSwarmTester(TesterArguments args) : PrimitiveTester(args) {}
+
+GetSwarmTester::~GetSwarmTester() {}
+
+void GetSwarmTester::launchKernel(dim3 gridSize, dim3 blockSize, int loop,
+                                  uint64_t size) {
+  size_t shared_bytes = 0;
+
+  hipLaunchKernelGGL(GetSwarmTest, gridSize, blockSize, shared_bytes, stream,
+                     loop, args.skip, timer, s_buf, r_buf, size,
+                     _shmem_context);
+
+  num_msgs = (loop + args.skip) * gridSize.x * blockSize.x;
+  num_timed_msgs = loop * gridSize.x * blockSize.x;
 }
 
-GetSwarmTester::~GetSwarmTester()
-{
-}
-
-
-void
-GetSwarmTester::launchKernel(dim3 gridSize,
-                             dim3 blockSize,
-                             int loop,
-                             uint64_t size)
-{
-    size_t shared_bytes;
-    roc_shmem_dynamic_shared(&shared_bytes);
-
-    hipLaunchKernelGGL(GetSwarmTest,
-                       gridSize,
-                       blockSize,
-                       shared_bytes,
-                       stream,
-                       loop,
-                       args.skip,
-                       timer,
-                       s_buf,
-                       r_buf,
-                       size,
-                       _shmem_context);
-
-    num_msgs = (loop + args.skip) * gridSize.x * blockSize.x;
-    num_timed_msgs = loop * gridSize.x * blockSize.x;
-}
-
-void
-GetSwarmTester::verifyResults(uint64_t size)
-{
-    if (args.myid == 0) {
-        for (int i = 0; i < size * args.wg_size; i++) {
-            if (r_buf[i] != '0') {
-                fprintf(stderr, "Data validation error at idx %d\n", i);
-                fprintf(stderr, "Got %c, Expected %c\n", r_buf[i], '0');
-                exit(-1);
-            }
-        }
+void GetSwarmTester::verifyResults(uint64_t size) {
+  if (args.myid == 0) {
+    for (int i = 0; i < size * args.wg_size; i++) {
+      if (r_buf[i] != '0') {
+        fprintf(stderr, "Data validation error at idx %d\n", i);
+        fprintf(stderr, "Got %c, Expected %c\n", r_buf[i], '0');
+        exit(-1);
+      }
     }
+  }
 }

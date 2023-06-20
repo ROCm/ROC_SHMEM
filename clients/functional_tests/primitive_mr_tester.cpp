@@ -29,118 +29,83 @@ using namespace rocshmem;
 /******************************************************************************
  * DEVICE TEST KERNEL
  *****************************************************************************/
-__global__ void
-PrimitiveMRTest(int loop,
-                uint64_t *timer,
-                char *s_buf,
-                char *r_buf,
-                int size,
-                ShmemContextType ctx_type)
-{
-    __shared__ roc_shmem_ctx_t ctx;
-    roc_shmem_wg_init();
-    roc_shmem_wg_ctx_create(ctx_type, &ctx);
+__global__ void PrimitiveMRTest(int loop, uint64_t *timer, char *s_buf,
+                                char *r_buf, int size,
+                                ShmemContextType ctx_type) {
+  __shared__ roc_shmem_ctx_t ctx;
+  roc_shmem_wg_init();
+  roc_shmem_wg_ctx_create(ctx_type, &ctx);
 
-    if (hipThreadIdx_x == 0) {
-        uint64_t start;
+  if (hipThreadIdx_x == 0) {
+    uint64_t start;
 
-        start = roc_shmem_timer();
+    start = roc_shmem_timer();
 
-        for (int win_i = 0; win_i < 64*loop; win_i++) {
-            for (int i = 0; i < 64; i++) {
-                roc_shmem_ctx_putmem_nbi(ctx, r_buf, s_buf, size, 1);
-            }
-            roc_shmem_ctx_quiet(ctx);
-        }
-
-        timer[hipBlockIdx_x] =  roc_shmem_timer() - start;
+    for (int win_i = 0; win_i < 64 * loop; win_i++) {
+      for (int i = 0; i < 64; i++) {
+        roc_shmem_ctx_putmem_nbi(ctx, r_buf, s_buf, size, 1);
+      }
+      roc_shmem_ctx_quiet(ctx);
     }
 
-    __syncthreads();
+    timer[hipBlockIdx_x] = roc_shmem_timer() - start;
+  }
 
-    roc_shmem_wg_ctx_destroy(ctx);
-    roc_shmem_wg_finalize();
+  __syncthreads();
+
+  roc_shmem_wg_ctx_destroy(ctx);
+  roc_shmem_wg_finalize();
 }
 
 /******************************************************************************
  * HOST TESTER CLASS METHODS
  *****************************************************************************/
-PrimitiveMRTester::PrimitiveMRTester(TesterArguments args)
-    : Tester(args)
-{
-    s_buf = (char *)roc_shmem_malloc(args.max_msg_size * args.wg_size);
-    r_buf = (char *)roc_shmem_malloc(args.max_msg_size * args.wg_size);
+PrimitiveMRTester::PrimitiveMRTester(TesterArguments args) : Tester(args) {
+  s_buf = (char *)roc_shmem_malloc(args.max_msg_size * args.wg_size);
+  r_buf = (char *)roc_shmem_malloc(args.max_msg_size * args.wg_size);
 }
 
-PrimitiveMRTester::~PrimitiveMRTester()
-{
-    roc_shmem_free(s_buf);
-    roc_shmem_free(r_buf);
+PrimitiveMRTester::~PrimitiveMRTester() {
+  roc_shmem_free(s_buf);
+  roc_shmem_free(r_buf);
 }
 
-void
-PrimitiveMRTester::resetBuffers(size_t size)
-{
-    memset(s_buf, '0', args.max_msg_size * args.wg_size);
-    memset(r_buf, '1', args.max_msg_size * args.wg_size);
+void PrimitiveMRTester::resetBuffers(size_t size) {
+  memset(s_buf, '0', args.max_msg_size * args.wg_size);
+  memset(r_buf, '1', args.max_msg_size * args.wg_size);
 }
 
-void
-PrimitiveMRTester::launchKernel(dim3 gridSize,
-                              dim3 blockSize,
-                              int loop,
-                              uint64_t size)
-{
-    size_t shared_bytes;
-    roc_shmem_dynamic_shared(&shared_bytes);
+void PrimitiveMRTester::launchKernel(dim3 gridSize, dim3 blockSize, int loop,
+                                     uint64_t size) {
+  size_t shared_bytes = 0;
 
-    /* Warmup */
-    hipLaunchKernelGGL(PrimitiveMRTest,
-                       gridSize,
-                       blockSize,
-                       shared_bytes,
-                       stream,
-                       loop,
-                       timer,
-                       s_buf,
-                       r_buf,
-                       size,
-                       _shmem_context);
+  /* Warmup */
+  hipLaunchKernelGGL(PrimitiveMRTest, gridSize, blockSize, shared_bytes, stream,
+                     loop, timer, s_buf, r_buf, size, _shmem_context);
 
-    /* Benchmark */
-    hipLaunchKernelGGL(PrimitiveMRTest,
-                       gridSize,
-                       blockSize,
-                       shared_bytes,
-                       stream,
-                       loop,
-                       timer,
-                       s_buf,
-                       r_buf,
-                       size,
-                       _shmem_context);
+  /* Benchmark */
+  hipLaunchKernelGGL(PrimitiveMRTest, gridSize, blockSize, shared_bytes, stream,
+                     loop, timer, s_buf, r_buf, size, _shmem_context);
 
-    hipDeviceSynchronize();
+  hipDeviceSynchronize();
 
-    num_msgs = (loop + args.skip) * gridSize.x;
-    num_timed_msgs = loop * 64;
+  num_msgs = (loop + args.skip) * gridSize.x;
+  num_timed_msgs = loop * 64;
 }
 
-void
-PrimitiveMRTester::verifyResults(uint64_t size)
-{
-    int check_id = (_type == GetTestType    ||
-                    _type == GetNBITestType ||
-                    _type == GTestType)
-                    ? 0 : 1;
+void PrimitiveMRTester::verifyResults(uint64_t size) {
+  int check_id =
+      (_type == GetTestType || _type == GetNBITestType || _type == GTestType)
+          ? 0
+          : 1;
 
-    if (args.myid == check_id) {
-        for (int i = 0; i < size; i++) {
-            if (r_buf[i] != '0') {
-                fprintf(stderr, "Data validation error at idx %d\n", i);
-                fprintf(stderr, "Got %c, Expected %c\n", r_buf[i], '0');
-                exit(-1);
-            }
-        }
+  if (args.myid == check_id) {
+    for (int i = 0; i < size; i++) {
+      if (r_buf[i] != '0') {
+        fprintf(stderr, "Data validation error at idx %d\n", i);
+        fprintf(stderr, "Got %c, Expected %c\n", r_buf[i], '0');
+        exit(-1);
+      }
     }
+  }
 }

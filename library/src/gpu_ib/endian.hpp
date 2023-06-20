@@ -20,48 +20,34 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef ROCSHMEM_LIBRARY_SRC_GPU_IB_ENDIAN_HPP
-#define ROCSHMEM_LIBRARY_SRC_GPU_IB_ENDIAN_HPP
+#ifndef LIBRARY_SRC_GPU_IB_ENDIAN_HPP_
+#define LIBRARY_SRC_GPU_IB_ENDIAN_HPP_
 
 #include <hip/hip_runtime.h>
 
 namespace rocshmem {
 
 template <typename T>
-__device__ void
-swap_endian_store(T *dst,
-                  const T val);
+__device__ void swap_endian_store(T *dst, const T val);
 
 template <>
-__device__ void
-swap_endian_store(uint64_t *dst,
-                  const uint64_t val);
+__device__ void swap_endian_store(uint64_t *dst, const uint64_t val);
 
 template <>
-__device__ void
-swap_endian_store(int64_t *dst,
-                  const int64_t val);
+__device__ void swap_endian_store(int64_t *dst, const int64_t val);
 
 template <>
-__device__ void
-swap_endian_store(uint32_t *dst,
-                  const uint32_t val);
+__device__ void swap_endian_store(uint32_t *dst, const uint32_t val);
 
 template <>
-__device__ void
-swap_endian_store(int32_t *dst,
-                  const int32_t val);
+__device__ void swap_endian_store(int32_t *dst, const int32_t val);
 
 template <>
-__device__ void
-swap_endian_store(uint16_t *dst,
-                  const uint16_t val);
+__device__ void swap_endian_store(uint16_t *dst, const uint16_t val);
 
 template <>
-__device__ void
-swap_endian_store(int16_t *dst,
-                  const int16_t val);
+__device__ void swap_endian_store(int16_t *dst, const int16_t val);
 
 }  // namespace rocshmem
 
-#endif  // ROCSHMEM_LIBRARY_SRC_GPU_IB_ENDIAN_HPP
+#endif  // LIBRARY_SRC_GPU_IB_ENDIAN_HPP_

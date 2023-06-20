@@ -20,36 +20,35 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
+#ifndef LIBRARY_SRC_REVERSE_OFFLOAD_BARRIER_PROXY_HPP_
+#define LIBRARY_SRC_REVERSE_OFFLOAD_BARRIER_PROXY_HPP_
+
 namespace rocshmem {
 
 template <typename ALLOCATOR>
 class BarrierProxy {
-    using ProxyT = DeviceProxy<ALLOCATOR, unsigned int>;
+  using ProxyT = DeviceProxy<ALLOCATOR, unsigned int>;
 
-  public:
-    /*
-     * Placement new the memory which is allocated by proxy_
-     */
-    BarrierProxy() {
-        *proxy_.get() = 0;
-    }
+ public:
+  /*
+   * Placement new the memory which is allocated by proxy_
+   */
+  BarrierProxy() { *proxy_.get() = 0; }
 
-    /*
-     * @brief Provide access to the memory referenced by the proxy
-     */
-    __host__ __device__
-    unsigned int*
-    get() {
-        return proxy_.get();
-    }
+  /*
+   * @brief Provide access to the memory referenced by the proxy
+   */
+  __host__ __device__ unsigned int* get() { return proxy_.get(); }
 
-  private:
-    /*
-     * @brief Memory managed by the lifetime of this object
-     */
-    ProxyT proxy_ {};
+ private:
+  /*
+   * @brief Memory managed by the lifetime of this object
+   */
+  ProxyT proxy_{};
 };
 
 using BarrierProxyT = BarrierProxy<HIPAllocator>;
 
 }  // namespace rocshmem
+
+#endif  // LIBRARY_SRC_REVERSE_OFFLOAD_BARRIER_PROXY_HPP_

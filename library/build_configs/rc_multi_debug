@@ -15,6 +15,7 @@ cmake \
     -DCMAKE_VERBOSE_MAKEFILE=ON \
     -DDEBUG=OFF \
     -DPROFILE=OFF \
+    -DUSE_GPU_IB=ON \
     -DUSE_DC=OFF \
     -DUSE_IPC=OFF \
     -DUSE_THREADS=ON \

@@ -20,12 +20,12 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef ROCSHMEM_LIBRARY_SRC_MPI_INIT_SINGLETON_HPP
-#define ROCSHMEM_LIBRARY_SRC_MPI_INIT_SINGLETON_HPP
+#ifndef LIBRARY_SRC_MPI_INIT_SINGLETON_HPP_
+#define LIBRARY_SRC_MPI_INIT_SINGLETON_HPP_
+
+#include <mpi.h>
 
 #include <memory>
-
-#include "mpi.h"
 
 /**
  * @file mpi_init_singleton.hpp
@@ -35,60 +35,57 @@
 
 namespace rocshmem {
 
-class MPIInitSingleton{
-  private:
-    /**
-     * @brief Primary constructor
-     */
-    MPIInitSingleton();
+class MPIInitSingleton {
+ private:
+  /**
+   * @brief Primary constructor
+   */
+  MPIInitSingleton();
 
-  public:
-    /**
-     * @brief Destructor
-     */
-    ~MPIInitSingleton();
+ public:
+  /**
+   * @brief Destructor
+   */
+  ~MPIInitSingleton();
 
-    /**
-     * @brief Invoke singleton construction or return handle
-     *
-     * @return Initialized handle to singleton
-     */
-    static MPIInitSingleton*
-    GetInstance();
+  /**
+   * @brief Invoke singleton construction or return handle
+   *
+   * @return Initialized handle to singleton
+   */
+  static MPIInitSingleton* GetInstance();
 
-    /**
-     * @brief Accessor for my COMM_WORLD rank identifier
-     *
-     * @return My COMM_WORLD rank identifier
-     */
-    int
-    get_rank();
+  /**
+   * @brief Accessor for my COMM_WORLD rank identifier
+   *
+   * @return My COMM_WORLD rank identifier
+   */
+  int get_rank();
 
-    /**
-     * @brief Accessor for number or processes in COMM_WORLD
-     *
-     * @return Number of processes in COMM_WORLD
-     */
-    int
-    get_nprocs();
+  /**
+   * @brief Accessor for number or processes in COMM_WORLD
+   *
+   * @return Number of processes in COMM_WORLD
+   */
+  int get_nprocs();
 
-  private:
-    /**
-     * @brief My MPI rank identifier
-     */
-    int my_rank_ {-1};
+ private:
+  /**
+   * @brief My MPI rank identifier
+   */
+  int my_rank_{-1};
 
-    /**
-     * @brief Number of MPI processes
-     */
-    int nprocs_ {-1};
+  /**
+   * @brief Number of MPI processes
+   */
+  int nprocs_{-1};
 
-    /**
-     * @brief Refers to global variable
-     */
-    static MPIInitSingleton* instance;
+  /**
+   * @brief Refers to global variable
+   */
+  static MPIInitSingleton* instance;
 };
 
 }  // namespace rocshmem
 
-#endif  // ROCSHMEM_LIBRARY_SRC_MPI_INIT_SINGLETON_HPP
+#endif  // LIBRARY_SRC_MPI_INIT_SINGLETON_HPP_

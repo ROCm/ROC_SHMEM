@@ -153,11 +153,6 @@ page useful.
                         Defines the number of CPU threads the RO
                         backend should spawn. RO backend only.
 
-    RO_NET_QUEUE_SIZE   (default: 64 elements)
-                        Defines the size of the producer/consumer queue per
-                        work-group (each element 128B). RO backend only.
-
-
     RO_NET_CPU_QUEUE    (default: not set)
                         Force producer/consumer queues between CPU and GPU to
                         be in CPU memory. RO backend only.

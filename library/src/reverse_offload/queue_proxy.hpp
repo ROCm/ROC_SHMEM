@@ -20,63 +20,116 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef ROCSHMEM_LIBRARY_SRC_REVERSE_OFFLOAD_QUEUE_PROXY_HPP
-#define ROCSHMEM_LIBRARY_SRC_REVERSE_OFFLOAD_QUEUE_PROXY_HPP
+#ifndef LIBRARY_SRC_REVERSE_OFFLOAD_QUEUE_PROXY_HPP_
+#define LIBRARY_SRC_REVERSE_OFFLOAD_QUEUE_PROXY_HPP_
 
-#include "ro_net_internal.hpp"
-#include "device_proxy.hpp"
+#include <mpi.h>
+
+#include "src/atomic_return.hpp"
+#include "src/device_proxy.hpp"
+#include "src/hdp_policy.hpp"
+#include "src/ipc_policy.hpp"
+#include "src/reverse_offload/commands_types.hpp"
+#include "src/reverse_offload/profiler.hpp"
+#include "src/sync/abql_block_mutex.hpp"
 
 namespace rocshmem {
 
+constexpr size_t QUEUE_SIZE{512};
+
+struct cacheline_t {
+  volatile char valid;
+  volatile char padding[63];
+} __attribute__((__aligned__(64)));
+
+typedef struct queue_element {
+  /**
+   * Polled by the CPU to determine when a command is ready. Set by the GPU
+   * once a queue element has been completely filled out. This is padded
+   * from the actual data to prevent thrashing on an APU when the GPU is
+   * trying to fill out a packet and the CPU is reading the valid bit.
+   */
+  cacheline_t notify_cpu;
+
+  /**
+   * All following fields written by the GPU and read by the CPU.
+   */
+  ro_net_cmds type{};
+  int PE{-1};
+  void *src{nullptr};
+  void *dst{nullptr};
+  int ro_net_win_id{-1};
+  int threadId{-1};
+  int logPE_stride{-1};
+  int PE_size{-1};
+  long *pSync{nullptr};
+  int op{-1};
+  int datatype{-1};
+  int PE_root{-1};
+  MPI_Comm team_comm{};
+  union {
+    size_t size;
+    unsigned long long atomic_value;
+  } ol1;
+  union {
+    void *pWrk;
+    unsigned long long atomic_cond;
+  } ol2;
+} __attribute__((__aligned__(64))) queue_element_t;
+
+template <typename ALLOCATOR>
+class QueueElementProxy {
+  using ProxyT = DeviceProxy<ALLOCATOR, queue_element_t>;
+
+ public:
+  QueueElementProxy() { new (proxy_.get()) queue_element_t(); }
+
+  ~QueueElementProxy() { proxy_.get()->~queue_element_t(); }
+
+  __host__ __device__ queue_element_t* get() { return proxy_.get(); }
+
+ private:
+  ProxyT proxy_{};
+};
+
+using QueueElementProxyT = QueueElementProxy<PosixAligned64Allocator>;
+
 template <typename ALLOCATOR>
 class QueueProxy {
-    static constexpr size_t MAX_NUM_BLOCKS {65536};
-    static constexpr size_t QUEUE_SIZE {1024};
-    static constexpr size_t TOTAL_QUEUE_ELEMENTS {QUEUE_SIZE * MAX_NUM_BLOCKS};
+  static constexpr size_t MAX_NUM_BLOCKS{65536};
+  static constexpr size_t TOTAL_QUEUE_ELEMENTS{QUEUE_SIZE * MAX_NUM_BLOCKS};
+  using ProxyT = DeviceProxy<ALLOCATOR, queue_element_t *, MAX_NUM_BLOCKS>;
+  using ProxyPerBlockT =
+      DeviceProxy<ALLOCATOR, queue_element_t, TOTAL_QUEUE_ELEMENTS>;
 
-    using ProxyT = DeviceProxy<ALLOCATOR, queue_element_t*, MAX_NUM_BLOCKS>;
-    using ProxyPerBlockT = DeviceProxy<ALLOCATOR, queue_element_t, TOTAL_QUEUE_ELEMENTS>;
-
-  public:
-    /**
-     * @brief Initializes a c-style array of circular queues.
-     *
-     * The circular queues are indexed using the device block-id so that each
-     * each block has its own queue.
-     */
-    QueueProxy() {
-        auto **queue_array {queue_proxy_.get()};
-        auto *per_block_queue {per_block_queue_proxy_.get()};
-        for (size_t i {0}; i < MAX_NUM_BLOCKS; i++) {
-            queue_array[i] = per_block_queue + i * QUEUE_SIZE;
-        }
-        size_t total_queue_element_bytes {sizeof(queue_element_t) * TOTAL_QUEUE_ELEMENTS};
-        memset(per_block_queue, 0, total_queue_element_bytes);
+ public:
+  /**
+   * @brief Initializes a c-style array of circular queues.
+   *
+   * The circular queues are indexed using the device block-id so that each
+   * each block has its own queue.
+   */
+  QueueProxy() {
+    auto **queue_array{queue_proxy_.get()};
+    auto *per_block_queue{per_block_queue_proxy_.get()};
+    for (size_t i{0}; i < MAX_NUM_BLOCKS; i++) {
+      queue_array[i] = per_block_queue + i * QUEUE_SIZE;
     }
+    size_t total_queue_element_bytes{sizeof(queue_element_t) *
+                                     TOTAL_QUEUE_ELEMENTS};
+    memset(per_block_queue, 0, total_queue_element_bytes);
+  }
 
-    /*
-     * @brief Provide access to the memory referenced by the proxy
-     */
-    __host__ __device__
-    queue_element_t**
-    get() {
-        return queue_proxy_.get();
-    }
+  __host__ __device__ queue_element_t **get() { return queue_proxy_.get(); }
 
-  private:
-    /**
-     * @brief Memory managed by the lifetime of this object
-     */
-    ProxyT queue_proxy_ {};
+ private:
+  ProxyT queue_proxy_{};
 
-    /**
-     * @brief Holds the queue elements
-     */
-    ProxyPerBlockT per_block_queue_proxy_ {};
+  ProxyPerBlockT per_block_queue_proxy_{};
 };
 
 using QueueProxyT = QueueProxy<HIPHostAllocator>;
 
 }  // namespace rocshmem
 
-#endif  // ROCSHMEM_LIBRARY_SRC_REVERSE_OFFLOAD_QUEUE_PROXY_HPP
+#endif  // LIBRARY_SRC_REVERSE_OFFLOAD_QUEUE_PROXY_HPP_

@@ -31,141 +31,101 @@ roc_shmem_team_t team_primitive_world_dup;
 /******************************************************************************
  * DEVICE TEST KERNEL
  *****************************************************************************/
-__global__ void
-TeamCtxPrimitiveTest(int loop,
-                     int skip,
-                     uint64_t *timer,
-                     char *s_buf,
-                     char *r_buf,
-                     int size,
-                     TestType type,
-                     ShmemContextType ctx_type,
-                     roc_shmem_team_t team)
-{
-    __shared__ roc_shmem_ctx_t ctx;
-    roc_shmem_wg_init();
-    roc_shmem_wg_team_create_ctx(team, ctx_type, &ctx);
+__global__ void TeamCtxPrimitiveTest(int loop, int skip, uint64_t *timer,
+                                     char *s_buf, char *r_buf, int size,
+                                     TestType type, ShmemContextType ctx_type,
+                                     roc_shmem_team_t team) {
+  __shared__ roc_shmem_ctx_t ctx;
+  roc_shmem_wg_init();
+  roc_shmem_wg_team_create_ctx(team, ctx_type, &ctx);
 
-    if (hipThreadIdx_x == 0) {
-        uint64_t start;
+  if (hipThreadIdx_x == 0) {
+    uint64_t start;
 
-        for (int i = 0; i < loop + skip; i++) {
-            if (i == skip)
-                start = roc_shmem_timer();
+    for (int i = 0; i < loop + skip; i++) {
+      if (i == skip) start = roc_shmem_timer();
 
-            switch (type) {
-                case TeamCtxGetTestType:
-                    roc_shmem_ctx_getmem(ctx, r_buf, s_buf, size, 1);
-                    break;
-                case TeamCtxGetNBITestType:
-                    roc_shmem_ctx_getmem_nbi(ctx, r_buf, s_buf, size, 1);
-                    break;
-                case TeamCtxPutTestType:
-                    roc_shmem_ctx_putmem(ctx, r_buf, s_buf, size, 1);
-                    break;
-                case TeamCtxPutNBITestType:
-                    roc_shmem_ctx_putmem_nbi(ctx, r_buf, s_buf, size, 1);
-                    break;
-                default:
-                    break;
-            }
-        }
-
-        roc_shmem_ctx_quiet(ctx);
-
-        timer[hipBlockIdx_x] =  roc_shmem_timer() - start;
+      switch (type) {
+        case TeamCtxGetTestType:
+          roc_shmem_ctx_getmem(ctx, r_buf, s_buf, size, 1);
+          break;
+        case TeamCtxGetNBITestType:
+          roc_shmem_ctx_getmem_nbi(ctx, r_buf, s_buf, size, 1);
+          break;
+        case TeamCtxPutTestType:
+          roc_shmem_ctx_putmem(ctx, r_buf, s_buf, size, 1);
+          break;
+        case TeamCtxPutNBITestType:
+          roc_shmem_ctx_putmem_nbi(ctx, r_buf, s_buf, size, 1);
+          break;
+        default:
+          break;
+      }
     }
 
-    roc_shmem_wg_ctx_destroy(ctx);
-    roc_shmem_wg_finalize();
+    roc_shmem_ctx_quiet(ctx);
+
+    timer[hipBlockIdx_x] = roc_shmem_timer() - start;
+  }
+
+  roc_shmem_wg_ctx_destroy(ctx);
+  roc_shmem_wg_finalize();
 }
 
 /******************************************************************************
  * HOST TESTER CLASS METHODS
  *****************************************************************************/
 TeamCtxPrimitiveTester::TeamCtxPrimitiveTester(TesterArguments args)
-    : Tester(args)
-{
-    s_buf = (char *)roc_shmem_malloc(args.max_msg_size * args.wg_size);
-    r_buf = (char *)roc_shmem_malloc(args.max_msg_size * args.wg_size);
+    : Tester(args) {
+  s_buf = (char *)roc_shmem_malloc(args.max_msg_size * args.wg_size);
+  r_buf = (char *)roc_shmem_malloc(args.max_msg_size * args.wg_size);
 }
 
-TeamCtxPrimitiveTester::~TeamCtxPrimitiveTester()
-{
-    roc_shmem_free(s_buf);
-    roc_shmem_free(r_buf);
+TeamCtxPrimitiveTester::~TeamCtxPrimitiveTester() {
+  roc_shmem_free(s_buf);
+  roc_shmem_free(r_buf);
 }
 
-void
-TeamCtxPrimitiveTester::resetBuffers(uint64_t size)
-{
-    memset(s_buf, '0', args.max_msg_size * args.wg_size);
-    memset(r_buf, '1', args.max_msg_size * args.wg_size);
+void TeamCtxPrimitiveTester::resetBuffers(uint64_t size) {
+  memset(s_buf, '0', args.max_msg_size * args.wg_size);
+  memset(r_buf, '1', args.max_msg_size * args.wg_size);
 }
 
-void
-TeamCtxPrimitiveTester::preLaunchKernel()
-{
-    int n_pes = roc_shmem_team_n_pes(ROC_SHMEM_TEAM_WORLD);
+void TeamCtxPrimitiveTester::preLaunchKernel() {
+  int n_pes = roc_shmem_team_n_pes(ROC_SHMEM_TEAM_WORLD);
 
-    team_primitive_world_dup = ROC_SHMEM_TEAM_INVALID;
-    roc_shmem_team_split_strided(ROC_SHMEM_TEAM_WORLD,
-                                 0,
-                                 1,
-                                 n_pes,
-                                 nullptr,
-                                 0,
-                                 &team_primitive_world_dup);
+  team_primitive_world_dup = ROC_SHMEM_TEAM_INVALID;
+  roc_shmem_team_split_strided(ROC_SHMEM_TEAM_WORLD, 0, 1, n_pes, nullptr, 0,
+                               &team_primitive_world_dup);
 }
 
-void
-TeamCtxPrimitiveTester::launchKernel(dim3 gridSize,
-                                     dim3 blockSize,
-                                     int loop,
-                                     uint64_t size)
-{
-    size_t shared_bytes;
-    roc_shmem_dynamic_shared(&shared_bytes);
+void TeamCtxPrimitiveTester::launchKernel(dim3 gridSize, dim3 blockSize,
+                                          int loop, uint64_t size) {
+  size_t shared_bytes = 0;
 
-    hipLaunchKernelGGL(TeamCtxPrimitiveTest,
-                       gridSize,
-                       blockSize,
-                       shared_bytes,
-                       stream,
-                       loop,
-                       args.skip,
-                       timer,
-                       s_buf,
-                       r_buf,
-                       size,
-                       _type,
-                       _shmem_context,
-                       team_primitive_world_dup);
+  hipLaunchKernelGGL(TeamCtxPrimitiveTest, gridSize, blockSize, shared_bytes,
+                     stream, loop, args.skip, timer, s_buf, r_buf, size, _type,
+                     _shmem_context, team_primitive_world_dup);
 
-    num_msgs = (loop + args.skip) * gridSize.x;
-    num_timed_msgs = loop * gridSize.x;
+  num_msgs = (loop + args.skip) * gridSize.x;
+  num_timed_msgs = loop * gridSize.x;
 }
 
-void
-TeamCtxPrimitiveTester::postLaunchKernel()
-{
-    roc_shmem_team_destroy(team_primitive_world_dup);
+void TeamCtxPrimitiveTester::postLaunchKernel() {
+  roc_shmem_team_destroy(team_primitive_world_dup);
 }
 
-void
-TeamCtxPrimitiveTester::verifyResults(uint64_t size)
-{
-    int check_id = (_type == TeamCtxGetTestType ||
-                    _type == TeamCtxGetNBITestType)
-                    ? 0 : 1;
+void TeamCtxPrimitiveTester::verifyResults(uint64_t size) {
+  int check_id =
+      (_type == TeamCtxGetTestType || _type == TeamCtxGetNBITestType) ? 0 : 1;
 
-    if (args.myid == check_id) {
-        for (int i = 0; i < size; i++) {
-            if (r_buf[i] != '0') {
-                fprintf(stderr, "Data validation error at idx %d\n", i);
-                fprintf(stderr, "Got %c, Expected %c\n", r_buf[i], '0');
-                exit(-1);
-            }
-        }
+  if (args.myid == check_id) {
+    for (int i = 0; i < size; i++) {
+      if (r_buf[i] != '0') {
+        fprintf(stderr, "Data validation error at idx %d\n", i);
+        fprintf(stderr, "Got %c, Expected %c\n", r_buf[i], '0');
+        exit(-1);
+      }
     }
+  }
 }

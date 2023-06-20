@@ -23,56 +23,55 @@
 #ifndef _TESTER_ARGUMENTS_HPP_
 #define _TESTER_ARGUMENTS_HPP_
 
-#include <string>
-
 #include <climits>
 #include <cstdint>
+#include <roc_shmem.hpp>
+#include <string>
 
-class TesterArguments
-{
-  public:
-    TesterArguments(int argc, char *argv[]);
+class TesterArguments {
+ public:
+  TesterArguments(int argc, char *argv[]);
 
-    /**
-     * Initialize rocshmem members
-     * Valid after roc_shmem_init function called.
-     */
-    void get_rocshmem_arguments();
+  /**
+   * Initialize rocshmem members
+   * Valid after roc_shmem_init function called.
+   */
+  void get_rocshmem_arguments();
 
-  private:
-    /**
-     * Output method which displays available command line options
-     */
-    static void show_usage(std::string executable_name);
+ private:
+  /**
+   * Output method which displays available command line options
+   */
+  static void show_usage(std::string executable_name);
 
-  public:
-    /**
-     * Arguments obtained from command line
-     */
-    unsigned num_wgs = 1;
-    unsigned num_threads = 1;
-    unsigned algorithm = 0;
-    uint64_t min_msg_size = 1;
-    uint64_t max_msg_size = 1 << 20;
-    unsigned wg_size = 64;
-    unsigned thread_access = 64;
-    unsigned coal_coef = 64;
-    unsigned op_type = 0;
-    unsigned shmem_context = 8; // ROC_SHMEM_CTX_WG_PRIVATE
+ public:
+  /**
+   * Arguments obtained from command line
+   */
+  unsigned num_wgs = 1;
+  unsigned num_threads = 1;
+  unsigned algorithm = 0;
+  uint64_t min_msg_size = 1;
+  uint64_t max_msg_size = 1 << 20;
+  unsigned wg_size = 64;
+  unsigned thread_access = 64;
+  unsigned coal_coef = 64;
+  unsigned op_type = 0;
+  unsigned shmem_context = rocshmem::ROC_SHMEM_CTX_WG_PRIVATE;
 
-    /**
-     * Arguments obtained from rocshmem
-     */
-    unsigned numprocs = UINT_MAX;
-    unsigned myid = UINT_MAX;
+  /**
+   * Arguments obtained from rocshmem
+   */
+  unsigned numprocs = UINT_MAX;
+  unsigned myid = UINT_MAX;
 
-    /**
-     * Defaults tester values
-     */
-    int loop = 100;
-    int skip = 10;
-    int loop_large = 25;
-    int large_message_size = 32768;
+  /**
+   * Defaults tester values
+   */
+  int loop = 100;
+  int skip = 10;
+  int loop_large = 25;
+  int large_message_size = 32768;
 };
 
 #endif

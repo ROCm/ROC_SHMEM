@@ -20,65 +20,63 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#include <vector>
-
 #include <roc_shmem.hpp>
+#include <vector>
 
 #include "tester.hpp"
 #include "tester_arguments.hpp"
 
 using namespace rocshmem;
 
-int main(int argc, char * argv[])
-{
-    /**
-     * Setup the tester arguments.
-     */
-    TesterArguments args(argc, argv);
+int main(int argc, char *argv[]) {
+  /**
+   * Setup the tester arguments.
+   */
+  TesterArguments args(argc, argv);
 
-    /***
-     * Select a GPU
-     */
-    int rank = roc_shmem_my_pe();
-    int ndevices, my_device=0;
-    hipGetDeviceCount (&ndevices);
-    my_device = rank % ndevices;
-    hipSetDevice(my_device);
+  /***
+   * Select a GPU
+   */
+  int rank = roc_shmem_my_pe();
+  int ndevices, my_device = 0;
+  hipGetDeviceCount(&ndevices);
+  my_device = rank % ndevices;
+  hipSetDevice(my_device);
 
-    /**
-     * Must initialize rocshmem to access arguments needed by the tester.
-     */
-    roc_shmem_init(args.num_wgs);
+  /**
+   * Must initialize rocshmem to access arguments needed by the tester.
+   */
+  roc_shmem_init();
 
-    /**
-     * Now grab the arguments from rocshmem.
-     */
-    args.get_rocshmem_arguments();
+  /**
+   * Now grab the arguments from rocshmem.
+   */
+  args.get_rocshmem_arguments();
 
-    /**
-     * Using the arguments we just constructed, call the tester factory
-     * method to get the tester (specified by the arguments).
-     */
-    std::vector<Tester *> tests = Tester::create(args);
+  /**
+   * Using the arguments we just constructed, call the tester factory
+   * method to get the tester (specified by the arguments).
+   */
+  std::vector<Tester *> tests = Tester::create(args);
 
-    /**
-     * Run the tests
-     */
-    for (auto test : tests) {
-       test->execute();
+  /**
+   * Run the tests
+   */
+  for (auto test : tests) {
+    test->execute();
 
     /**
      * The tester factory method news the tester to create it so we clean
      * up the memory here.
      */
-       delete test;
-    }
+    delete test;
+  }
 
-    /**
-     * The rocshmem library needs to be cleaned up with this call. It pairs
-     * with the init function above.
-     */
-    roc_shmem_finalize();
+  /**
+   * The rocshmem library needs to be cleaned up with this call. It pairs
+   * with the init function above.
+   */
+  roc_shmem_finalize();
 
-    return 0;
+  return 0;
 }

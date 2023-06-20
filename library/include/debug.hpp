@@ -20,17 +20,15 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef ROCSHMEM_LIBRARY_INCLUDE_DEBUG_HPP
-#define ROCSHMEM_LIBRARY_INCLUDE_DEBUG_HPP
+#ifndef LIBRARY_INCLUDE_DEBUG_HPP
+#define LIBRARY_INCLUDE_DEBUG_HPP
 
 namespace rocshmem {
 
-void
-debug_print_cq(int dest_pe, int src_wg, int cqe_index);
+void debug_print_cq(int dest_pe, int src_wg, int cqe_index);
 
-void
-debug_print_sq(int dest_pe, int src_wg, int index_wqe);
+void debug_print_sq(int dest_pe, int src_wg, int index_wqe);
 
 }  // namespace rocshmem
 
-#endif  // ROCSHMEM_LIBRARY_INCLUDE_DEBUG_HPP
+#endif  // LIBRARY_INCLUDE_DEBUG_HPP

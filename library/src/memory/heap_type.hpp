@@ -20,12 +20,11 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef ROCSHMEM_LIBRARY_SRC_HEAP_TYPE_HPP
-#define ROCSHMEM_LIBRARY_SRC_HEAP_TYPE_HPP
+#ifndef LIBRARY_SRC_MEMORY_HEAP_TYPE_HPP_
+#define LIBRARY_SRC_MEMORY_HEAP_TYPE_HPP_
 
-#include "hip_allocator.hpp"
-
-#include "config.h"
+#include "config.h"  // NOLINT(build/include_subdir)
+#include "src/memory/hip_allocator.hpp"
 
 /**
  * @file heap_type.hpp
@@ -40,17 +39,17 @@
 namespace rocshmem {
 
 #if defined USE_MANAGED_HEAP
-    using HEAP_T = HeapMemory<HIPAllocatorManaged>;
+using HEAP_T = HeapMemory<HIPAllocatorManaged>;
 #elif defined USE_COHERENT_HEAP || defined USE_CACHED_HEAP
-    using HEAP_T = HeapMemory<HIPAllocator>;
+using HEAP_T = HeapMemory<HIPAllocator>;
 #elif defined USE_HOST_HEAP
-    using HEAP_T = HeapMemory<HostAllocator>;
+using HEAP_T = HeapMemory<HostAllocator>;
 #elif defined USE_HIP_HOST_HEAP
-    using HEAP_T = HeapMemory<HIPHostAllocator>;
+using HEAP_T = HeapMemory<HIPHostAllocator>;
 #else
-    using HEAP_T = HeapMemory<HIPAllocatorFinegrained>;
+using HEAP_T = HeapMemory<HIPAllocatorFinegrained>;
 #endif
 
-} // namespace rocshmem
+}  // namespace rocshmem
 
-#endif  // ROCSHMEM_LIBRARY_SRC_HEAP_TYPE_HPP
+#endif  // LIBRARY_SRC_MEMORY_HEAP_TYPE_HPP_

@@ -23,48 +23,40 @@
 #ifndef _TEAM_BROADCAST_TESTER_HPP_
 #define _TEAM_BROADCAST_TESTER_HPP_
 
-#include "tester.hpp"
-
 #include <functional>
 #include <utility>
+
+#include "tester.hpp"
 
 /************* *****************************************************************
  * HOST TESTER CLASS
  *****************************************************************************/
-template<typename T1>
-class TeamBroadcastTester : public Tester
-{
-  public:
-    explicit TeamBroadcastTester(TesterArguments args,
-                                 std::function<void(T1&, T1&)> f1,
-                                 std::function<std::pair<bool, std::string>(const T1&)> f2);
-    virtual ~TeamBroadcastTester();
+template <typename T1>
+class TeamBroadcastTester : public Tester {
+ public:
+  explicit TeamBroadcastTester(
+      TesterArguments args, std::function<void(T1 &, T1 &)> f1,
+      std::function<std::pair<bool, std::string>(const T1 &)> f2);
+  virtual ~TeamBroadcastTester();
 
-  protected:
-    virtual void
-    resetBuffers(uint64_t size) override;
+ protected:
+  virtual void resetBuffers(uint64_t size) override;
 
-    virtual void
-    preLaunchKernel() override;
+  virtual void preLaunchKernel() override;
 
-    virtual void
-    launchKernel(dim3 gridSize,
-                 dim3 blockSize,
-                 int loop,
-                 uint64_t size) override;
+  virtual void launchKernel(dim3 gridSize, dim3 blockSize, int loop,
+                            uint64_t size) override;
 
-    virtual void
-    postLaunchKernel() override;
+  virtual void postLaunchKernel() override;
 
-    virtual void
-    verifyResults(uint64_t size) override;
+  virtual void verifyResults(uint64_t size) override;
 
-    T1 *source_buf;
-    T1 *dest_buf;
+  T1 *source_buf;
+  T1 *dest_buf;
 
-private:
-    std::function<void(T1&, T1&)> init_buf;
-    std::function<std::pair<bool, std::string>(const T1&)> verify_buf;
+ private:
+  std::function<void(T1 &, T1 &)> init_buf;
+  std::function<std::pair<bool, std::string>(const T1 &)> verify_buf;
 };
 
 #include "team_broadcast_tester.cpp"

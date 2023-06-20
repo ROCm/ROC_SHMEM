@@ -20,26 +20,20 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#include "debug.hpp"
+#include "include/debug.hpp"
 
-#include "qe_dumper.hpp"
+#include "src/gpu_ib/qe_dumper.hpp"
 
 namespace rocshmem {
 
-void
-debug_print_cq(int dest_pe,
-               int src_wg,
-               int cqe_index) {
-    QeDumper dumper(dest_pe, src_wg, cqe_index);
-    dumper.dump_cq();
+void debug_print_cq(int dest_pe, int src_wg, int cqe_index) {
+  QeDumper dumper(dest_pe, src_wg, cqe_index);
+  dumper.dump_cq();
 }
 
-void
-debug_print_sq(int dest_pe,
-               int src_wg,
-               int wqe_index) {
-    QeDumper dumper(dest_pe, src_wg, wqe_index);
-    dumper.dump_sq();
+void debug_print_sq(int dest_pe, int src_wg, int wqe_index) {
+  QeDumper dumper(dest_pe, src_wg, wqe_index);
+  dumper.dump_sq();
 }
 
 }  // namespace rocshmem

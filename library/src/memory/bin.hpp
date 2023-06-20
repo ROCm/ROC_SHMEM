@@ -20,12 +20,11 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef ROCSHMEM_LIBRARY_SRC_MEMORY_BIN_HPP
-#define ROCSHMEM_LIBRARY_SRC_MEMORY_BIN_HPP
-
-#include <stack>
+#ifndef LIBRARY_SRC_MEMORY_BIN_HPP_
+#define LIBRARY_SRC_MEMORY_BIN_HPP_
 
 #include <cassert>
+#include <stack>
 
 /**
  * @file bin.hpp
@@ -40,57 +39,47 @@ namespace rocshmem {
 
 template <typename T>
 class Bin {
-  public:
-    /**
-     * @brief Is stack empty?
-     *
-     * @return A boolean denoting stack emptiness
-     */
-    bool
-    empty() {
-        return stack_.empty();
-    }
+ public:
+  /**
+   * @brief Is stack empty?
+   *
+   * @return A boolean denoting stack emptiness
+   */
+  bool empty() { return stack_.empty(); }
 
-    /**
-     * @brief How many elements in stack?
-     *
-     * @return The number of elements in the stack
-     */
-    size_t
-    size() {
-        return stack_.size();
-    }
+  /**
+   * @brief How many elements in stack?
+   *
+   * @return The number of elements in the stack
+   */
+  size_t size() { return stack_.size(); }
 
-    /**
-     * @brief Emplace an element in stack
-     *
-     * @param[in] An element
-     */
-    void
-    put(T element) {
-        stack_.emplace(element);
-    }
+  /**
+   * @brief Emplace an element in stack
+   *
+   * @param[in] An element
+   */
+  void put(T element) { stack_.emplace(element); }
 
-    /**
-     * @brief Retrieve an element from stack
-     *
-     * @return An element
-     */
-    T
-    get() {
-        assert(stack_.size());
-        auto top = stack_.top();
-        stack_.pop();
-        return top;
-    }
+  /**
+   * @brief Retrieve an element from stack
+   *
+   * @return An element
+   */
+  T get() {
+    assert(stack_.size());
+    auto top = stack_.top();
+    stack_.pop();
+    return top;
+  }
 
-  private:
-    /**
-     * @brief Implementation container
-     */
-    std::stack<T> stack_ {};
+ private:
+  /**
+   * @brief Implementation container
+   */
+  std::stack<T> stack_{};
 };
 
-} // namespace rocshmem
+}  // namespace rocshmem
 
-#endif  // ROCSHMEM_LIBRARY_SRC_MEMORY_BIN_HPP
+#endif  // LIBRARY_SRC_MEMORY_BIN_HPP_

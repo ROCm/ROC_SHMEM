@@ -29,76 +29,50 @@ using namespace rocshmem;
 /******************************************************************************
  * DEVICE TEST KERNEL
  *****************************************************************************/
-__global__ void
-BarrierAllTest(int loop,
-               int skip,
-               uint64_t *timer)
-{
-    __shared__ roc_shmem_ctx_t ctx;
+__global__ void BarrierAllTest(int loop, int skip, uint64_t *timer) {
+  __shared__ roc_shmem_ctx_t ctx;
 
-    roc_shmem_wg_init();
-    roc_shmem_wg_ctx_create(ROC_SHMEM_CTX_WG_PRIVATE, &ctx);
+  roc_shmem_wg_init();
+  roc_shmem_wg_ctx_create(ROC_SHMEM_CTX_WG_PRIVATE, &ctx);
 
-    uint64_t start;
-    for (int i = 0; i < loop + skip; i++) {
-        if (hipThreadIdx_x == 0 && i == skip) {
-            start = roc_shmem_timer();
-        }
-
-        __syncthreads();
-
-        roc_shmem_ctx_wg_barrier_all(ctx);
+  uint64_t start;
+  for (int i = 0; i < loop + skip; i++) {
+    if (hipThreadIdx_x == 0 && i == skip) {
+      start = roc_shmem_timer();
     }
+
     __syncthreads();
 
-    if (hipThreadIdx_x == 0) {
-        timer[hipBlockIdx_x] = roc_shmem_timer() - start;
-    }
+    roc_shmem_ctx_wg_barrier_all(ctx);
+  }
+  __syncthreads();
 
-    roc_shmem_wg_ctx_destroy(ctx);
-    roc_shmem_wg_finalize();
+  if (hipThreadIdx_x == 0) {
+    timer[hipBlockIdx_x] = roc_shmem_timer() - start;
+  }
+
+  roc_shmem_wg_ctx_destroy(ctx);
+  roc_shmem_wg_finalize();
 }
 
 /******************************************************************************
  * HOST TESTER CLASS METHODS
  *****************************************************************************/
-BarrierAllTester::BarrierAllTester(TesterArguments args)
-    : Tester(args)
-{
+BarrierAllTester::BarrierAllTester(TesterArguments args) : Tester(args) {}
+
+BarrierAllTester::~BarrierAllTester() {}
+
+void BarrierAllTester::launchKernel(dim3 gridSize, dim3 blockSize, int loop,
+                                    uint64_t size) {
+  size_t shared_bytes = 0;
+
+  hipLaunchKernelGGL(BarrierAllTest, gridSize, blockSize, shared_bytes, stream,
+                     loop, args.skip, timer);
+
+  num_msgs = (loop + args.skip) * gridSize.x;
+  num_timed_msgs = loop;
 }
 
-BarrierAllTester::~BarrierAllTester()
-{
-}
+void BarrierAllTester::resetBuffers(uint64_t size) {}
 
-void
-BarrierAllTester::launchKernel(dim3 gridSize,
-                               dim3 blockSize,
-                               int loop,
-                               uint64_t size)
-{
-    size_t shared_bytes;
-    roc_shmem_dynamic_shared(&shared_bytes);
-
-    hipLaunchKernelGGL(BarrierAllTest,
-                       gridSize,
-                       blockSize,
-                       shared_bytes,
-                       stream,
-                       loop,
-                       args.skip,
-                       timer);
-
-    num_msgs = (loop + args.skip) * gridSize.x;
-    num_timed_msgs = loop ;
-}
-
-void
-BarrierAllTester::resetBuffers(uint64_t size)
-{
-}
-
-void
-BarrierAllTester::verifyResults(uint64_t size)
-{
-}
+void BarrierAllTester::verifyResults(uint64_t size) {}

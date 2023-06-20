@@ -20,8 +20,8 @@
  * IN THE SOFTWARE.
  *****************************************************************************/
 
-#ifndef ROCSHMEM_LIBRARY_SRC_SYMMETRIC_HEAP_HPP
-#define ROCSHMEM_LIBRARY_SRC_SYMMETRIC_HEAP_HPP
+#ifndef LIBRARY_SRC_MEMORY_SYMMETRIC_HEAP_HPP_
+#define LIBRARY_SRC_MEMORY_SYMMETRIC_HEAP_HPP_
 
 /**
  * @file symmetric_heap.hpp
@@ -42,111 +42,88 @@
 
 #include <hip/hip_runtime_api.h>
 
-#include "remote_heap_info.hpp"
-#include "single_heap.hpp"
+#include "src/memory/remote_heap_info.hpp"
+#include "src/memory/single_heap.hpp"
 
 namespace rocshmem {
 
 class SymmetricHeap {
-    /**
-     * @brief Helper type for RemoteHeapInfo with MPI
-     */
-    using RemoteHeapInfoType = RemoteHeapInfo<CommunicatorMPI>;
+  /**
+   * @brief Helper type for RemoteHeapInfo with MPI
+   */
+  using RemoteHeapInfoType = RemoteHeapInfo<CommunicatorMPI>;
 
-  public:
-    /**
-     * @brief Allocates heap memory and returns ptr to caller
-     *
-     * @param[in,out] A pointer to memory handle
-     * @param[in] Number of bytes of requested
-     */
-    void
-    malloc(void** ptr, size_t size) {
-        single_heap_.malloc(ptr, size);
-    }
+ public:
+  /**
+   * @brief Allocates heap memory and returns ptr to caller
+   *
+   * @param[in,out] A pointer to memory handle
+   * @param[in] Number of bytes of requested
+   */
+  void malloc(void** ptr, size_t size) { single_heap_.malloc(ptr, size); }
 
-    /**
-     * @brief Frees previously allocated network visible memory
-     *
-     * @param[in] Handle of previously allocated memory
-     */
-    void
-    free(void* ptr) {
-        single_heap_.free(ptr);
-    }
+  /**
+   * @brief Frees previously allocated network visible memory
+   *
+   * @param[in] Handle of previously allocated memory
+   */
+  void free(void* ptr) { single_heap_.free(ptr); }
 
-    /**
-     * @brief Accessor for local heap base
-     *
-     * @return Base address of the local symmetric heap
-     */
-    __host__
-    char *
-    get_local_heap_base() {
-        return single_heap_.get_base_ptr();
-    }
+  /**
+   * @brief Accessor for local heap base
+   *
+   * @return Base address of the local symmetric heap
+   */
+  __host__ char* get_local_heap_base() { return single_heap_.get_base_ptr(); }
 
-    /**
-     * @brief Accessor method for heap size
-     */
-    auto
-    get_size() {
-        return single_heap_.get_size();
-    }
+  /**
+   * @brief Accessor method for heap size
+   */
+  auto get_size() { return single_heap_.get_size(); }
 
-    /**
-     * @brief Accessor method for heap_window_info_
-     */
-    auto
-    get_window_info() {
-        return remote_heap_info_.get_window_info();
-    }
+  /**
+   * @brief Accessor method for heap_window_info_
+   */
+  auto get_window_info() { return remote_heap_info_.get_window_info(); }
 
-    /**
-     * @brief Accessor for heap bases
-     *
-     * @return Vector containing the addresses of the symmetric heap bases
-     */
-    __host__
-    const auto&
-    get_heap_bases() {
-        return remote_heap_info_.get_heap_bases();
-    }
+  /**
+   * @brief Accessor for heap bases
+   *
+   * @return Vector containing the addresses of the symmetric heap bases
+   */
+  __host__ const auto& get_heap_bases() {
+    return remote_heap_info_.get_heap_bases();
+  }
 
-    /**
-     * @brief Accessor for heap bases
-     *
-     * @return Vector containing the addresses of the symmetric heap bases
-     */
-    __device__
-    auto
-    get_heap_bases() {
-        return remote_heap_info_.get_heap_bases();
-    }
+  /**
+   * @brief Accessor for heap bases
+   *
+   * @return Vector containing the addresses of the symmetric heap bases
+   */
+  __device__ auto get_heap_bases() {
+    return remote_heap_info_.get_heap_bases();
+  }
 
-    /**
-     * @brief Returns is the heap is allocated with managed memory
-     *
-     * @return bool
-     */
-    bool
-    is_managed() {
-        return single_heap_.is_managed();
-    }
+  /**
+   * @brief Returns is the heap is allocated with managed memory
+   *
+   * @return bool
+   */
+  bool is_managed() { return single_heap_.is_managed(); }
 
-  private:
-    /**
-     * @brief Processing element's implementation of heap
-     */
-    SingleHeap single_heap_ {};
+ private:
+  /**
+   * @brief Processing element's implementation of heap
+   */
+  SingleHeap single_heap_{};
 
-    /**
-     * @brief Implementation of remote heaps
-     */
-    RemoteHeapInfoType remote_heap_info_ {single_heap_.get_base_ptr(),
-                                          single_heap_.get_size()};
+  /**
+   * @brief Implementation of remote heaps
+   */
+  RemoteHeapInfoType remote_heap_info_{single_heap_.get_base_ptr(),
+                                       single_heap_.get_size()};
 };
 
-} // namespace rocshmem
+}  // namespace rocshmem
 
-#endif  // ROCSHMEM_LIBRARY_SRC_SYMMETRIC_HEAP_HPP
+#endif  // LIBRARY_SRC_MEMORY_SYMMETRIC_HEAP_HPP_
